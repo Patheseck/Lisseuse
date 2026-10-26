@@ -6,6 +6,8 @@ import { listBooks } from '../storage/library';
 import { loadReviewSettings, saveReviewSettings } from '../storage/settings';
 import { clear, h } from './dom';
 import { toast } from './feedback';
+import { isNative } from '../native/platform';
+import { loadReminder, saveReminder, type ReminderSettings, type ReminderStatus } from '../native/reminder';
 import { icon } from './icons';
 import type { Navigate, Screen } from './screen';
 
@@ -43,7 +45,7 @@ export function statsScreen(navigate: Navigate): Screen {
   );
 
   async function render(): Promise<void> {
-    const [books, allCards, reviews, settings] = await Promise.all([listBooks(), listAllCards(), listReviews(), loadReviewSettings()]);
+    const [books, allCards, reviews, settings, reminder] = await Promise.all([listBooks(), listAllCards(), listReviews(), loadReviewSettings(), loadReminder()]);
     const now = Date.now();
     const known = new Set(books.map((b) => b.id));
     const cards = allCards.filter((c) => known.has(c.bookId));
@@ -96,7 +98,40 @@ export function statsScreen(navigate: Navigate): Screen {
           ...act.active.map((on, i) => h('span', { className: on ? 'cell on' : 'cell', title: new Date(now - (29 - i) * 86400000).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }) }))),
       ),
 
-      card('Réglages de révision', 'stat-settings', newPerDayControl(settings.newPerDay)),
+      card('Réglages de révision', 'stat-settings', newPerDayControl(settings.newPerDay), reminderControl(reminder)),
+    );
+  }
+
+  function reminderControl(initial: ReminderSettings): HTMLElement {
+    let value = initial;
+    const status = h('p', { className: 'hint', 'aria-live': 'polite', 'data-testid': 'reminder-status' });
+    const enabled = h('input', { type: 'checkbox', id: 'reminder-on', 'data-testid': 'reminder-on', checked: value.enabled, disabled: !isNative() });
+    const time = h('input', { type: 'time', className: 'input time-input', 'aria-label': 'Heure du rappel', 'data-testid': 'reminder-time', value: `${String(value.hour).padStart(2, '0')}:${String(value.minute).padStart(2, '0')}`, disabled: !isNative() });
+    const describe = (s: ReminderStatus) => {
+      status.textContent = {
+        scheduled: `Rappel programmé chaque jour à ${time.value}.`,
+        disabled: 'Aucun rappel.',
+        denied: 'Notifications refusées : autorise-les pour Liseuse dans les réglages d’Android.',
+        unsupported: 'Disponible dans l’application Android.',
+      }[s];
+    };
+    const save = async () => {
+      const [hour, minute] = time.value.split(':').map(Number);
+      value = { enabled: enabled.checked, hour: hour ?? 20, minute: minute ?? 0 };
+      try {
+        describe(await saveReminder(value));
+      } catch (err) {
+        logError('rappel', err);
+        toast(`Rappel non enregistré : ${errorMessage(err)}`, 'error');
+      }
+    };
+    enabled.addEventListener('change', () => void save());
+    time.addEventListener('change', () => void save());
+    describe(!isNative() ? 'unsupported' : value.enabled ? 'scheduled' : 'disabled');
+    return h('div', { className: 'setting reminder' },
+      h('label', { className: 'check', for: 'reminder-on' }, enabled, h('span', {}, 'Rappel quotidien de révision')),
+      time,
+      status,
     );
   }
 

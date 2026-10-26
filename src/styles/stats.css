@@ -29,3 +29,4 @@
 .strip { display: grid; grid-template-columns: repeat(30, 1fr); gap: 2px; }
 .cell { aspect-ratio: 1; border-radius: 2px; background: var(--border); }
 .cell.on { background: var(--accent); }
+.time-input { max-width: 9rem; }

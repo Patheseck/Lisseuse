@@ -68,3 +68,6 @@
 .chapter-box-actions { display: flex; gap: 0.5rem; justify-content: flex-end; flex-wrap: wrap; }
 .chapter-box .btn { display: inline-flex; align-items: center; gap: 0.35rem; }
 .chapter-end { margin-top: 2.5rem; border-color: var(--accent); }
+.reader-content .speaking { background: color-mix(in srgb, var(--accent) 12%, transparent); border-radius: 4px; box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 12%, transparent); }
+.icon-btn[hidden] { display: none; }
+.wide-btn { width: 100%; }

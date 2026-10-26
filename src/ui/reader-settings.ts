@@ -19,7 +19,7 @@ function segmented<T extends string>(label: string, name: string, options: [T, s
 }
 
 /** Feuille « Aa » : réglages de lecture appliqués en direct et enregistrés. */
-export function readerSettingsSheet(initial: ReaderSettings): Sheet {
+export function readerSettingsSheet(initial: ReaderSettings, actions: { onFocusMode: () => void }): Sheet {
   let settings = { ...initial };
   let timer: number | undefined;
   const sheet = createSheet({ title: 'Affichage', kind: 'bottom', testId: 'settings-sheet' });
@@ -58,6 +58,7 @@ export function readerSettingsSheet(initial: ReaderSettings): Sheet {
       })(),
       segmented<ReaderWidth>('Largeur de colonne', 'set-width', [['narrow', 'Étroite'], ['normal', 'Normale'], ['wide', 'Large']], settings.width, (width) => update({ width })),
       segmented<Theme>('Thème', 'set-theme', [['auto', 'Auto'], ['light', 'Clair'], ['dark', 'Sombre']], settings.theme, (theme) => update({ theme })),
+      h('button', { type: 'button', className: 'btn wide-btn', 'data-testid': 'focus-mode', onclick: () => { sheet.close(); actions.onFocusMode(); } }, 'Mode concentration : seulement le texte'),
     );
   }
 

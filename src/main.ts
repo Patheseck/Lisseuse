@@ -16,6 +16,11 @@ import { logError } from './core/errors';
 import { applyReaderSettings, loadReaderSettings } from './storage/settings';
 import { migrateDeviceIfNeeded, type ImportReport } from './storage/migrate-v5';
 import { showImportReport } from './ui/data-sheet';
+import { App } from '@capacitor/app';
+import { listenForOpenedFiles } from './native/open-file';
+import { isNative } from './native/platform';
+import { applyReminder, loadReminder } from './native/reminder';
+import { importAndOpen } from './ui/import-flow';
 import { toast, withBusy } from './ui/feedback';
 import { libraryScreen } from './ui/library';
 import { readerScreen } from './ui/reader';
@@ -60,10 +65,35 @@ async function start(): Promise<void> {
     logError('réglages', err);
   }
   navigate({ name: 'library' });
+  void setupNative();
   if (report) {
     await showImportReport('Bienvenue dans la nouvelle version', 'Tes données de la V5.7 ont été reprises :', report);
     if (report.cards) toast('Les questions des fiches reprises ont été générées automatiquement : personnalise-les depuis le lecteur.', 'info', 7000);
   }
+}
+
+/** Intégrations Android : bouton retour, « Ouvrir avec Liseuse », rappel quotidien. */
+async function setupNative(): Promise<void> {
+  if (!isNative()) return;
+  await App.addListener('backButton', () => {
+    // 1. Une fenêtre ou un panneau ouvert se ferme (comme avec Échap).
+    const dialogs = Array.from(document.querySelectorAll<HTMLDialogElement>('dialog[open]'));
+    const top = dialogs.at(-1);
+    if (top) {
+      const cancel = new Event('cancel', { cancelable: true });
+      if (top.dispatchEvent(cancel)) top.close();
+      return;
+    }
+    // 2. L'écran gère lui-même (mode concentration…), sinon retour à la bibliothèque.
+    if (screen?.onBack?.()) return;
+    if (document.documentElement.dataset.screen !== 'library') navigate({ name: 'library' });
+    else void App.minimizeApp();
+  });
+  await listenForOpenedFiles((file) => void importAndOpen(file, navigate)).catch(() => {
+    toast('Ce fichier n’a pas pu être ouvert.', 'error');
+  });
+  // Reprogramme le rappel (Android peut l'avoir perdu après une mise à jour de l'app).
+  await loadReminder().then((r) => applyReminder(r)).catch((err: unknown) => logError('rappel', err));
 }
 
 void start();

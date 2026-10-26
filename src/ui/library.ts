@@ -1,4 +1,4 @@
-import { importBook } from '../book/service';
+import { importAndOpen } from './import-flow';
 import { errorMessage, logError } from '../core/errors';
 import { planSession } from '../core/session';
 import { listAllCards, listReviews, type CardRecord } from '../storage/cards';
@@ -9,7 +9,7 @@ import { formatDue } from './review';
 import { dataSheet } from './data-sheet';
 import type { Sheet } from './sheet';
 import { clear, h } from './dom';
-import { confirmDialog, toast, withBusy } from './feedback';
+import { confirmDialog, toast } from './feedback';
 import type { Navigate, Screen } from './screen';
 
 const ACCEPT = '.epub,.md,.markdown,.txt,application/epub+zip,text/markdown,text/plain';
@@ -34,15 +34,7 @@ export function libraryScreen(navigate: Navigate): Screen {
   );
 
   async function handleFile(file: File | undefined): Promise<void> {
-    if (!file) return;
-    try {
-      const { book, existed } = await withBusy('Import du livre…', () => importBook(file));
-      if (existed) toast(`« ${book.title} » est déjà dans ta bibliothèque.`);
-      navigate({ name: 'reader', bookId: book.id });
-    } catch (err) {
-      logError('import', err);
-      toast(`Import impossible : ${errorMessage(err)}`, 'error', 6000);
-    }
+    if (file) await importAndOpen(file, navigate);
   }
   fileInput.addEventListener('change', () => {
     void handleFile(fileInput.files?.[0]);

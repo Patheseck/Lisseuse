@@ -2,6 +2,7 @@
 // un livre présent, et garde la version la plus récente de chaque fiche.
 
 import { parseStoredBook } from '../book/service';
+import { base64ToBytes, bytesToBase64 } from '../core/base64';
 import { errorMessage, logError } from '../core/errors';
 import { normalizeCard, type CardRecord, type ReviewRecord } from './cards';
 import { promisify, tx } from './db';
@@ -49,19 +50,7 @@ interface EncryptedPayload {
 
 // ---------- Base64 ----------
 
-export function bytesToBase64(bytes: Uint8Array): string {
-  let binary = '';
-  const CHUNK = 0x8000;
-  for (let i = 0; i < bytes.length; i += CHUNK) binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
-  return btoa(binary);
-}
-
-export function base64ToBytes(b64: string): Uint8Array<ArrayBuffer> {
-  const binary = atob(b64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes;
-}
+export { base64ToBytes, bytesToBase64 };
 
 async function encodeBlob(blob: Blob): Promise<EncodedBlob> {
   return { type: blob.type, data: bytesToBase64(new Uint8Array(await blob.arrayBuffer())) };

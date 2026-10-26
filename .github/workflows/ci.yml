@@ -31,3 +31,50 @@ jobs:
           name: playwright-traces
           path: test-results/
           retention-days: 7
+
+  android:
+    needs: web
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      HAS_RELEASE_KEY: ${{ secrets.LISEUSE_KEYSTORE_BASE64 != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+      - run: npm ci
+      - name: Web → Android
+        run: npm run android:sync
+      - name: APK de test (debug)
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: liseuse-test-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
+      - name: APK signé (si la clé est configurée)
+        if: env.HAS_RELEASE_KEY == 'true'
+        working-directory: android
+        env:
+          LISEUSE_KEYSTORE_BASE64: ${{ secrets.LISEUSE_KEYSTORE_BASE64 }}
+          LISEUSE_KEYSTORE_PASSWORD: ${{ secrets.LISEUSE_KEYSTORE_PASSWORD }}
+          LISEUSE_KEY_ALIAS: ${{ secrets.LISEUSE_KEY_ALIAS }}
+          LISEUSE_KEY_PASSWORD: ${{ secrets.LISEUSE_KEY_PASSWORD }}
+        run: |
+          echo "$LISEUSE_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/liseuse.jks"
+          LISEUSE_KEYSTORE_FILE="$RUNNER_TEMP/liseuse.jks" ./gradlew assembleRelease --no-daemon
+          rm -f "$RUNNER_TEMP/liseuse.jks"
+      - uses: actions/upload-artifact@v4
+        if: env.HAS_RELEASE_KEY == 'true'
+        with:
+          name: liseuse-apk-signe
+          path: android/app/build/outputs/apk/release/app-release.apk
+          retention-days: 90

@@ -11,6 +11,7 @@ import { addRecall, listRecalls, markPretest, pretestDates, type RecallRecord } 
 import { chapterHeadings, chapterRecall, pretest } from './chapter-practice';
 import { clear, h } from './dom';
 import { confirmDialog, toast } from './feedback';
+import { speak, stop as stopSpeech, ttsAvailable } from '../native/tts';
 import { icon } from './icons';
 import { readerSearchSheet } from './reader-search';
 import { readerSettingsSheet } from './reader-settings';
@@ -118,6 +119,7 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
 
   function go(index: number, opts: { offset?: number; after?: () => void } = {}): void {
     if (!opened || index < 0 || index >= opened.chapters.length) return;
+    void stopListening();
     current = index;
     hideSelectionBar();
     hideMarkMenu();
@@ -375,9 +377,55 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
   sheets.push(toc, search);
   let settingsSheet: Sheet | null = null;
 
+  // ---------- Lecture à voix haute ----------
+  let speaking = false;
+  const listenButton = h('button', { type: 'button', className: 'icon-btn', 'aria-label': 'Écouter le chapitre', 'aria-pressed': 'false', 'data-testid': 'listen', hidden: !ttsAvailable(), onclick: () => void toggleListen() }, icon('speaker'));
+
+  function readableBlocks(): HTMLElement[] {
+    return Array.from(content.querySelectorAll<HTMLElement>('h1, h2, h3, h4, h5, h6, p, li, blockquote, pre'))
+      .filter((el) => !el.querySelector('p, li, h1, h2, h3, h4, blockquote') && el.textContent?.trim());
+  }
+
+  function setSpeaking(on: boolean): void {
+    speaking = on;
+    listenButton.setAttribute('aria-pressed', String(on));
+    listenButton.setAttribute('aria-label', on ? 'Arrêter la lecture' : 'Écouter le chapitre');
+    listenButton.replaceChildren(icon(on ? 'stop' : 'speaker'));
+    if (!on) content.querySelectorAll('.speaking').forEach((el) => el.classList.remove('speaking'));
+  }
+
+  async function stopListening(): Promise<void> {
+    if (!speaking) return;
+    setSpeaking(false);
+    await stopSpeech();
+  }
+
+  async function toggleListen(): Promise<void> {
+    if (speaking) return stopListening();
+    const blocks = readableBlocks();
+    // On commence au premier paragraphe visible.
+    const top = scroller.getBoundingClientRect().top;
+    const first = Math.max(0, blocks.findIndex((b) => b.getBoundingClientRect().bottom > top + 8));
+    const queue = blocks.slice(first);
+    if (!queue.length) return;
+    setSpeaking(true);
+    try {
+      await speak(queue.map((b) => b.textContent ?? ''), (i) => {
+        content.querySelectorAll('.speaking').forEach((el) => el.classList.remove('speaking'));
+        queue[i]!.classList.add('speaking');
+        queue[i]!.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      });
+    } catch (err) {
+      logError('lecture audio', err);
+      toast('La lecture à voix haute n’est pas disponible sur cet appareil.', 'error');
+    } finally {
+      if (speaking) setSpeaking(false);
+    }
+  }
+
   async function openSettings(): Promise<void> {
     if (!settingsSheet) {
-      settingsSheet = readerSettingsSheet(await loadReaderSettings());
+      settingsSheet = readerSettingsSheet(await loadReaderSettings(), { onFocusMode: () => setFocus(true) });
       sheets.push(settingsSheet);
     }
     settingsSheet.open();
@@ -391,8 +439,8 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
   toolButtons.append(
     h('button', { type: 'button', className: 'icon-btn', 'aria-label': 'Rechercher dans le livre', 'data-testid': 'open-search', onclick: () => search.open() }, icon('search')),
     h('button', { type: 'button', className: 'icon-btn', 'aria-label': 'Sommaire et surlignages', 'data-testid': 'open-toc', onclick: () => toc.open() }, icon('toc')),
+    listenButton,
     h('button', { type: 'button', className: 'icon-btn', 'aria-label': 'Réglages d’affichage', 'data-testid': 'open-settings', onclick: () => void openSettings() }, icon('text')),
-    h('button', { type: 'button', className: 'icon-btn', 'aria-label': 'Mode concentration', 'data-testid': 'focus-mode', onclick: () => setFocus(true) }, icon('focus')),
   );
 
   // ---------- Événements ----------
@@ -474,7 +522,20 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
 
   return {
     el,
+    onBack() {
+      if (el.classList.contains('focus-mode')) {
+        setFocus(false);
+        return true;
+      }
+      if (!markMenu.hidden || !selectionBar.hidden) {
+        hideMarkMenu();
+        hideSelectionBar();
+        return true;
+      }
+      return false;
+    },
     destroy() {
+      void stopListening();
       if (saveTimer !== undefined) persist();
       window.clearTimeout(selectionTimer);
       cleanup.forEach((fn) => fn());

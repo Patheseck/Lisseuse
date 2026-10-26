@@ -122,6 +122,7 @@ test.describe('Étape 2 — lecteur complet', () => {
   });
 
   test('mode concentration et navigation au clavier', async ({ page }) => {
+    await page.getByTestId('open-settings').click();
     await page.getByTestId('focus-mode').click();
     await expect(page.locator('header.topbar')).toBeHidden();
     await expect(page.getByTestId('chapter-position')).toBeHidden();
