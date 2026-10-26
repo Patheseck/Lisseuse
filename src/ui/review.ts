@@ -1,5 +1,6 @@
 import { errorMessage, logError } from '../core/errors';
 import { hasMnemonic, hintText } from '../core/mnemonic';
+import { passageStart } from '../core/question';
 import { formatInterval, GRADE_LABELS, GRADES, preview, rate, type Grade4 } from '../core/scheduler';
 import { planSession, shouldRequeue } from '../core/session';
 import { listAllCards, listReviews, recordReview, type CardRecord, type Confidence, type ReviewRecord } from '../storage/cards';
@@ -65,28 +66,41 @@ export function reviewScreen(navigate: Navigate): Screen {
     if (handler) document.addEventListener('keydown', handler);
   }
 
+  /** D'où vient la fiche : le chapitre en évidence, le livre en dessous. */
   function context(card: CardRecord): HTMLElement {
     const chapter = labels.get(card.bookId)?.[card.chapter];
-    return h('p', { className: 'review-context' },
-      h('span', { className: 'pill' }, card.kind === 'sequence' ? 'Étapes' : 'Question'),
-      card.origin === 'v5' ? h('span', { className: 'pill pill-muted', title: 'Question générée lors de la reprise de la V5 : modifie-la depuis le lecteur.' }, 'Reprise V5') : null,
-      ` ${titles.get(card.bookId) ?? 'Livre'}${chapter ? ` · ${chapter}` : ''}`);
+    return h('div', { className: 'review-context' },
+      h('p', { className: 'review-chapter', 'data-testid': 'review-chapter' }, chapter ?? `Chapitre ${card.chapter + 1}`),
+      h('p', { className: 'review-book' },
+        h('span', { className: 'pill' }, card.kind === 'sequence' ? 'Étapes' : 'Question'),
+        card.origin === 'v5' ? h('span', { className: 'pill pill-muted', title: 'Question générée lors de la reprise de la V5 : modifie-la depuis le lecteur.' }, 'Reprise V5') : null,
+        ` ${titles.get(card.bookId) ?? 'Livre'}`),
+    );
   }
 
-  /** Indice tiré de l'aide-mémoire : le lieu et l'image, jamais la réponse. */
+  /**
+   * Indices progressifs, sans donner la réponse : le début du passage, puis l'aide-mémoire
+   * (lieu, image) s'il existe. Les utiliser est noté dans le journal (« aidé »).
+   */
   function hintButton(card: CardRecord): HTMLElement | null {
-    if (!hasMnemonic(card.mnemonic)) return null;
-    const text = hintText(card.mnemonic);
-    const box = h('p', { className: 'review-hint', 'data-testid': 'review-hint', hidden: true }, text);
-    const button = h('button', {
-      type: 'button', className: 'link-btn', 'data-testid': 'show-hint',
-      onclick: () => {
-        hinted = true;
-        box.hidden = false;
-        button.remove();
-      },
-    }, 'Bloqué ? Voir mon indice');
-    return h('div', { className: 'review-hint-wrap' }, button, box);
+    const hints: { testId: string; label: string; text: string }[] = [];
+    if (card.anchor.quote.trim()) hints.push({ testId: 'show-start', label: 'Voir le début du passage', text: `« ${passageStart(card.anchor.quote)} »` });
+    if (hasMnemonic(card.mnemonic)) hints.push({ testId: 'show-hint', label: 'Voir mon aide-mémoire', text: hintText(card.mnemonic) });
+    if (!hints.length) return null;
+    const wrap = h('div', { className: 'review-hint-wrap' }, h('span', { className: 'hint-label' }, 'Bloqué ?'));
+    for (const hint of hints) {
+      const box = h('p', { className: 'review-hint', 'data-testid': `${hint.testId}-text`, hidden: true }, hint.text);
+      const button = h('button', {
+        type: 'button', className: 'link-btn', 'data-testid': hint.testId,
+        onclick: () => {
+          hinted = true;
+          box.hidden = false;
+          button.remove();
+        },
+      }, hint.label);
+      wrap.append(button, box);
+    }
+    return wrap;
   }
 
   function answerBlock(card: CardRecord): HTMLElement {

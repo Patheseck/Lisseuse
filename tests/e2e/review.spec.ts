@@ -102,7 +102,8 @@ test.describe('Étape 3 — fiches et révision', () => {
     await page.getByTestId('toc-edit-card').click();
     const editor = page.getByTestId('card-editor');
     await editor.getByText('Étapes dans l’ordre').click();
-    await expect(editor.getByTestId('card-question')).toHaveValue('Quelles sont les étapes, dans l’ordre ?');
+    await expect(editor.getByTestId('card-question')).toHaveValue('Quelles sont les étapes de …, dans l’ordre ?');
+    await editor.getByTestId('card-question').fill('Quelles sont les étapes de la photosynthèse, dans l’ordre ?');
     await editor.getByRole('button', { name: 'Reprendre le passage' }).click();
     await expect(editor.getByTestId('card-steps')).toHaveValue('Absorption de la lumière.\nPhotolyse de l\'eau.\nCycle de Calvin.');
     await editor.getByTestId('card-save').click();
@@ -128,7 +129,7 @@ test.describe('Étape 3 — fiches et révision', () => {
     await page.getByTestId('book-item').getByRole('button').first().click();
     await page.locator('mark.hl').first().click();
     await page.getByTestId('edit-card').click();
-    await page.getByTestId('card-editor').getByTestId('card-question').fill('Q ?');
+    await page.getByTestId('card-editor').getByTestId('card-question').fill('Comment la photosynthèse transforme-t-elle la lumière ?');
     await page.getByTestId('card-editor').getByTestId('card-answer').fill('R.');
     await page.getByTestId('card-save').click();
     await page.locator('mark.hl-card').first().click();
@@ -139,5 +140,47 @@ test.describe('Étape 3 — fiches et révision', () => {
     await page.getByTestId('remove-highlight').click();
     await page.getByRole('dialog').getByRole('button', { name: 'Retirer' }).click();
     await expect(page.locator('mark.hl')).toHaveCount(0);
+  });
+
+  test('une question vague est signalée avant l’enregistrement', async ({ page }) => {
+    await selectText(page, 'La photosynthèse transforme', 'chlorophylle.');
+    await page.getByTestId('card-from-selection').click();
+    const editor = page.getByTestId('card-editor');
+    await expect(editor.getByRole('button', { name: 'Idée principale' })).toHaveCount(0);
+    await editor.getByTestId('card-question').fill('Quelle est l’idée principale de ce passage ?');
+    await editor.getByTestId('card-answer').fill('La lumière devient énergie chimique.');
+    await editor.getByTestId('card-save').click();
+    await expect(editor.getByTestId('question-warning')).toContainText('n’importe quel passage');
+    await expect(editor.getByTestId('card-save')).toHaveText('Enregistrer quand même');
+
+    // Une question précise fait disparaître l'avertissement.
+    await editor.getByTestId('card-question').fill('Que transforme la photosynthèse, et grâce à quoi ?');
+    await expect(editor.getByTestId('card-save')).toHaveText('Enregistrer');
+    await editor.getByTestId('card-save').click();
+    await expect(editor).toHaveCount(0);
+
+    // Doublon : même question sur un autre passage.
+    await selectText(page, 'Absorption', 'lumière.');
+    await page.getByTestId('card-from-selection').click();
+    await page.getByTestId('card-question').fill('Que transforme la photosynthèse, et grâce à quoi ?');
+    await page.getByTestId('card-answer').fill('Autre chose.');
+    await page.getByTestId('card-save').click();
+    await expect(page.getByTestId('card-editor').getByTestId('question-warning')).toContainText('déjà exactement');
+    // Choix assumé : « Enregistrer quand même ».
+    await page.getByTestId('card-save').click();
+    await expect(page.getByTestId('card-editor')).toHaveCount(0);
+    await expect(page.locator('mark.hl-card')).not.toHaveCount(0);
+  });
+
+  test('en révision : le chapitre est indiqué, et le début du passage sert d’indice', async ({ page }) => {
+    await createQaCard(page);
+    await page.getByTestId('back').click();
+    await page.getByTestId('start-review').click();
+    await expect(page.getByTestId('review-chapter')).toHaveText('Photosynthèse');
+    await expect(page.getByTestId('show-start-text')).toBeHidden();
+    await page.getByTestId('show-start').click();
+    await expect(page.getByTestId('show-start-text')).toHaveText('« La photosynthèse transforme la lumière en … »');
+    await page.getByTestId('confidence-2').click();
+    await page.getByTestId('grade-3').click();
   });
 });

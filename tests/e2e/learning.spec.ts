@@ -127,14 +127,14 @@ test.describe('Étape 5 — apprentissage actif', () => {
 
     await page.getByTestId('back').click();
     await page.getByTestId('start-review').click();
-    await expect(page.getByTestId('review-hint')).toBeHidden();
+    await expect(page.getByTestId('show-hint-text')).toBeHidden();
     await page.getByTestId('show-hint').click();
-    await expect(page.getByTestId('review-hint')).toHaveText('📍 Le balcon · n° 0 · Zorro lui-même · Zorro · tranche');
+    await expect(page.getByTestId('show-hint-text')).toHaveText('📍 Le balcon · n° 0 · Zorro lui-même · Zorro · tranche');
   });
 
   test('tableau de bord : 4 indicateurs et réglage des nouvelles fiches', async ({ page }) => {
     await openBook(page);
-    await createCard(page, 'Le sommeil', 'apprentissages.', 'Rôle du sommeil ?', 'Consolider.');
+    await createCard(page, 'Le sommeil', 'apprentissages.', 'Quel est le rôle du sommeil ?', 'Consolider.');
     await page.getByTestId('back').click();
     await page.getByTestId('start-review').click();
     await page.getByTestId('confidence-3').click();

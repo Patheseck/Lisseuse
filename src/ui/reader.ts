@@ -2,7 +2,7 @@ import { openBook, type OpenedBook } from '../book/service';
 import { errorMessage, logError } from '../core/errors';
 import { anchorFromOffsets, anchorFromRange, locate, unwrap, wrapRange } from '../reader/anchor';
 import { htmlToText, type SearchHit } from '../reader/search';
-import { deleteCard, demoteCard, listCards, newCard, putCard, type CardRecord } from '../storage/cards';
+import { deleteCard, demoteCard, listAllCards, listCards, newCard, putCard, type CardRecord } from '../storage/cards';
 import { editCard, type CardEditorOptions } from './card-editor';
 import { nextFreeNumber } from '../core/mnemonic';
 import { getProgress, saveProgress, touchBook } from '../storage/library';
@@ -240,9 +240,14 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
     selectionBar.style.left = `${left}px`;
   }
 
-  async function editorOptions(): Promise<CardEditorOptions> {
-    const mojor = await loadMojorTable().catch(() => new Map());
-    return { mojor, suggestedNumber: nextFreeNumber(cards.map((c) => c.mnemonic?.number)) };
+  /** Options de l'éditeur ; `editing` est exclue de la recherche de doublons. */
+  async function editorOptions(editing: CardRecord): Promise<CardEditorOptions> {
+    const [mojor, all] = await Promise.all([loadMojorTable().catch(() => new Map()), listAllCards().catch(() => cards)]);
+    return {
+      mojor,
+      suggestedNumber: nextFreeNumber(cards.map((c) => c.mnemonic?.number)),
+      otherQuestions: all.filter((c) => c.kind !== 'highlight' && c.id !== editing.id).map((c) => c.question),
+    };
   }
 
   function markFor(card: CardRecord): HTMLElement {
@@ -276,7 +281,7 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
     }
     let card = newCard(bookId, current, anchor);
     if (asCard) {
-      const edited = await editCard(card, await editorOptions());
+      const edited = await editCard(card, await editorOptions(card));
       if (!edited) return;
       card = edited.card;
     }
@@ -294,7 +299,7 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
 
   async function openEditor(card: CardRecord): Promise<void> {
     hideMarkMenu();
-    const edited = await editCard(card, await editorOptions());
+    const edited = await editCard(card, await editorOptions(card));
     if (!edited) return;
     try {
       if (edited.action === 'demote') await demoteCard(edited.card);

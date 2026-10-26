@@ -15,7 +15,12 @@
 
 .review-progress { font-variant-numeric: tabular-nums; }
 .review-column { max-width: 36rem; margin: 0 auto; padding: 1.25rem 1.1rem 3rem; display: grid; gap: 0.9rem; }
-.review-context { margin: 0; color: var(--muted); font-size: 0.8rem; display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+.review-context { display: grid; gap: 0.2rem; }
+.review-chapter { margin: 0; font-size: 1rem; font-weight: 600; color: var(--accent); }
+.review-book { margin: 0; color: var(--muted); font-size: 0.8rem; display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+.review-hint-wrap { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.3rem 0.9rem; }
+.review-hint-wrap .review-hint { flex-basis: 100%; }
+.hint-label { color: var(--muted); font-size: 0.82rem; }
 .review-question { margin: 0; font-family: var(--font-read); font-weight: 600; font-size: 1.3rem; line-height: 1.35; }
 .review-ask { margin: 0.3rem 0 0; }
 .confidence { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; }
@@ -95,3 +100,5 @@ ol.review-answer { padding-left: 1.3rem; white-space: normal; }
 .recall-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.2rem; }
 .recall-item { display: grid; gap: 0.1rem; padding: 0.3rem 0; border-bottom: 1px solid var(--border); }
 .recall-item .link-btn { margin-left: 2rem; }
+.form-warning { color: var(--ink); background: color-mix(in srgb, var(--accent) 12%, var(--panel)); border-left: 3px solid var(--accent); padding: 0.5rem 0.7rem; border-radius: 0 8px 8px 0; }
+.form-warning { margin: 0; font-size: 0.85rem; } .form-warning[hidden] { display: none; }

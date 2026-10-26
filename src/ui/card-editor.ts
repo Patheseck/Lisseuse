@@ -1,4 +1,5 @@
 import { coachTips, emptyMnemonic, fillFromTable, hasMnemonic, type MojorTable } from '../core/mnemonic';
+import { questionWarning } from '../core/question';
 import { newSrs } from '../core/scheduler';
 import type { CardKind, CardRecord, Mnemonic } from '../storage/cards';
 import { clear, h } from './dom';
@@ -10,9 +11,8 @@ const TEMPLATES: { label: string; text: string }[] = [
   { label: 'Qu’est-ce que… ?', text: 'Qu’est-ce que ' },
   { label: 'Quelle différence… ?', text: 'Quelle est la différence entre  et  ?' },
   { label: 'Comment… ?', text: 'Comment ' },
-  { label: 'Idée principale', text: 'Quelle est l’idée principale de ce passage ?' },
 ];
-const SEQUENCE_QUESTION = 'Quelles sont les étapes, dans l’ordre ?';
+const SEQUENCE_QUESTION = 'Quelles sont les étapes de …, dans l’ordre ?';
 
 export interface CardEditorResult {
   action: 'save' | 'demote';
@@ -35,6 +35,8 @@ export interface CardEditorOptions {
   mojor?: MojorTable;
   /** Numéro proposé pour un nouvel aide-mémoire (prochain libre). */
   suggestedNumber?: number | null;
+  /** Questions des autres fiches, pour signaler un doublon. */
+  otherQuestions?: string[];
 }
 
 export function editCard(source: CardRecord, options: CardEditorOptions = {}): Promise<CardEditorResult | null> {
@@ -100,7 +102,12 @@ export function editCard(source: CardRecord, options: CardEditorOptions = {}): P
       input.addEventListener('change', () => {
         if (!input.checked) return;
         kind = value;
-        if (kind === 'sequence' && !question.value.trim()) question.value = SEQUENCE_QUESTION;
+        if (kind === 'sequence' && !question.value.trim()) {
+          question.value = SEQUENCE_QUESTION;
+          const gap = SEQUENCE_QUESTION.indexOf('…');
+          question.focus();
+          question.setSelectionRange(gap, gap + 1);
+        }
         if (kind === 'qa' && question.value === SEQUENCE_QUESTION) question.value = '';
         syncKind();
       });
@@ -161,6 +168,16 @@ export function editCard(source: CardRecord, options: CardEditorOptions = {}): P
       }
     });
 
+    let warnedFor: string | null = null;
+    // Avertissement placé juste sous la question, pour rester visible pendant la correction.
+    const questionNote = h('p', { className: 'form-warning', role: 'alert', 'data-testid': 'question-warning', hidden: true });
+    const saveButton = h('button', { type: 'button', className: 'btn btn-primary', 'data-testid': 'card-save', onclick: () => save() }, 'Enregistrer');
+    question.addEventListener('input', () => {
+      if (warnedFor !== null && question.value.trim() !== warnedFor) {
+        saveButton.textContent = 'Enregistrer';
+        questionNote.hidden = true;
+      }
+    });
     const save = () => {
       const q = question.value.trim();
       const a = answer.value.trim();
@@ -169,6 +186,17 @@ export function editCard(source: CardRecord, options: CardEditorOptions = {}): P
       if (problem) {
         error.textContent = problem;
         error.hidden = false;
+        return;
+      }
+      // Question vague ou en double : on prévient une fois ; un second appui enregistre quand même.
+      const warning = questionWarning(q, options.otherQuestions ?? []);
+      if (warning && warnedFor !== q) {
+        warnedFor = q;
+        questionNote.textContent = warning;
+        questionNote.hidden = false;
+        saveButton.textContent = 'Enregistrer quand même';
+        question.focus();
+        questionNote.scrollIntoView({ block: 'nearest' });
         return;
       }
       const now = Date.now();
@@ -193,7 +221,7 @@ export function editCard(source: CardRecord, options: CardEditorOptions = {}): P
     sheet.body.append(
       h('blockquote', { className: 'passage' }, source.anchor.quote),
       kindSwitch,
-      h('div', { className: 'field' }, h('span', { className: 'field-label' }, 'Question'), chips, question),
+      h('div', { className: 'field' }, h('span', { className: 'field-label' }, 'Question'), chips, question, questionNote),
       qaFields,
       seqFields,
       mnemonicSection,
@@ -210,7 +238,7 @@ export function editCard(source: CardRecord, options: CardEditorOptions = {}): P
           }, 'Supprimer la fiche')
           : null,
         h('button', { type: 'button', className: 'btn', onclick: () => sheet.close() }, 'Annuler'),
-        h('button', { type: 'button', className: 'btn btn-primary', 'data-testid': 'card-save', onclick: save }, 'Enregistrer'),
+        saveButton,
       ),
     );
     sheet.open();
