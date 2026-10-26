@@ -11,7 +11,7 @@ Application Android via Capacitor.
 ## Avancement V6
 
 - [x] Étape 1 — Socle : Vite + TypeScript, IndexedDB, bibliothèque, import EPUB/Markdown, lecteur minimal, tests, CI
-- [ ] Étape 2 — Lecteur complet (sommaire, recherche, réglages, surlignage)
+- [x] Étape 2 — Lecteur complet (sommaire, recherche, réglages, surlignage, mode concentration)
 - [ ] Étape 3 — Fiches et révision FSRS
 - [ ] Étape 4 — Migration V5.7 et sauvegarde
 - [ ] Étape 5 — Rappel de fin de chapitre, pré-questions, mnémotechnique, tableau de bord
@@ -37,7 +37,8 @@ Première exécution des tests de parcours : `npx playwright install chromium`.
 
 ```
 src/book/      analyse EPUB et Markdown, nettoyage HTML (DOMPurify)
-src/storage/   base IndexedDB (livres, chapitres, progression…)
+src/reader/    logique du lecteur : ancrage des surlignages, recherche
+src/storage/   base IndexedDB (livres, chapitres, progression, surlignages, réglages)
 src/ui/        écrans (bibliothèque, lecteur) et composants
 src/styles/    jetons de design (thème clair/sombre) et styles par écran
 tests/unit/    tests Vitest

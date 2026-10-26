@@ -20,3 +20,43 @@
 .reader-content blockquote { margin: 1em 0; padding-left: 1em; border-left: 3px solid var(--border); color: var(--muted); }
 .reader-content pre { overflow-x: auto; padding: 0.8em; background: var(--panel); border-radius: 6px; font-size: 0.85em; }
 .reader-content table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; }
+
+.reader-heading { flex: 1; min-width: 0; display: grid; line-height: 1.25; }
+.reader-book, .reader-chapter { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.reader-book { font-weight: 600; font-size: 0.95rem; }
+.reader-chapter { font-size: 0.75rem; color: var(--muted); }
+.reader-tools { display: flex; }
+.reader-tools[hidden] { display: none; }
+.bottombar .btn { display: inline-flex; align-items: center; gap: 0.2rem; }
+
+.reader-content mark.hl { background: var(--hl); color: inherit; border-radius: 2px; cursor: pointer; }
+.reader-content mark.flash { background: var(--flash); color: inherit; border-radius: 2px; transition: background 0.6s; }
+
+.selection-bar, .mark-menu {
+  position: fixed;
+  z-index: 50;
+  display: flex;
+  gap: 0.4rem;
+  padding: 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: 0 8px 24px var(--shadow);
+}
+.selection-bar[hidden], .mark-menu[hidden] { display: none; }
+.selection-bar .btn, .mark-menu .btn { display: inline-flex; align-items: center; gap: 0.35rem; }
+
+/* Mode concentration : seules la colonne de texte et une sortie discrète restent. */
+.focus-exit { display: none; }
+.reader.focus-mode { grid-template-rows: 0 1fr 0; }
+.reader.focus-mode .topbar, .reader.focus-mode .bottombar { display: none; }
+.reader.focus-mode .focus-exit {
+  display: inline-flex;
+  position: fixed;
+  top: calc(var(--safe-top) + 8px);
+  right: 8px;
+  z-index: 40;
+  background: var(--panel);
+  opacity: 0.55;
+}
+.reader.focus-mode .focus-exit:hover, .reader.focus-mode .focus-exit:focus-visible { opacity: 1; }

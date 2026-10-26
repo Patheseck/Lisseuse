@@ -8,8 +8,10 @@ import './styles/tokens.css';
 import './styles/base.css';
 import './styles/library.css';
 import './styles/reader.css';
+import './styles/sheet.css';
 
 import { logError } from './core/errors';
+import { applyReaderSettings, loadReaderSettings } from './storage/settings';
 import { toast } from './ui/feedback';
 import { libraryScreen } from './ui/library';
 import { readerScreen } from './ui/reader';
@@ -36,4 +38,8 @@ function navigate(route: Route): void {
   document.documentElement.dataset.screen = route.name;
 }
 
-navigate({ name: 'library' });
+// Réglages (thème, taille…) appliqués avant le premier écran ; en cas d'échec, valeurs par défaut.
+loadReaderSettings()
+  .then(applyReaderSettings)
+  .catch((err: unknown) => logError('réglages', err))
+  .finally(() => navigate({ name: 'library' }));

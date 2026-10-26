@@ -53,3 +53,10 @@
   --shadow: rgba(0, 0, 0, 0.45);
   color-scheme: dark;
 }
+
+/* Couleur de surlignage : lisible en clair comme en sombre. */
+:root { --hl: rgba(232, 180, 60, 0.38); --flash: rgba(160, 88, 26, 0.35); }
+:root[data-theme='dark'] { --hl: rgba(217, 149, 75, 0.32); --flash: rgba(217, 149, 75, 0.5); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) { --hl: rgba(217, 149, 75, 0.32); --flash: rgba(217, 149, 75, 0.5); }
+}

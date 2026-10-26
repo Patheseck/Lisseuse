@@ -1,5 +1,6 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import { makeEpub3 } from '../fixtures/make-epub';
+import { importFile, watchErrors } from './helpers';
 
 const MARKDOWN = `# Chapitre un
 
@@ -11,20 +12,6 @@ ${'Un paragraphe de remplissage pour faire défiler le chapitre. '.repeat(200)}
 
 Fin du chapitre deux.
 `;
-
-/** Collecte les erreurs JavaScript et console : un test échoue s'il y en a. */
-function watchErrors(page: Page): string[] {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => {
-    if (m.type() === 'error') errors.push(m.text());
-  });
-  return errors;
-}
-
-async function importFile(page: Page, name: string, mimeType: string, buffer: Buffer): Promise<void> {
-  await page.getByTestId('file-input').setInputFiles({ name, mimeType, buffer });
-}
 
 test.describe('Étape 1 — démarrage et bibliothèque', () => {
   let errors: string[];
