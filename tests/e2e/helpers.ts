@@ -41,15 +41,18 @@ export async function selectText(page: Page, from: string, to: string): Promise<
   );
 }
 
-/** Tap sur la zone de lecture à une position relative (0 à 1). */
-export async function tapReader(page: Page, xFrac: number, yFrac = 0.5): Promise<void> {
+/**
+ * Tap sur la zone de lecture à une position relative (0 à 1). Par défaut assez haut :
+ * dans un chapitre court, l'encadré « Fin du chapitre » et son bouton occupent le centre.
+ */
+export async function tapReader(page: Page, xFrac: number, yFrac = 0.3): Promise<void> {
   const box = (await page.locator('.reader-scroll').boundingBox())!;
   await page.mouse.click(box.x + box.width * xFrac, box.y + box.height * yFrac);
 }
 
 /** Cache les menus du lecteur s'ils sont affichés (tap au centre). */
 export async function hideChrome(page: Page): Promise<void> {
-  if (!(await page.locator('.reader.chrome-hidden').count())) await tapReader(page, 0.5);
+  if (!(await page.locator('.reader.chrome-hidden').count())) await tapReader(page, 0.5, 0.3);
   await page.locator('.reader.chrome-hidden').waitFor();
 }
 
