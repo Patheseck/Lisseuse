@@ -3,9 +3,12 @@ import { errorMessage, logError } from '../core/errors';
 import { anchorFromOffsets, anchorFromRange, locate, unwrap, wrapRange } from '../reader/anchor';
 import { htmlToText, type SearchHit } from '../reader/search';
 import { deleteCard, demoteCard, listCards, newCard, putCard, type CardRecord } from '../storage/cards';
-import { editCard } from './card-editor';
+import { editCard, type CardEditorOptions } from './card-editor';
+import { nextFreeNumber } from '../core/mnemonic';
 import { getProgress, saveProgress, touchBook } from '../storage/library';
-import { loadReaderSettings } from '../storage/settings';
+import { loadMojorTable, loadReaderSettings } from '../storage/settings';
+import { addRecall, listRecalls, markPretest, pretestDates, type RecallRecord } from '../storage/learning';
+import { chapterHeadings, chapterRecall, pretest } from './chapter-practice';
 import { clear, h } from './dom';
 import { confirmDialog, toast } from './feedback';
 import { icon } from './icons';
@@ -35,7 +38,10 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
   const bookTitle = h('span', { className: 'reader-book', 'data-testid': 'reader-title' }, 'Chargement…');
   const chapterTitle = h('span', { className: 'reader-chapter', 'data-testid': 'reader-chapter' });
   const content = h('article', { className: 'reader-content', 'data-testid': 'reader-content', lang: 'fr' });
-  const scroller = h('main', { className: 'scroll reader-scroll' }, h('div', { className: 'reader-column' }, content));
+  const pretestBox = h('aside', { className: 'chapter-box', 'data-testid': 'pretest-box', hidden: true });
+  const chapterEnd = h('aside', { className: 'chapter-box chapter-end', 'data-testid': 'chapter-end', hidden: true });
+  const scroller = h('main', { className: 'scroll reader-scroll' }, h('div', { className: 'reader-column' }, pretestBox, content, chapterEnd));
+  const dismissedPretests = new Set<number>();
   const prev = h('button', { type: 'button', className: 'btn', 'data-testid': 'prev-chapter', 'aria-label': 'Chapitre précédent', onclick: () => go(current - 1) }, icon('chevronLeft'), 'Précédent');
   const next = h('button', { type: 'button', className: 'btn', 'data-testid': 'next-chapter', 'aria-label': 'Chapitre suivant', onclick: () => go(current + 1) }, 'Suivant', icon('chevronRight'));
   const position = h('span', { className: 'muted', 'data-testid': 'chapter-position' });
@@ -126,12 +132,76 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
     position.textContent = `${index + 1} / ${opened.chapters.length}`;
     prev.disabled = index === 0;
     next.disabled = index === opened.chapters.length - 1;
+    void renderChapterExtras(index);
     requestAnimationFrame(() => {
       const max = scroller.scrollHeight - scroller.clientHeight;
       scroller.scrollTop = Math.max(0, (opts.offset ?? 0) * max);
       opts.after?.();
       persist();
     });
+  }
+
+  // ---------- Exercices de chapitre : pré-questions et rappel libre ----------
+  const PRETEST_GAP_MS = 12 * 3600 * 1000;
+  const PRETEST_MAX = 5;
+
+  function chapterCards(index: number): CardRecord[] {
+    return cards.filter((c) => c.chapter === index);
+  }
+
+  async function renderChapterExtras(index: number): Promise<void> {
+    const [recalls, pretests] = await Promise.all([listRecalls(bookId), pretestDates(bookId)]).catch(() => [[], {}] as [RecallRecord[], Record<string, number>]);
+    if (index !== current) return;
+    const questions = chapterCards(index).filter((c) => c.kind !== 'highlight');
+    const last = pretests[index];
+    clear(pretestBox);
+    pretestBox.hidden = !(questions.length && !dismissedPretests.has(index) && (!last || Date.now() - last > PRETEST_GAP_MS));
+    if (!pretestBox.hidden) {
+      const n = Math.min(PRETEST_MAX, questions.length);
+      pretestBox.append(
+        h('p', {}, h('strong', {}, 'Avant de relire ce chapitre'), ` : ${n} question${n > 1 ? 's' : ''} (≈ 1 min). Se tester avant de lire aide à mieux retenir, même en se trompant.`),
+        h('div', { className: 'chapter-box-actions' },
+          h('button', { type: 'button', className: 'btn', onclick: () => { dismissedPretests.add(index); pretestBox.hidden = true; } }, 'Plus tard'),
+          h('button', { type: 'button', className: 'btn btn-primary', 'data-testid': 'start-pretest', onclick: () => void runPretest(index) }, 'Me tester'),
+        ),
+      );
+    }
+    const previous = recalls.filter((r) => r.chapter === index).at(-1);
+    clear(chapterEnd);
+    chapterEnd.hidden = false;
+    chapterEnd.append(
+      h('p', {}, h('strong', {}, 'Fin du chapitre.'), ' Avant de continuer : 2 minutes pour écrire ce dont tu te souviens, sans regarder.'),
+      previous ? h('p', { className: 'hint' }, `Dernier rappel : ${previous.found} / ${previous.total} idées retrouvées, le ${new Date(previous.at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })}.`) : '',
+      h('div', { className: 'chapter-box-actions' },
+        h('button', { type: 'button', className: 'btn btn-primary', 'data-testid': 'start-recall', onclick: () => void runRecall(index) }, icon('timer'), 'Faire un rappel libre'),
+      ),
+    );
+  }
+
+  async function runPretest(index: number): Promise<void> {
+    const questions = chapterCards(index).filter((c) => c.kind !== 'highlight').sort(() => Math.random() - 0.5).slice(0, PRETEST_MAX);
+    const completed = await pretest(questions);
+    dismissedPretests.add(index);
+    pretestBox.hidden = true;
+    if (completed) await markPretest(bookId, index).catch((err: unknown) => logError('pré-questions', err));
+  }
+
+  async function runRecall(index: number): Promise<void> {
+    const result = await chapterRecall({
+      chapterLabel: opened?.chapters[index]?.label ?? `Chapitre ${index + 1}`,
+      passages: chapterCards(index),
+      headings: chapterHeadings(opened?.chapters[index]?.html ?? ''),
+      onCreateCard: (card) => void openEditor(card),
+    });
+    if (!result) return;
+    try {
+      await addRecall(bookId, { chapter: index, at: Date.now(), ...result });
+      toast(result.total ? `Rappel enregistré : ${result.found} / ${result.total} idées retrouvées.` : 'Rappel enregistré.');
+      if (index === current) void renderChapterExtras(index);
+    } catch (err) {
+      logError('rappel libre', err);
+      toast(`Rappel non enregistré : ${errorMessage(err)}`, 'error');
+    }
   }
 
   function flash(start: number, end: number): void {
@@ -168,6 +238,11 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
     selectionBar.style.left = `${left}px`;
   }
 
+  async function editorOptions(): Promise<CardEditorOptions> {
+    const mojor = await loadMojorTable().catch(() => new Map());
+    return { mojor, suggestedNumber: nextFreeNumber(cards.map((c) => c.mnemonic?.number)) };
+  }
+
   function markFor(card: CardRecord): HTMLElement {
     return h('mark', { className: card.kind === 'highlight' ? 'hl' : 'hl hl-card', 'data-card-id': card.id, tabindex: 0 });
   }
@@ -199,7 +274,7 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
     }
     let card = newCard(bookId, current, anchor);
     if (asCard) {
-      const edited = await editCard(card);
+      const edited = await editCard(card, await editorOptions());
       if (!edited) return;
       card = edited.card;
     }
@@ -217,7 +292,7 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
 
   async function openEditor(card: CardRecord): Promise<void> {
     hideMarkMenu();
-    const edited = await editCard(card);
+    const edited = await editCard(card, await editorOptions());
     if (!edited) return;
     try {
       if (edited.action === 'demote') await demoteCard(edited.card);

@@ -1,0 +1,31 @@
+.stats-column { max-width: 40rem; margin: 0 auto; padding: 1rem 1rem 3rem; display: grid; gap: 0.9rem; }
+.stats-totals { margin: 0; font-size: 0.85rem; }
+.stat-card { display: grid; gap: 0.6rem; padding: 1rem; border: 1px solid var(--border); border-radius: 14px; background: var(--panel); }
+.stat-card h2 { margin: 0; font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+.stat-card .hint { margin: 0; }
+.hero { margin: 0; color: var(--muted); }
+.hero strong { font-size: 2rem; line-height: 1; color: var(--ink); font-variant-numeric: tabular-nums; margin-right: 0.15rem; }
+
+/* Colonnes (7 jours) : une série, barres ≤ 24 px, sommet arrondi, base carrée sur la ligne de base. */
+.cols { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; height: 122px; }
+.col { display: grid; grid-template-rows: 18px 1fr auto; justify-items: center; min-width: 0; }
+.col-value { font-size: 0.75rem; color: var(--ink); font-variant-numeric: tabular-nums; align-self: end; }
+.col-bar { align-self: end; width: min(24px, 70%); min-height: 2px; background: var(--accent); border-radius: 4px 4px 0 0; }
+.col-label { width: 100%; padding-top: 0.25rem; border-top: 1px solid var(--border); text-align: center; font-size: 0.7rem; color: var(--muted); }
+
+/* Jauge de rétention avec repère de la cible */
+.meter { position: relative; height: 10px; border-radius: 5px; background: var(--border); }
+.meter-fill { position: absolute; inset: 0 auto 0 0; border-radius: 5px; background: var(--accent); }
+.meter-target { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--ink); }
+
+/* Barres horizontales (calibration) */
+.hbars { display: grid; gap: 0.55rem; }
+.hbar { display: grid; grid-template-columns: 7.5rem 1fr 5.5rem; align-items: center; gap: 0.5rem; font-size: 0.85rem; }
+.hbar-track { height: 12px; border-radius: 0 4px 4px 0; background: var(--border); overflow: hidden; }
+.hbar-fill { display: block; height: 100%; background: var(--accent); border-radius: 0 4px 4px 0; }
+.hbar-value { color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
+
+/* Bande des 30 jours */
+.strip { display: grid; grid-template-columns: repeat(30, 1fr); gap: 2px; }
+.cell { aspect-ratio: 1; border-radius: 2px; background: var(--border); }
+.cell.on { background: var(--accent); }

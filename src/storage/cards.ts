@@ -58,6 +58,8 @@ export interface ReviewRecord {
   stabilityBefore: number;
   stabilityAfter: number;
   dueAfter: number;
+  /** L'aide-mémoire a été consulté avant de répondre. */
+  hinted?: boolean;
 }
 
 export function newCard(bookId: string, chapter: number, anchor: TextAnchor): CardRecord {

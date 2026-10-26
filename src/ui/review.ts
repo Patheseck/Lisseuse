@@ -1,4 +1,5 @@
 import { errorMessage, logError } from '../core/errors';
+import { hasMnemonic, hintText } from '../core/mnemonic';
 import { formatInterval, GRADE_LABELS, GRADES, preview, rate, type Grade4 } from '../core/scheduler';
 import { planSession, shouldRequeue } from '../core/session';
 import { listAllCards, listReviews, recordReview, type CardRecord, type Confidence, type ReviewRecord } from '../storage/cards';
@@ -43,6 +44,7 @@ export function reviewScreen(navigate: Navigate): Screen {
   let total = 0;
   const outcomes: Outcome[] = [];
   let shownAt = 0;
+  let hinted = false;
   let keyHandler: ((e: KeyboardEvent) => void) | null = null;
 
   const progress = h('span', { className: 'muted review-progress', 'data-testid': 'review-progress' });
@@ -71,6 +73,22 @@ export function reviewScreen(navigate: Navigate): Screen {
       ` ${titles.get(card.bookId) ?? 'Livre'}${chapter ? ` · ${chapter}` : ''}`);
   }
 
+  /** Indice tiré de l'aide-mémoire : le lieu et l'image, jamais la réponse. */
+  function hintButton(card: CardRecord): HTMLElement | null {
+    if (!hasMnemonic(card.mnemonic)) return null;
+    const text = hintText(card.mnemonic);
+    const box = h('p', { className: 'review-hint', 'data-testid': 'review-hint', hidden: true }, text);
+    const button = h('button', {
+      type: 'button', className: 'link-btn', 'data-testid': 'show-hint',
+      onclick: () => {
+        hinted = true;
+        box.hidden = false;
+        button.remove();
+      },
+    }, 'Bloqué ? Voir mon indice');
+    return h('div', { className: 'review-hint-wrap' }, button, box);
+  }
+
   function answerBlock(card: CardRecord): HTMLElement {
     return card.kind === 'sequence'
       ? h('ol', { className: 'review-answer', 'data-testid': 'review-answer' }, ...card.steps.map((s) => h('li', {}, s)))
@@ -85,14 +103,16 @@ export function reviewScreen(navigate: Navigate): Screen {
     }
     progress.textContent = `${Math.min(done + 1, total)} / ${total}`;
     shownAt = Date.now();
+    hinted = false;
     const attempt = h('textarea', {
       className: 'input textarea', rows: 4, 'aria-label': 'Ta réponse', 'data-testid': 'review-attempt',
       placeholder: card.kind === 'sequence' ? 'Écris les étapes dont tu te souviens, dans l’ordre…' : 'Écris ce dont tu te souviens avant de regarder…',
     });
     clear(body);
-    body.append(
+    add(body,
       context(card),
       h('h2', { className: 'review-question', 'data-testid': 'review-question' }, card.question),
+      hintButton(card),
       attempt,
       h('p', { className: 'field-label review-ask' }, 'Avant de voir la réponse : quelle est ta confiance ?'),
       h('div', { className: 'confidence', role: 'group', 'aria-label': 'Confiance' },
@@ -136,7 +156,7 @@ export function reviewScreen(navigate: Navigate): Screen {
     const updated: CardRecord = { ...card, srs: after, updatedAt: now };
     const review: ReviewRecord = {
       cardId: card.id, bookId: card.bookId, at: now, grade: g, confidence,
-      durationMs: now - shownAt, answer: attempt,
+      durationMs: now - shownAt, answer: attempt, ...(hinted ? { hinted: true } : {}),
       stateBefore: before.state, stabilityBefore: before.stability, stabilityAfter: after.stability, dueAfter: after.due,
     };
     try {

@@ -14,7 +14,7 @@ Application Android via Capacitor.
 - [x] Étape 2 — Lecteur complet (sommaire, recherche, réglages, surlignage, mode concentration)
 - [x] Étape 3 — Fiches question-réponse et étapes, révision FSRS-6 (confiance, réapprentissage, entrelacement)
 - [x] Étape 4 — Reprise automatique des données V5.7, sauvegarde/restauration par fusion (livres inclus en option, chiffrement)
-- [ ] Étape 5 — Rappel de fin de chapitre, pré-questions, mnémotechnique, tableau de bord
+- [x] Étape 5 — Rappel libre de fin de chapitre, pré-questions, aide-mémoire (Mojor, palais mental), tableau de bord « Ma mémoire »
 - [ ] Étape 6 — Android natif et APK
 
 ## Développement

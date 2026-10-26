@@ -75,3 +75,23 @@ ol.review-answer { padding-left: 1.3rem; white-space: normal; }
 /* Fiche dans le texte : surlignage + soulignement pointillé */
 .reader-content mark.hl-card { box-shadow: inset 0 -2px 0 var(--accent); }
 .pill-muted { border-color: var(--border); color: var(--muted); }
+.review-hint { margin: 0.2rem 0 0; padding: 0.55rem 0.75rem; border-radius: var(--radius); background: color-mix(in srgb, var(--accent) 10%, var(--panel)); font-size: 0.92rem; }
+.review-hint[hidden] { display: none; }
+
+/* Aide-mémoire dans l'éditeur */
+.mnemonic { border: 1px solid var(--border); border-radius: var(--radius); padding: 0.6rem 0.8rem; }
+.mnemonic > summary, .mn-more > summary { cursor: pointer; min-height: 32px; font-weight: 500; }
+.mnemonic[open] { display: grid; gap: 0.6rem; }
+.mn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem 0.6rem; }
+.mn-more > summary { font-weight: 400; color: var(--muted); font-size: 0.85rem; }
+.learning-coach { padding: 0.6rem 0.75rem; border-radius: var(--radius); background: var(--bg); font-size: 0.85rem; }
+.coach { margin: 0.3rem 0 0; padding-left: 1.1rem; display: grid; gap: 0.2rem; }
+
+/* Rappel libre */
+.recall-head { display: flex; justify-content: space-between; align-items: center; margin: 0; color: var(--muted); font-size: 0.85rem; }
+.clock { font-size: 1.6rem; font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
+.clock.done { color: var(--accent); }
+.recall-text { min-height: 12rem; }
+.recall-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.2rem; }
+.recall-item { display: grid; gap: 0.1rem; padding: 0.3rem 0; border-bottom: 1px solid var(--border); }
+.recall-item .link-btn { margin-left: 2rem; }

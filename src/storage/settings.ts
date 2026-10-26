@@ -1,3 +1,4 @@
+import { normalizeMojorTable, tableToJson, type MojorTable } from '../core/mnemonic';
 import { promisify, tx } from './db';
 
 export type Theme = 'auto' | 'light' | 'dark';
@@ -96,4 +97,14 @@ export async function saveReviewSettings(settings: ReviewSettings): Promise<void
   await tx(['settings'], 'readwrite', (t) => {
     t.objectStore('settings').put({ key: 'review', value: normalizeReviewSettings(settings) });
   });
+}
+
+// ---------- Table Mojor ----------
+
+export async function loadMojorTable(): Promise<MojorTable> {
+  return normalizeMojorTable(await getSetting('mojor'));
+}
+
+export async function saveMojorTable(table: MojorTable): Promise<void> {
+  await putSetting('mojor', tableToJson(table));
 }

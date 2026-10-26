@@ -26,6 +26,7 @@ export function libraryScreen(navigate: Navigate): Screen {
     h('header', { className: 'topbar' },
       h('h1', { className: 'topbar-title' }, 'Bibliothèque'),
       h('button', { type: 'button', className: 'btn btn-primary', onclick: () => fileInput.click() }, '+ Importer'),
+      h('button', { type: 'button', className: 'icon-btn', 'aria-label': 'Ma mémoire : tableau de bord', 'data-testid': 'open-stats', onclick: () => navigate({ name: 'stats' }) }, icon('chart')),
       h('button', { type: 'button', className: 'icon-btn', 'aria-label': 'Mes données : sauvegarde et restauration', 'data-testid': 'open-data', onclick: () => openData() }, icon('more')),
     ),
     h('main', { className: 'scroll' }, body),

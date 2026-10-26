@@ -1,6 +1,7 @@
+import { coachTips, emptyMnemonic, fillFromTable, hasMnemonic, type MojorTable } from '../core/mnemonic';
 import { newSrs } from '../core/scheduler';
-import type { CardKind, CardRecord } from '../storage/cards';
-import { h } from './dom';
+import type { CardKind, CardRecord, Mnemonic } from '../storage/cards';
+import { clear, h } from './dom';
 import { createSheet } from './sheet';
 
 // Modèles de questions favorisant l'élaboration (« pourquoi », « quelle différence »…).
@@ -29,7 +30,14 @@ export function splitSteps(text: string): string[] {
  * Feuille de création / modification d'une fiche à partir d'un passage surligné.
  * Résout avec la fiche à enregistrer, ou null si l'utilisateur annule.
  */
-export function editCard(source: CardRecord): Promise<CardEditorResult | null> {
+export interface CardEditorOptions {
+  /** Table Mojor importée (vide si aucune). */
+  mojor?: MojorTable;
+  /** Numéro proposé pour un nouvel aide-mémoire (prochain libre). */
+  suggestedNumber?: number | null;
+}
+
+export function editCard(source: CardRecord, options: CardEditorOptions = {}): Promise<CardEditorResult | null> {
   const isCard = source.kind !== 'highlight';
   let kind: Exclude<CardKind, 'highlight'> = source.kind === 'sequence' ? 'sequence' : 'qa';
 
@@ -100,6 +108,59 @@ export function editCard(source: CardRecord): Promise<CardEditorResult | null> {
     }
     syncKind();
 
+    // ---------- Aide-mémoire (facultatif) ----------
+    const mojor = options.mojor ?? new Map();
+    const initial = source.mnemonic ?? emptyMnemonic();
+    const field = (key: keyof Omit<Mnemonic, 'number'>, label: string, placeholder: string) => {
+      const input = h('input', { type: 'text', className: 'input', 'aria-label': label, placeholder, 'data-testid': `mn-${key}`, value: initial[key] });
+      return { key, input, el: h('label', { className: 'field' }, h('span', { className: 'field-label' }, label), input) };
+    };
+    const numberInput = h('input', { type: 'number', className: 'input', min: 0, max: 999, inputmode: 'numeric', 'aria-label': 'Numéro Mojor', 'data-testid': 'mn-number', value: initial.number ?? '' });
+    const fields = [
+      field('place', 'Lieu du palais', 'ex. : la porte de ma cuisine'),
+      field('word', 'Image', 'ex. : une lampe géante'),
+      field('verb', 'Action', 'ex. : explose en confettis'),
+      field('person', 'Personnage', 'ex. : mon voisin'),
+      field('object', 'Objet', ''),
+      field('color', 'Couleur', ''),
+      field('sound', 'Son', ''),
+    ];
+    const coach = h('ul', { className: 'coach', 'aria-live': 'polite', 'data-testid': 'mn-coach' });
+    const readMnemonic = (): Mnemonic => {
+      const m = emptyMnemonic();
+      const n = Number.parseInt(numberInput.value, 10);
+      m.number = Number.isInteger(n) && n >= 0 ? n : null;
+      for (const f of fields) m[f.key] = f.input.value.trim();
+      return m;
+    };
+    const refreshCoach = () => {
+      clear(coach);
+      coachTips(readMnemonic(), kind).forEach((t) => coach.append(h('li', {}, t)));
+    };
+    numberInput.addEventListener('change', () => {
+      const filled = fillFromTable(readMnemonic(), mojor);
+      for (const f of fields) f.input.value = filled[f.key];
+      refreshCoach();
+    });
+    fields.forEach((f) => f.input.addEventListener('input', refreshCoach));
+    refreshCoach();
+    const mnemonicSection = h('details', { className: 'mnemonic', 'data-testid': 'mnemonic-section', open: hasMnemonic(source.mnemonic) },
+      h('summary', {}, 'Aide-mémoire (facultatif)'),
+      h('p', { className: 'hint' }, 'Associe la fiche à une image dans un lieu familier (méthode des lieux). Surtout utile pour les listes et les étapes.'),
+      h('div', { className: 'mn-grid' },
+        h('label', { className: 'field' }, h('span', { className: 'field-label' }, mojor.size ? `Numéro Mojor (table : ${mojor.size} entrées)` : 'Numéro Mojor'), numberInput),
+        ...fields.slice(0, 4).map((f) => f.el),
+      ),
+      h('details', { className: 'mn-more' }, h('summary', {}, 'Plus de détails'), h('div', { className: 'mn-grid' }, ...fields.slice(4).map((f) => f.el))),
+      h('div', { className: 'learning-coach' }, h('strong', {}, 'Coach d’encodage'), coach),
+    );
+    mnemonicSection.addEventListener('toggle', () => {
+      if (mnemonicSection.open && !numberInput.value && !hasMnemonic(readMnemonic()) && options.suggestedNumber !== undefined && options.suggestedNumber !== null) {
+        numberInput.value = String(options.suggestedNumber);
+        numberInput.dispatchEvent(new Event('change'));
+      }
+    });
+
     const save = () => {
       const q = question.value.trim();
       const a = answer.value.trim();
@@ -111,15 +172,18 @@ export function editCard(source: CardRecord): Promise<CardEditorResult | null> {
         return;
       }
       const now = Date.now();
+      // L'aide-mémoire est retiré si tous ses champs ont été vidés.
+      const { mnemonic: _previous, ...rest } = source;
       result = {
         action: 'save',
         card: {
-          ...source,
+          ...rest,
           kind,
           question: q,
           answer: kind === 'qa' ? a : '',
           steps: kind === 'sequence' ? s : [],
           srs: source.srs ?? newSrs(now),
+          ...mnemonicPatch(readMnemonic()),
           updatedAt: now,
         },
       };
@@ -132,6 +196,7 @@ export function editCard(source: CardRecord): Promise<CardEditorResult | null> {
       h('div', { className: 'field' }, h('span', { className: 'field-label' }, 'Question'), chips, question),
       qaFields,
       seqFields,
+      mnemonicSection,
       h('p', { className: 'hint' }, 'Formuler toi-même la question et la réponse aide déjà à retenir.'),
       error,
       h('div', { className: 'sheet-actions' },
@@ -151,4 +216,9 @@ export function editCard(source: CardRecord): Promise<CardEditorResult | null> {
     sheet.open();
     (kind === 'qa' && !question.value ? question : kind === 'sequence' ? steps : answer).focus();
   });
+}
+
+/** Garde l'aide-mémoire seulement s'il contient quelque chose. */
+function mnemonicPatch(m: Mnemonic): { mnemonic?: Mnemonic } {
+  return hasMnemonic(m) ? { mnemonic: m } : {};
 }

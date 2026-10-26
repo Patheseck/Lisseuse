@@ -90,8 +90,10 @@ export async function putChapterCache(cache: ChapterCache): Promise<void> {
 
 /** Supprime un livre et tout ce qui s'y rattache (chapitres, progression, fiches, révisions). */
 export async function deleteBook(id: string): Promise<void> {
-  await tx(['books', 'chapters', 'progress', 'cards', 'reviews'], 'readwrite', async (t) => {
+  await tx(['books', 'chapters', 'progress', 'cards', 'reviews', 'settings'], 'readwrite', async (t) => {
     t.objectStore('books').delete(id);
+    t.objectStore('settings').delete(`recall:${id}`);
+    t.objectStore('settings').delete(`pretest:${id}`);
     t.objectStore('chapters').delete(id);
     t.objectStore('progress').delete(id);
     const cardKeys = await promisify(t.objectStore('cards').index('bookId').getAllKeys(id));

@@ -10,6 +10,7 @@ import './styles/library.css';
 import './styles/reader.css';
 import './styles/sheet.css';
 import './styles/review.css';
+import './styles/stats.css';
 
 import { logError } from './core/errors';
 import { applyReaderSettings, loadReaderSettings } from './storage/settings';
@@ -19,6 +20,7 @@ import { toast, withBusy } from './ui/feedback';
 import { libraryScreen } from './ui/library';
 import { readerScreen } from './ui/reader';
 import { reviewScreen } from './ui/review';
+import { statsScreen } from './ui/stats';
 import type { Route, Screen } from './ui/screen';
 
 window.addEventListener('error', (e) => {
@@ -37,7 +39,7 @@ let screen: Screen | null = null;
 
 function navigate(route: Route): void {
   screen?.destroy();
-  screen = route.name === 'reader' ? readerScreen(route.bookId, navigate) : route.name === 'review' ? reviewScreen(navigate) : libraryScreen(navigate);
+  screen = route.name === 'reader' ? readerScreen(route.bookId, navigate) : route.name === 'review' ? reviewScreen(navigate) : route.name === 'stats' ? statsScreen(navigate) : libraryScreen(navigate);
   root!.replaceChildren(screen.el);
   document.documentElement.dataset.screen = route.name;
 }
