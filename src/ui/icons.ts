@@ -8,6 +8,9 @@ const PATHS = {
   close: 'M6 6l12 12M18 6L6 18',
   trash: 'M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3',
   highlight: 'M4 20h7M14 4l6 6-9 9H5v-6z',
+  card: 'M4 5h16v14H4zM8 10h8M8 14h5',
+  check: 'M5 12l5 5 9-10',
+  review: 'M4 12a8 8 0 0 1 14-5.3M20 12a8 8 0 0 1-14 5.3M18 3v4h-4M6 21v-4h4',
   chevronLeft: 'M15 18l-6-6 6-6',
   chevronRight: 'M9 18l6-6-6-6',
 } as const;

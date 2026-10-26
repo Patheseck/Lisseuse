@@ -1,6 +1,11 @@
 import { importBook } from '../book/service';
 import { errorMessage, logError } from '../core/errors';
+import { planSession } from '../core/session';
+import { listAllCards, listReviews, type CardRecord } from '../storage/cards';
 import { deleteBook, listBooks, listProgress, percentRead, type BookRecord, type ProgressRecord } from '../storage/library';
+import { loadReviewSettings } from '../storage/settings';
+import { icon } from './icons';
+import { formatDue } from './review';
 import { clear, h } from './dom';
 import { confirmDialog, toast, withBusy } from './feedback';
 import type { Navigate, Screen } from './screen';
@@ -99,7 +104,7 @@ export function libraryScreen(navigate: Navigate): Screen {
             toast(`Suppression impossible : ${errorMessage(err)}`, 'error');
           }
         },
-      }, '🗑'),
+      }, icon('trash')),
     );
   }
 
@@ -112,8 +117,24 @@ export function libraryScreen(navigate: Navigate): Screen {
     );
   }
 
+  function reviewBanner(books: BookRecord[], cards: CardRecord[], reviews: Awaited<ReturnType<typeof listReviews>>, newPerDay: number): HTMLElement | null {
+    const known = new Set(books.map((b) => b.id));
+    const reviewable = cards.filter((c) => c.kind !== 'highlight' && c.srs && known.has(c.bookId));
+    if (!reviewable.length) return null;
+    const plan = planSession(reviewable, reviews, { now: Date.now(), newPerDay });
+    const count = plan.queue.length;
+    const detail = [plan.dueCount ? `${plan.dueCount} à revoir` : '', plan.newCount ? `${plan.newCount} nouvelle${plan.newCount > 1 ? 's' : ''}` : ''].filter(Boolean).join(' · ');
+    return h('section', { className: `review-banner${count ? ' is-due' : ''}`, 'data-testid': 'review-banner' },
+      h('div', {},
+        h('strong', {}, count ? `${count} fiche${count > 1 ? 's' : ''} à réviser` : 'Tout est à jour'),
+        h('span', { className: 'muted' }, count ? detail : plan.nextDue ? `Prochaine révision ${formatDue(plan.nextDue)}` : ''),
+      ),
+      count ? h('button', { type: 'button', className: 'btn btn-primary', 'data-testid': 'start-review', onclick: () => navigate({ name: 'review' }) }, icon('review'), 'Réviser') : null,
+    );
+  }
+
   async function render(): Promise<void> {
-    const [books, progress] = await Promise.all([listBooks(), listProgress()]);
+    const [books, progress, cards, reviews, reviewSettings] = await Promise.all([listBooks(), listProgress(), listAllCards(), listReviews(), loadReviewSettings()]);
     revokeCovers();
     clear(body);
     if (!books.length) {
@@ -137,6 +158,8 @@ export function libraryScreen(navigate: Navigate): Screen {
       });
       body.append(search);
     }
+    const banner = reviewBanner(books, cards, reviews, reviewSettings.newPerDay);
+    if (banner) body.append(banner);
     body.append(list);
     renderList();
   }

@@ -11,6 +11,7 @@ export interface TocOptions {
   orphans: () => Set<string>;
   onChapter: (index: number) => void;
   onCard: (card: CardRecord) => void;
+  onEditCard: (card: CardRecord) => void;
   onDeleteCard: (card: CardRecord) => void;
 }
 
@@ -32,7 +33,7 @@ export function readerTocSheet(o: TocOptions): Sheet & { refresh(): void } {
   function refresh(): void {
     const cards = o.cards();
     clear(tabs);
-    tabs.append(tabButton('chapters', 'Chapitres'), tabButton('highlights', `Surlignages (${cards.length})`));
+    tabs.append(tabButton('chapters', 'Chapitres'), tabButton('highlights', `Passages (${cards.length})`));
     clear(panel);
     if (tab === 'chapters') {
       const list = h('ol', { className: 'toc-list' });
@@ -49,7 +50,7 @@ export function readerTocSheet(o: TocOptions): Sheet & { refresh(): void } {
       return;
     }
     if (!cards.length) {
-      panel.append(h('p', { className: 'muted toc-empty' }, 'Sélectionne un passage dans le texte puis touche « Surligner » pour le retrouver ici.'));
+      panel.append(h('p', { className: 'muted toc-empty' }, 'Sélectionne un passage dans le texte, puis touche « Surligner » ou « Créer une fiche » pour le retrouver ici.'));
       return;
     }
     const orphans = o.orphans();
@@ -59,7 +60,9 @@ export function readerTocSheet(o: TocOptions): Sheet & { refresh(): void } {
         h('button', { type: 'button', className: 'hl-open', onclick: () => { sheet.close(); o.onCard(card); } },
           h('span', { className: 'hl-chapter' }, o.labels()[card.chapter] ?? `Chapitre ${card.chapter + 1}`, orphans.has(card.id) ? ' · passage introuvable' : ''),
           h('span', { className: 'hl-quote' }, card.anchor.quote.length > 220 ? `${card.anchor.quote.slice(0, 220)}…` : card.anchor.quote),
+          card.kind !== 'highlight' ? h('span', { className: 'hl-question' }, h('span', { className: 'pill' }, 'Fiche'), card.question) : null,
         ),
+        h('button', { type: 'button', className: 'icon-btn', 'aria-label': card.kind === 'highlight' ? 'Créer une fiche' : 'Modifier la fiche', 'data-testid': 'toc-edit-card', onclick: () => { sheet.close(); o.onEditCard(card); } }, icon('card')),
         h('button', { type: 'button', className: 'icon-btn', 'aria-label': 'Retirer ce surlignage', onclick: () => o.onDeleteCard(card) }, icon('trash')),
       ));
     }

@@ -20,3 +20,8 @@ export function h<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Attrs = 
 export function clear(el: Element): void {
   el.replaceChildren();
 }
+
+/** append() qui ignore les enfants absents (null, undefined, false). */
+export function add(parent: Element, ...children: Child[]): void {
+  for (const child of children) if (child !== null && child !== undefined && child !== false) parent.append(child);
+}

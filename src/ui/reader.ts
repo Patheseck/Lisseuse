@@ -2,11 +2,12 @@ import { openBook, type OpenedBook } from '../book/service';
 import { errorMessage, logError } from '../core/errors';
 import { anchorFromRange, locate, unwrap, wrapRange } from '../reader/anchor';
 import { htmlToText, type SearchHit } from '../reader/search';
-import { deleteCard, listCards, newCard, putCard, type CardRecord } from '../storage/cards';
+import { deleteCard, demoteCard, listCards, newCard, putCard, type CardRecord } from '../storage/cards';
+import { editCard } from './card-editor';
 import { getProgress, saveProgress, touchBook } from '../storage/library';
 import { loadReaderSettings } from '../storage/settings';
 import { clear, h } from './dom';
-import { toast } from './feedback';
+import { confirmDialog, toast } from './feedback';
 import { icon } from './icons';
 import { readerSearchSheet } from './reader-search';
 import { readerSettingsSheet } from './reader-settings';
@@ -42,7 +43,8 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
   const toolButtons = h('div', { className: 'reader-tools' });
   const exitFocus = h('button', { type: 'button', className: 'icon-btn focus-exit', 'aria-label': 'Quitter le mode concentration', 'data-testid': 'exit-focus', onclick: () => setFocus(false) }, icon('focus'));
   const selectionBar = h('div', { className: 'selection-bar', role: 'toolbar', 'aria-label': 'Actions sur la sélection', hidden: true },
-    h('button', { type: 'button', className: 'btn btn-primary', 'data-testid': 'highlight-selection', onmousedown: (e: Event) => e.preventDefault(), onclick: () => void highlightSelection() }, icon('highlight'), 'Surligner'),
+    h('button', { type: 'button', className: 'btn', 'data-testid': 'highlight-selection', onmousedown: (e: Event) => e.preventDefault(), onclick: () => void highlightSelection(false) }, icon('highlight'), 'Surligner'),
+    h('button', { type: 'button', className: 'btn btn-primary', 'data-testid': 'card-from-selection', onmousedown: (e: Event) => e.preventDefault(), onclick: () => void highlightSelection(true) }, icon('card'), 'Créer une fiche'),
   );
   const markMenu = h('div', { className: 'mark-menu', role: 'dialog', 'aria-label': 'Surlignage', hidden: true });
   footer.hidden = true;
@@ -99,7 +101,7 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
         continue;
       }
       orphans.delete(card.id);
-      wrapRange(content, found.start, found.end, () => h('mark', { className: 'hl', 'data-card-id': card.id, tabindex: 0 }));
+      wrapRange(content, found.start, found.end, () => markFor(card));
       if (found.start !== card.anchor.start) {
         // Le passage a bougé (nouvelle analyse du livre) : on mémorise sa nouvelle position.
         card.anchor = { ...card.anchor, start: found.start, end: found.end };
@@ -166,7 +168,24 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
     selectionBar.style.left = `${left}px`;
   }
 
-  async function highlightSelection(): Promise<void> {
+  function markFor(card: CardRecord): HTMLElement {
+    return h('mark', { className: card.kind === 'highlight' ? 'hl' : 'hl hl-card', 'data-card-id': card.id, tabindex: 0 });
+  }
+
+  function sortCards(): void {
+    cards.sort((a, b) => a.chapter - b.chapter || a.anchor.start - b.anchor.start);
+  }
+
+  /** Redessine les marques d'une fiche du chapitre affiché (après création ou modification). */
+  function repaint(card: CardRecord): void {
+    unwrap(content, `mark.hl[data-card-id="${CSS.escape(card.id)}"]`);
+    if (card.chapter !== current) return;
+    const found = locate(content.textContent ?? '', card.anchor);
+    if (found) wrapRange(content, found.start, found.end, () => markFor(card));
+  }
+
+  /** Surligne la sélection ; avec `asCard`, ouvre aussitôt l'éditeur de fiche. */
+  async function highlightSelection(asCard: boolean): Promise<void> {
     const range = currentSelectionRange();
     // Les marques existantes ne changent pas le texte : les positions restent exactes.
     const anchor = range ? anchorFromRange(content, range) : null;
@@ -178,25 +197,57 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
       toast('Ce passage chevauche un surlignage existant.');
       return;
     }
-    const card = newCard(bookId, current, anchor);
+    let card = newCard(bookId, current, anchor);
+    if (asCard) {
+      const edited = await editCard(card);
+      if (!edited) return;
+      card = edited.card;
+    }
     try {
       await putCard(card);
-      cards = [...cards, card].sort((a, b) => a.chapter - b.chapter || a.anchor.start - b.anchor.start);
-      wrapRange(content, anchor.start, anchor.end, () => h('mark', { className: 'hl', 'data-card-id': card.id, tabindex: 0 }));
+      cards.push(card);
+      sortCards();
+      repaint(card);
+      if (asCard) toast('Fiche créée : elle te sera proposée en révision.');
     } catch (err) {
       logError('surlignage', err);
-      toast(`Surlignage non enregistré : ${errorMessage(err)}`, 'error');
+      toast(`Enregistrement impossible : ${errorMessage(err)}`, 'error');
+    }
+  }
+
+  async function openEditor(card: CardRecord): Promise<void> {
+    hideMarkMenu();
+    const edited = await editCard(card);
+    if (!edited) return;
+    try {
+      if (edited.action === 'demote') await demoteCard(edited.card);
+      else await putCard(edited.card);
+      cards = cards.map((c) => (c.id === card.id ? edited.card : c));
+      repaint(edited.card);
+      toc.refresh();
+    } catch (err) {
+      logError('fiche', err);
+      toast(`Enregistrement impossible : ${errorMessage(err)}`, 'error');
     }
   }
 
   async function removeCard(card: CardRecord): Promise<void> {
+    hideMarkMenu();
+    if (card.kind !== 'highlight') {
+      const ok = await confirmDialog({
+        title: 'Retirer ce passage ?',
+        message: 'Le surlignage et sa fiche seront supprimés, avec son historique de révision.',
+        confirmLabel: 'Retirer',
+        danger: true,
+      });
+      if (!ok) return;
+    }
     try {
       await deleteCard(card.id);
       cards = cards.filter((c) => c.id !== card.id);
       orphans.delete(card.id);
       unwrap(content, `mark.hl[data-card-id="${CSS.escape(card.id)}"]`);
       toc.refresh();
-      hideMarkMenu();
     } catch (err) {
       logError('surlignage', err);
       toast(`Suppression impossible : ${errorMessage(err)}`, 'error');
@@ -212,7 +263,8 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
     if (!card) return;
     clear(markMenu);
     markMenu.append(
-      h('button', { type: 'button', className: 'btn', 'data-testid': 'remove-highlight', onclick: () => void removeCard(card) }, icon('trash'), 'Retirer le surlignage'),
+      h('button', { type: 'button', className: 'btn btn-primary', 'data-testid': 'edit-card', onclick: () => void openEditor(card) }, icon('card'), card.kind === 'highlight' ? 'Créer une fiche' : 'Modifier la fiche'),
+      h('button', { type: 'button', className: 'btn', 'data-testid': 'remove-highlight', 'aria-label': 'Retirer le surlignage', onclick: () => void removeCard(card) }, icon('trash')),
     );
     markMenu.hidden = false;
     const rect = mark.getBoundingClientRect();
@@ -237,6 +289,7 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
       if (card.chapter === current) goToCard();
       else go(card.chapter, { after: goToCard });
     },
+    onEditCard: (card) => void openEditor(card),
     onDeleteCard: (card) => void removeCard(card),
   });
   const search = readerSearchSheet({

@@ -97,7 +97,7 @@ test.describe('Étape 2 — lecteur complet', () => {
     await page.getByTestId('book-item').getByRole('button').first().click();
     await expect(page.locator('mark.hl')).toHaveCount(4);
     await page.getByTestId('open-toc').click();
-    await page.getByRole('tab', { name: /Surlignages/ }).click();
+    await page.getByRole('tab', { name: /Passages/ }).click();
     await expect(page.getByTestId('highlight-item')).toHaveCount(1);
     await expect(page.getByTestId('highlight-item')).toContainText('produisent du glucose');
     await page.keyboard.press('Escape');
@@ -115,7 +115,7 @@ test.describe('Étape 2 — lecteur complet', () => {
     await page.getByTestId('highlight-selection').click();
     await page.getByTestId('prev-chapter').click();
     await page.getByTestId('open-toc').click();
-    await page.getByRole('tab', { name: /Surlignages/ }).click();
+    await page.getByRole('tab', { name: /Passages/ }).click();
     await page.getByTestId('highlight-item').getByRole('button').first().click();
     await expect(page.getByTestId('reader-chapter')).toHaveText('Les étapes');
     await expect(page.locator('mark.flash')).toBeInViewport();

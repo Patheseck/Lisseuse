@@ -13,6 +13,8 @@ export interface BookRecord {
   fileName: string;
   cover: Blob | null;
   chapterCount: number;
+  /** Titres des chapitres (absents des livres importés avant l'étape 3). */
+  chapterLabels?: string[];
   addedAt: number;
   lastOpenedAt: number;
 }
@@ -48,6 +50,7 @@ export async function saveBook(id: string, parsed: ParsedBook, file: Blob, fileN
       fileName,
       cover: parsed.cover,
       chapterCount: parsed.chapters.length,
+      chapterLabels: parsed.chapters.map((c) => c.label),
       addedAt: existing?.addedAt ?? now,
       lastOpenedAt: now,
     };

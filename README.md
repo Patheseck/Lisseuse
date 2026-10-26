@@ -12,7 +12,7 @@ Application Android via Capacitor.
 
 - [x] Étape 1 — Socle : Vite + TypeScript, IndexedDB, bibliothèque, import EPUB/Markdown, lecteur minimal, tests, CI
 - [x] Étape 2 — Lecteur complet (sommaire, recherche, réglages, surlignage, mode concentration)
-- [ ] Étape 3 — Fiches et révision FSRS
+- [x] Étape 3 — Fiches question-réponse et étapes, révision FSRS-6 (confiance, réapprentissage, entrelacement)
 - [ ] Étape 4 — Migration V5.7 et sauvegarde
 - [ ] Étape 5 — Rappel de fin de chapitre, pré-questions, mnémotechnique, tableau de bord
 - [ ] Étape 6 — Android natif et APK
@@ -36,6 +36,7 @@ Première exécution des tests de parcours : `npx playwright install chromium`.
 ## Organisation
 
 ```
+src/core/      logique pure : planification FSRS (ts-fsrs), construction des séances
 src/book/      analyse EPUB et Markdown, nettoyage HTML (DOMPurify)
 src/reader/    logique du lecteur : ancrage des surlignages, recherche
 src/storage/   base IndexedDB (livres, chapitres, progression, surlignages, réglages)

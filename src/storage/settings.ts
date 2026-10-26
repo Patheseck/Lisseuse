@@ -55,3 +55,29 @@ export function applyReaderSettings(s: ReaderSettings, root: HTMLElement = docum
   if (s.theme === 'auto') root.removeAttribute('data-theme');
   else root.setAttribute('data-theme', s.theme);
 }
+
+// ---------- Révision ----------
+
+export interface ReviewSettings {
+  /** Nombre maximal de nouvelles fiches introduites par jour (charge de révision soutenable). */
+  newPerDay: number;
+}
+
+export const DEFAULT_REVIEW_SETTINGS: ReviewSettings = { newPerDay: 20 };
+
+export function normalizeReviewSettings(raw: unknown): ReviewSettings {
+  const r = (raw && typeof raw === 'object' ? raw : {}) as Partial<Record<keyof ReviewSettings, unknown>>;
+  const n = typeof r.newPerDay === 'number' && Number.isFinite(r.newPerDay) ? Math.round(r.newPerDay) : DEFAULT_REVIEW_SETTINGS.newPerDay;
+  return { newPerDay: clamp(n, 0, 200) };
+}
+
+export async function loadReviewSettings(): Promise<ReviewSettings> {
+  const row = (await tx(['settings'], 'readonly', (t) => promisify(t.objectStore('settings').get('review')))) as { value?: unknown } | undefined;
+  return normalizeReviewSettings(row?.value);
+}
+
+export async function saveReviewSettings(settings: ReviewSettings): Promise<void> {
+  await tx(['settings'], 'readwrite', (t) => {
+    t.objectStore('settings').put({ key: 'review', value: normalizeReviewSettings(settings) });
+  });
+}

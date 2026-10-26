@@ -4,6 +4,6 @@ export interface Screen {
   destroy(): void;
 }
 
-export type Route = { name: 'library' } | { name: 'reader'; bookId: string };
+export type Route = { name: 'library' } | { name: 'reader'; bookId: string } | { name: 'review' };
 
 export type Navigate = (route: Route) => void;
