@@ -1,0 +1,55 @@
+/* Palette « papier chaud » héritée de la V5, contrastes vérifiés AA. */
+:root {
+  --bg: #f6f1e7;
+  --panel: #fbf8f1;
+  --ink: #2a241c;
+  --muted: #6b6153;
+  --border: #e0d6c2;
+  --accent: #a0581a;
+  --accent-ink: #ffffff;
+  --danger: #b3261e;
+  --danger-ink: #ffffff;
+  --shadow: rgba(42, 36, 28, 0.14);
+
+  --font-ui: 'IBM Plex Sans', system-ui, sans-serif;
+  --font-read: 'Literata', Georgia, serif;
+  --reader-size: 1.125rem;
+  --reader-leading: 1.75;
+  --reader-measure: 40rem;
+
+  --radius: 10px;
+  --bar-h: 52px;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --bg: #17161b;
+    --panel: #1f1e24;
+    --ink: #e9e3d3;
+    --muted: #a39a88;
+    --border: #34323a;
+    --accent: #d9954b;
+    --accent-ink: #1a1508;
+    --danger: #f2b8b5;
+    --danger-ink: #3a0907;
+    --shadow: rgba(0, 0, 0, 0.45);
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme='dark'] {
+  --bg: #17161b;
+  --panel: #1f1e24;
+  --ink: #e9e3d3;
+  --muted: #a39a88;
+  --border: #34323a;
+  --accent: #d9954b;
+  --accent-ink: #1a1508;
+  --danger: #f2b8b5;
+  --danger-ink: #3a0907;
+  --shadow: rgba(0, 0, 0, 0.45);
+  color-scheme: dark;
+}
