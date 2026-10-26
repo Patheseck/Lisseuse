@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { importFile, selectText, watchErrors } from './helpers';
+import { hideChrome, importFile, selectText, tapReader, touchDrag, watchErrors } from './helpers';
 
 const BOOK = `# Introduction
 
@@ -62,8 +62,10 @@ test.describe('Étape 2 — lecteur complet', () => {
     await sheet.getByRole('button', { name: 'Agrandir le texte' }).click();
     await sheet.getByRole('button', { name: 'Agrandir le texte' }).click();
     await expect(sheet.getByTestId('font-size-value')).toHaveText('20');
-    await sheet.getByText('Sombre').click();
-    await sheet.getByText('Sans empattement').click();
+    await sheet.getByText('Nuit', { exact: true }).click();
+    await sheet.getByText('Plex Sans').click();
+    await sheet.getByText('Défilement').click();
+    await sheet.getByTestId('set-justify').uncheck();
     const root = page.locator('html');
     await expect(root).toHaveAttribute('data-theme', 'dark');
     const fontSize = () => page.getByTestId('reader-content').evaluate((el) => getComputedStyle(el).fontSize);
@@ -77,6 +79,8 @@ test.describe('Étape 2 — lecteur complet', () => {
     await expect(page.getByTestId('reader-content')).toBeVisible();
     expect(await fontSize()).toBe('20px');
     expect(await page.getByTestId('reader-content').evaluate((el) => getComputedStyle(el).fontFamily)).toContain('IBM Plex Sans');
+    expect(await page.getByTestId('reader-content').evaluate((el) => getComputedStyle(el).textAlign)).toBe('start');
+    await expect(page.locator('.reader-scroll')).toHaveClass(/layout-scroll/);
   });
 
   test('surligne un passage à cheval sur du gras et de l’italique, le conserve et le retire', async ({ page }) => {
@@ -121,16 +125,46 @@ test.describe('Étape 2 — lecteur complet', () => {
     await expect(page.locator('mark.flash')).toBeInViewport();
   });
 
-  test('mode concentration et navigation au clavier', async ({ page }) => {
-    await page.getByTestId('open-settings').click();
-    await page.getByTestId('focus-mode').click();
-    await expect(page.locator('header.topbar')).toBeHidden();
-    await expect(page.getByTestId('chapter-position')).toBeHidden();
-    await page.keyboard.press('ArrowRight');
+  test('plein écran : menus au tap central, pages au tap et au clavier, chapitres enchaînés', async ({ page }) => {
+    await expect(page.locator('header.reader-chrome')).toBeVisible();
+    await tapReader(page, 0.5);
+    await expect(page.locator('header.reader-chrome')).toBeHidden();
+    await expect(page.getByTestId('status-clock')).toHaveText(/^\d{2}:\d{2}$/);
+    await tapReader(page, 0.5);
+    await expect(page.locator('header.reader-chrome')).toBeVisible();
+
+    // Chapitre « Introduction » : une seule page ; la page suivante est le chapitre suivant.
+    await hideChrome(page);
+    await expect(page.getByTestId('status-page')).toHaveText('1 / 1');
+    await tapReader(page, 0.92);
     await expect(page.getByTestId('reader-chapter')).toHaveText('Les étapes');
-    await page.getByTestId('exit-focus').click();
-    await expect(page.locator('header.topbar')).toBeVisible();
+    await expect(page.getByTestId('status-page')).toHaveText(/^1 \/ [2-9]$/);
+    await page.keyboard.press('ArrowRight');
+    await expect(page.getByTestId('status-page')).toHaveText(/^2 \/ /);
+    await tapReader(page, 0.08);
+    await expect(page.getByTestId('status-page')).toHaveText(/^1 \/ /);
+    // Reculer depuis la première page : fin du chapitre précédent.
     await page.keyboard.press('ArrowLeft');
-    await expect(page.getByTestId('chapter-position')).toHaveText('1 / 3');
+    await expect(page.getByTestId('reader-chapter')).toHaveText('Introduction');
+    await expect(page.getByTestId('status-progress')).toHaveText(/^\d+ %/);
+  });
+
+  test('gestes tactiles : glisser pour tourner, bord gauche pour la luminosité', async ({ page }) => {
+    await page.getByTestId('next-chapter').click();
+    await hideChrome(page);
+    await expect(page.getByTestId('status-page')).toHaveText(/^1 \//);
+    await touchDrag(page, [0.8, 0.5], [0.2, 0.52]);
+    await expect(page.getByTestId('status-page')).toHaveText(/^2 \//);
+    await touchDrag(page, [0.3, 0.5], [0.85, 0.5]);
+    await expect(page.getByTestId('status-page')).toHaveText(/^1 \//);
+    // Petit glisser : la page revient en place.
+    await touchDrag(page, [0.6, 0.5], [0.55, 0.5]);
+    await expect(page.getByTestId('status-page')).toHaveText(/^1 \//);
+
+    // Glisser vers le bas sur le bord gauche : moins de lumière (voile plus opaque).
+    await touchDrag(page, [0.05, 0.3], [0.05, 0.7], 200);
+    const dim = await page.locator('html').evaluate((el) => Number(el.style.getPropertyValue('--dim')));
+    expect(dim).toBeGreaterThan(0.2);
+    await expect(page.getByTestId('status-page')).toHaveText(/^1 \//);
   });
 });

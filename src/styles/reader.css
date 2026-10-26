@@ -1,19 +1,97 @@
+/* ---------- Lecteur plein écran : le texte occupe tout, les menus se superposent ---------- */
+:root { --status-h: 1.9rem; }
+.screen.reader { display: block; position: relative; overflow: hidden; }
+.reader .reader-scroll { position: absolute; inset: 0; }
+.reader-chrome {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  transition: transform 0.22s ease, opacity 0.22s ease, visibility 0s;
+}
+header.reader-chrome { top: 0; box-shadow: 0 1px 0 var(--border); border-bottom: 0; }
+footer.reader-chrome { bottom: calc(var(--status-h) + var(--safe-bottom)); min-height: var(--bar-h); padding-bottom: 0; box-shadow: 0 -1px 0 var(--border); border-top: 0; }
+.reader.chrome-hidden .reader-chrome { opacity: 0; visibility: hidden; pointer-events: none; transition: transform 0.22s ease, opacity 0.22s ease, visibility 0s 0.22s; }
+.reader.chrome-hidden header.reader-chrome { transform: translateY(-100%); }
+.reader.chrome-hidden footer.reader-chrome { transform: translateY(100%); }
+
+.status-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 5;
+  height: calc(var(--status-h) + var(--safe-bottom));
+  padding: 0 max(1.1rem, env(safe-area-inset-right, 0px)) var(--safe-bottom) max(1.1rem, env(safe-area-inset-left, 0px));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+/* Luminosité propre à l'app (voile noir), et son indicateur pendant le geste. */
+.dim-layer { position: absolute; inset: 0; z-index: 30; background: #000; opacity: var(--dim, 0); pointer-events: none; }
+.brightness-badge {
+  position: absolute;
+  top: 40%;
+  left: 50%;
+  z-index: 31;
+  transform: translateX(-50%);
+  padding: 0.5rem 0.9rem;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--bg);
+  font-size: 0.85rem;
+  pointer-events: none;
+}
+.brightness-badge[hidden] { display: none; }
+
+/* Défilement continu */
 .reader-column {
   max-width: var(--reader-measure);
   margin: 0 auto;
-  padding: 1.6rem 1.25rem 5rem;
+  padding: calc(var(--bar-h) + var(--safe-top) + 1rem) 1.25rem calc(var(--status-h) + var(--safe-bottom) + 3rem);
 }
+
+/* Pages : une colonne CSS = un écran ; la colonne glisse horizontalement. */
+.reader-scroll.layout-paged { overflow: hidden; touch-action: pan-y pinch-zoom; }
+.reader-scroll.layout-paged .reader-column {
+  max-width: none;
+  height: 100%;
+  margin: 0;
+  padding-top: calc(var(--safe-top) + 1.5rem);
+  padding-bottom: calc(var(--status-h) + var(--safe-bottom) + 0.75rem);
+  column-fill: auto;
+  transition: transform 0.3s cubic-bezier(0.2, 0.7, 0.2, 1);
+  will-change: transform;
+}
+.reader-scroll.layout-paged .reader-column.no-anim { transition: none; }
+.layout-paged .reader-content img { width: auto; max-width: 100%; max-height: calc(100dvh - 8rem); object-fit: contain; }
+.layout-paged .reader-content img, .layout-paged .reader-content pre, .layout-paged .reader-content blockquote, .layout-paged .chapter-box { break-inside: avoid; }
+.layout-paged .reader-content h1, .layout-paged .reader-content h2, .layout-paged .reader-content h3 { break-after: avoid; }
+.layout-paged .chapter-box:first-child { margin-top: 0; }
 .reader-content {
   font-family: var(--font-read);
   font-size: var(--reader-size);
   line-height: var(--reader-leading);
+  text-align: var(--reader-align, start);
   overflow-wrap: break-word;
   hyphens: auto;
+  -webkit-hyphens: auto;
 }
+.reader-content p { margin: 0 0 var(--para-space, 0.9em); text-indent: var(--para-indent, 0); }
+.reader-content h1 + p, .reader-content h2 + p, .reader-content h3 + p { text-indent: 0; }
 .reader-content h1, .reader-content h2, .reader-content h3 { line-height: 1.3; font-weight: 600; margin: 1.6em 0 0.7em; }
 .reader-content h1 { font-size: 1.5em; }
 .reader-content h2 { font-size: 1.25em; }
-.reader-content p { margin: 0 0 1em; }
 .reader-content img { max-width: 100%; height: auto; display: block; margin: 1em auto; border-radius: 4px; }
 .reader-content a { color: var(--accent); }
 .reader-content a[data-chapter], .reader-content a[data-anchor] { cursor: pointer; text-decoration: underline; }
@@ -46,20 +124,7 @@
 .selection-bar[hidden], .mark-menu[hidden] { display: none; }
 .selection-bar .btn, .mark-menu .btn { display: inline-flex; align-items: center; gap: 0.35rem; }
 
-/* Mode concentration : seules la colonne de texte et une sortie discrète restent. */
-.focus-exit { display: none; }
-.reader.focus-mode { grid-template-rows: 0 1fr 0; }
-.reader.focus-mode .topbar, .reader.focus-mode .bottombar { display: none; }
-.reader.focus-mode .focus-exit {
-  display: inline-flex;
-  position: fixed;
-  top: calc(var(--safe-top) + 8px);
-  right: 8px;
-  z-index: 40;
-  background: var(--panel);
-  opacity: 0.55;
-}
-.reader.focus-mode .focus-exit:hover, .reader.focus-mode .focus-exit:focus-visible { opacity: 1; }
+
 
 /* Exercices de chapitre (hors du texte : n'affectent pas l'ancrage des surlignages) */
 .chapter-box { margin: 1.5rem 0; padding: 0.9rem 1rem; border: 1px solid var(--border); border-radius: 14px; background: var(--panel); display: grid; gap: 0.6rem; font-size: 0.92rem; }

@@ -90,7 +90,7 @@ describe('autres conversions', () => {
   });
 
   it('préférences d’affichage', () => {
-    expect(convertPrefs({ fontSize: 21, theme: 'dark', readerFont: 'sans', readerLeading: 1.9, readingMode: 'page' })).toEqual({ fontSize: 21, font: 'sans', leading: 1.9, width: 'normal', theme: 'dark' });
+    expect(convertPrefs({ fontSize: 21, theme: 'dark', readerFont: 'sans', readerLeading: 1.9, readingMode: 'page' })).toMatchObject({ fontSize: 21, font: 'sans', leading: 1.9, width: 'normal', theme: 'dark' });
     expect(convertPrefs({})).toMatchObject({ fontSize: 18, theme: 'auto' });
   });
 

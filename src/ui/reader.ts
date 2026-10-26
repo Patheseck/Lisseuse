@@ -6,7 +6,9 @@ import { deleteCard, demoteCard, listAllCards, listCards, newCard, putCard, type
 import { editCard, type CardEditorOptions } from './card-editor';
 import { nextFreeNumber } from '../core/mnemonic';
 import { getProgress, saveProgress, touchBook } from '../storage/library';
-import { loadMojorTable, loadReaderSettings } from '../storage/settings';
+import { applyReaderSettings, loadMojorTable, loadReaderSettings, saveReaderSettings, BRIGHTNESS_RANGE, type ReaderSettings } from '../storage/settings';
+import { Pager } from '../reader/pager';
+import { applyReaderNative, chapterTick, onVolumeKey, setImmersive } from '../native/reader-native';
 import { addRecall, listRecalls, markPretest, pretestDates, type RecallRecord } from '../storage/learning';
 import { chapterHeadings, chapterRecall, pretest } from './chapter-practice';
 import { clear, h } from './dom';
@@ -22,6 +24,11 @@ import type { Sheet } from './sheet';
 const SAVE_DELAY_MS = 400;
 const SELECTION_DELAY_MS = 150;
 const FLASH_MS = 2500;
+const WORDS_PER_MINUTE = 230;
+/** Zones de tap : le tiers gauche recule, le tiers droit avance, le centre affiche les menus. */
+const TAP_EDGE = 0.3;
+/** Bande du bord gauche où un glisser vertical règle la luminosité (mode pages). */
+const BRIGHTNESS_EDGE = 0.14;
 
 export function readerScreen(bookId: string, navigate: Navigate): Screen {
   let opened: OpenedBook | null = null;
@@ -41,14 +48,23 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
   const content = h('article', { className: 'reader-content', 'data-testid': 'reader-content', lang: 'fr' });
   const pretestBox = h('aside', { className: 'chapter-box', 'data-testid': 'pretest-box', hidden: true });
   const chapterEnd = h('aside', { className: 'chapter-box chapter-end', 'data-testid': 'chapter-end', hidden: true });
-  const scroller = h('main', { className: 'scroll reader-scroll' }, h('div', { className: 'reader-column' }, pretestBox, content, chapterEnd));
+  const column = h('div', { className: 'reader-column' }, pretestBox, content, chapterEnd);
+  const scroller = h('main', { className: 'scroll reader-scroll' }, column);
+  const pager = new Pager(scroller, column, () => onPositionChange());
+  let settings: ReaderSettings | null = null;
+  // Barre d'état discrète, toujours visible : page, heure, progression, temps restant.
+  const statusPage = h('span', { 'data-testid': 'status-page' });
+  const statusClock = h('span', { 'data-testid': 'status-clock' });
+  const statusProgress = h('span', { 'data-testid': 'status-progress' });
+  const statusBar = h('div', { className: 'status-bar', 'aria-hidden': 'true' }, statusPage, statusClock, statusProgress);
+  const dim = h('div', { className: 'dim-layer', 'aria-hidden': 'true' });
+  const brightnessBadge = h('div', { className: 'brightness-badge', 'data-testid': 'brightness-badge', hidden: true });
   const dismissedPretests = new Set<number>();
   const prev = h('button', { type: 'button', className: 'btn', 'data-testid': 'prev-chapter', 'aria-label': 'Chapitre précédent', onclick: () => go(current - 1) }, icon('chevronLeft'), 'Précédent');
   const next = h('button', { type: 'button', className: 'btn', 'data-testid': 'next-chapter', 'aria-label': 'Chapitre suivant', onclick: () => go(current + 1) }, 'Suivant', icon('chevronRight'));
   const position = h('span', { className: 'muted', 'data-testid': 'chapter-position' });
   const footer = h('footer', { className: 'bottombar' }, prev, position, next);
   const toolButtons = h('div', { className: 'reader-tools' });
-  const exitFocus = h('button', { type: 'button', className: 'icon-btn focus-exit', 'aria-label': 'Quitter le mode concentration', 'data-testid': 'exit-focus', onclick: () => setFocus(false) }, icon('focus'));
   const selectionBar = h('div', { className: 'selection-bar', role: 'toolbar', 'aria-label': 'Actions sur la sélection', hidden: true },
     h('button', { type: 'button', className: 'btn', 'data-testid': 'highlight-selection', onmousedown: (e: Event) => e.preventDefault(), onclick: () => void highlightSelection(false) }, icon('highlight'), 'Surligner'),
     h('button', { type: 'button', className: 'btn btn-primary', 'data-testid': 'card-from-selection', onmousedown: (e: Event) => e.preventDefault(), onclick: () => void highlightSelection(true) }, icon('card'), 'Créer une fiche'),
@@ -58,17 +74,20 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
   toolButtons.hidden = true;
 
   const el = h('div', { className: 'screen reader' },
-    h('header', { className: 'topbar' },
+    h('header', { className: 'topbar reader-chrome' },
       h('button', { type: 'button', className: 'icon-btn', 'aria-label': 'Retour à la bibliothèque', 'data-testid': 'back', onclick: () => navigate({ name: 'library' }) }, icon('back')),
       h('div', { className: 'reader-heading' }, bookTitle, chapterTitle),
       toolButtons,
     ),
     scroller,
+    statusBar,
     footer,
-    exitFocus,
+    dim,
+    brightnessBadge,
     selectionBar,
     markMenu,
   );
+  footer.classList.add('reader-chrome');
 
   // ---------- Ressources et rendu ----------
   function resourceUrl(path: string): string | undefined {
@@ -87,9 +106,50 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
   }
 
   function offset(): number {
-    const max = scroller.scrollHeight - scroller.clientHeight;
-    // Un chapitre qui tient entièrement à l'écran est considéré comme lu.
-    return max > 0 ? scroller.scrollTop / max : 1;
+    return pager.offset();
+  }
+
+  // ---------- Position, barre d'état, menus ----------
+  function chapterWords(index: number): number {
+    return (chapterTexts()[index] ?? '').split(/\s+/).filter(Boolean).length;
+  }
+
+  function updateStatus(): void {
+    if (!opened) return;
+    const o = offset();
+    statusPage.textContent = pager.mode === 'paged' ? `${pager.page + 1} / ${pager.pages}` : `${Math.round(o * 100)} %`;
+    statusClock.textContent = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+    const book = Math.round(((current + o) / opened.chapters.length) * 100);
+    const minutes = Math.round((chapterWords(current) * (1 - o)) / WORDS_PER_MINUTE);
+    statusProgress.textContent = `${book} %${o < 1 ? ` · ${minutes < 1 ? '< 1' : minutes} min` : ''}`;
+  }
+
+  function onPositionChange(): void {
+    hideMarkMenu();
+    if (!selectionBar.hidden) updateSelectionBar();
+    updateStatus();
+    if (saveTimer === undefined) saveTimer = window.setTimeout(persist, SAVE_DELAY_MS);
+  }
+
+  /** Menus en surimpression : visibles à l'ouverture, cachés dès qu'on lit. */
+  function setChrome(visible: boolean): void {
+    el.classList.toggle('chrome-hidden', !visible);
+    void setImmersive(!visible);
+  }
+
+  function chromeVisible(): boolean {
+    return !el.classList.contains('chrome-hidden');
+  }
+
+  function turn(dir: 1 | -1): void {
+    if (chromeVisible()) setChrome(false);
+    const moved = dir === 1 ? pager.next() : pager.prev();
+    if (moved) return;
+    // Bord du chapitre : on enchaîne sur le suivant, ou sur la fin du précédent.
+    const target = current + dir;
+    if (!opened || target < 0 || target >= opened.chapters.length) return;
+    void chapterTick();
+    go(target, { offset: dir === 1 ? 0 : 1 });
   }
 
   function persist(): void {
@@ -136,11 +196,13 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
     next.disabled = index === opened.chapters.length - 1;
     void renderChapterExtras(index);
     requestAnimationFrame(() => {
-      const max = scroller.scrollHeight - scroller.clientHeight;
-      scroller.scrollTop = Math.max(0, (opts.offset ?? 0) * max);
+      pager.relayout(opts.offset ?? 0);
       opts.after?.();
       persist();
+      updateStatus();
     });
+    // Les images changent la pagination une fois chargées.
+    content.querySelectorAll('img').forEach((img) => img.addEventListener('load', () => pager.relayout(), { once: true }));
   }
 
   // ---------- Exercices de chapitre : pré-questions et rappel libre ----------
@@ -209,7 +271,7 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
   function flash(start: number, end: number): void {
     unwrap(content, 'mark.flash');
     const marks = wrapRange(content, start, end, () => h('mark', { className: 'flash' }));
-    marks[0]?.scrollIntoView({ block: 'center' });
+    if (marks[0]) pager.reveal(marks[0]);
     window.setTimeout(() => unwrap(content, 'mark.flash'), FLASH_MS);
   }
 
@@ -409,16 +471,14 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
     if (speaking) return stopListening();
     const blocks = readableBlocks();
     // On commence au premier paragraphe visible.
-    const top = scroller.getBoundingClientRect().top;
-    const first = Math.max(0, blocks.findIndex((b) => b.getBoundingClientRect().bottom > top + 8));
-    const queue = blocks.slice(first);
+    const queue = blocks.slice(pager.firstVisible(blocks));
     if (!queue.length) return;
     setSpeaking(true);
     try {
       await speak(queue.map((b) => b.textContent ?? ''), (i) => {
         content.querySelectorAll('.speaking').forEach((el) => el.classList.remove('speaking'));
         queue[i]!.classList.add('speaking');
-        queue[i]!.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        pager.reveal(queue[i]!, true);
       });
     } catch (err) {
       logError('lecture audio', err);
@@ -430,15 +490,20 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
 
   async function openSettings(): Promise<void> {
     if (!settingsSheet) {
-      settingsSheet = readerSettingsSheet(await loadReaderSettings(), { onFocusMode: () => setFocus(true) });
+      settingsSheet = readerSettingsSheet(settings ?? (await loadReaderSettings()), { onChange: applySettings });
       sheets.push(settingsSheet);
     }
     settingsSheet.open();
   }
 
-  function setFocus(on: boolean): void {
-    el.classList.toggle('focus-mode', on);
-    if (on) toast('Mode concentration : touche l’icône en haut à droite pour en sortir.', 'info', 2500);
+  /** Réglages modifiés dans « Aa » : mise en page, puis options Android. */
+  function applySettings(next: ReaderSettings): void {
+    const layoutChanged = settings?.layout !== next.layout;
+    settings = next;
+    if (layoutChanged) pager.setMode(next.layout);
+    else requestAnimationFrame(() => pager.relayout());
+    void applyReaderNative(next);
+    updateStatus();
   }
 
   toolButtons.append(
@@ -463,7 +528,8 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
     const chapter = link.dataset.chapter !== undefined ? Number(link.dataset.chapter) : current;
     const anchor = link.dataset.anchor;
     const reveal = () => {
-      if (anchor) content.querySelector(`[data-anchor-id="${CSS.escape(anchor)}"]`)?.scrollIntoView();
+      const target = anchor ? content.querySelector(`[data-anchor-id="${CSS.escape(anchor)}"]`) : null;
+      if (target) pager.reveal(target);
     };
     if (chapter !== current) go(chapter, { after: reveal });
     else reveal();
@@ -476,11 +542,119 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
     }
   });
 
+  let lastScrollTop = 0;
   scroller.addEventListener('scroll', () => {
-    hideMarkMenu();
-    if (!selectionBar.hidden) updateSelectionBar();
-    if (saveTimer === undefined) saveTimer = window.setTimeout(persist, SAVE_DELAY_MS);
+    if (pager.mode !== 'scroll') return;
+    // Défilement : on cache les menus en descendant, comme dans une liseuse.
+    if (scroller.scrollTop - lastScrollTop > 24 && chromeVisible()) setChrome(false);
+    lastScrollTop = scroller.scrollTop;
+    onPositionChange();
   }, { passive: true });
+
+  // ---------- Gestes : tap, glisser, luminosité ----------
+  let gesture: { id: number; x: number; y: number; t: number; kind: 'pending' | 'swipe' | 'brightness' | 'none'; brightness: number } | null = null;
+  let suppressClick = false;
+
+  function hasSelection(): boolean {
+    const sel = window.getSelection();
+    return !!sel && !sel.isCollapsed;
+  }
+
+  scroller.addEventListener('pointerdown', (e) => {
+    suppressClick = false;
+    if (e.pointerType === 'mouse' || hasSelection() || (e.target as Element).closest('button, a, input, textarea')) {
+      gesture = null;
+      return;
+    }
+    gesture = { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now(), kind: 'pending', brightness: settings?.brightness ?? 1 };
+  });
+  scroller.addEventListener('pointermove', (e) => {
+    if (!gesture || e.pointerId !== gesture.id) return;
+    const dx = e.clientX - gesture.x;
+    const dy = e.clientY - gesture.y;
+    if (gesture.kind === 'pending') {
+      if (hasSelection()) {
+        gesture.kind = 'none';
+      } else if (pager.mode === 'paged' && Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy)) {
+        gesture.kind = 'swipe';
+      } else if (pager.mode === 'paged' && gesture.x < scroller.clientWidth * BRIGHTNESS_EDGE && Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx)) {
+        gesture.kind = 'brightness';
+      } else if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
+        gesture.kind = 'none';
+      }
+    }
+    if (gesture.kind === 'swipe') {
+      suppressClick = true;
+      pager.drag(dx);
+    } else if (gesture.kind === 'brightness' && settings) {
+      suppressClick = true;
+      const value = Math.min(BRIGHTNESS_RANGE.max, Math.max(BRIGHTNESS_RANGE.min, gesture.brightness - dy / (scroller.clientHeight * 0.6)));
+      settings = { ...settings, brightness: Math.round(value * 100) / 100 };
+      applyReaderSettings(settings);
+      brightnessBadge.hidden = false;
+      brightnessBadge.textContent = `Luminosité ${Math.round(settings.brightness * 100)} %`;
+    }
+  });
+  const endGesture = (e: PointerEvent) => {
+    if (!gesture || e.pointerId !== gesture.id) return;
+    const g = gesture;
+    gesture = null;
+    if (g.kind === 'swipe') {
+      const dx = e.clientX - g.x;
+      const dir = pager.release(dx, dx / Math.max(1, performance.now() - g.t));
+      if (dir !== 0 && chromeVisible()) setChrome(false);
+      // Glisser au-delà du bord du chapitre : chapitre voisin.
+      if (dir !== 0 && pager.page === (dir === 1 ? pager.pages - 1 : 0) && Math.abs(dx) > scroller.clientWidth * 0.18) {
+        const atEdge = dir === 1 ? pager.offset() >= 1 : pager.offset() <= 0;
+        if (atEdge) turn(dir);
+      }
+    } else if (g.kind === 'brightness' && settings) {
+      window.setTimeout(() => (brightnessBadge.hidden = true), 700);
+      saveReaderSettings(settings).catch((err: unknown) => logError('réglages', err));
+    }
+  };
+  scroller.addEventListener('pointerup', endGesture);
+  scroller.addEventListener('pointercancel', (e) => {
+    if (gesture?.kind === 'swipe') pager.release(0, 0);
+    endGesture(e);
+  });
+
+  // Tap : bords = pages, centre = menus. Pas pendant une sélection ni sur un élément interactif.
+  scroller.addEventListener('click', (e) => {
+    if (suppressClick) {
+      suppressClick = false;
+      return;
+    }
+    const target = e.target as Element;
+    if (e.defaultPrevented || hasSelection() || target.closest('mark.hl, a, button, input, textarea')) return;
+    if (chromeVisible()) {
+      setChrome(false);
+      return;
+    }
+    const x = (e.clientX - scroller.getBoundingClientRect().left) / scroller.clientWidth;
+    if (x < TAP_EDGE) turn(-1);
+    else if (x > 1 - TAP_EDGE) turn(1);
+    else setChrome(true);
+  });
+
+  // Molette (ordinateur) en mode pages.
+  let wheelLock = 0;
+  scroller.addEventListener('wheel', (e) => {
+    if (pager.mode !== 'paged' || Math.abs(e.deltaY) < 8) return;
+    e.preventDefault();
+    const now = performance.now();
+    if (now < wheelLock) return;
+    wheelLock = now + 350;
+    turn(e.deltaY > 0 ? 1 : -1);
+  }, { passive: false });
+
+  const clockTimer = window.setInterval(updateStatus, 30_000);
+  const resize = new ResizeObserver(() => pager.relayout());
+  resize.observe(scroller);
+  const removeVolume = onVolumeKey((dir) => {
+    if (!sheets.some((s) => s.isOpen)) turn(dir);
+  });
+  void document.fonts?.ready.then(() => pager.relayout());
 
   const onSelectionChange = () => {
     window.clearTimeout(selectionTimer);
@@ -490,9 +664,14 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
     if (sheets.some((s) => s.isOpen) || (e.target as Element).closest?.('input, textarea, select')) return;
     if (e.key === 'Escape') {
       hideMarkMenu();
-      setFocus(false);
-    } else if (e.key === 'ArrowLeft' && !e.altKey) go(current - 1);
-    else if (e.key === 'ArrowRight' && !e.altKey) go(current + 1);
+      setChrome(!chromeVisible());
+    } else if ((e.key === 'ArrowLeft' || e.key === 'PageUp') && !e.altKey) {
+      e.preventDefault();
+      turn(-1);
+    } else if ((e.key === 'ArrowRight' || e.key === 'PageDown' || (e.key === ' ' && pager.mode === 'paged')) && !e.altKey) {
+      e.preventDefault();
+      turn(1);
+    }
   };
   const onPointerDown = (e: PointerEvent) => {
     if (!markMenu.hidden && !markMenu.contains(e.target as Node) && !(e.target as Element).closest('mark.hl')) hideMarkMenu();
@@ -510,6 +689,9 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
   (async () => {
     opened = await openBook(bookId);
     cards = await listCards(bookId);
+    settings = await loadReaderSettings();
+    pager.setMode(settings.layout);
+    void applyReaderNative(settings);
     bookTitle.textContent = opened.book.title;
     footer.hidden = false;
     toolButtons.hidden = false;
@@ -528,10 +710,6 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
   return {
     el,
     onBack() {
-      if (el.classList.contains('focus-mode')) {
-        setFocus(false);
-        return true;
-      }
       if (!markMenu.hidden || !selectionBar.hidden) {
         hideMarkMenu();
         hideSelectionBar();
@@ -541,6 +719,11 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
     },
     destroy() {
       void stopListening();
+      window.clearInterval(clockTimer);
+      resize.disconnect();
+      removeVolume();
+      void applyReaderNative(null);
+      void setImmersive(false);
       if (saveTimer !== undefined) persist();
       window.clearTimeout(selectionTimer);
       cleanup.forEach((fn) => fn());

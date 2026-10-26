@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { makeEpub3 } from '../fixtures/make-epub';
-import { importFile, watchErrors } from './helpers';
+import { hideChrome, importFile, showChrome, tapReader, watchErrors } from './helpers';
 
 const MARKDOWN = `# Chapitre un
 
@@ -38,22 +38,26 @@ test.describe('Étape 1 — démarrage et bibliothèque', () => {
     await page.getByTestId('next-chapter').click();
     await expect(page.getByTestId('reader-content')).toContainText('Fin du chapitre deux');
     await expect(page.getByTestId('next-chapter')).toBeDisabled();
-    await page.locator('.reader-scroll').evaluate((el) => {
-      el.scrollTop = (el.scrollHeight - el.clientHeight) / 2;
-    });
+
+    // Mode pages : on tourne deux pages (tap sur le bord droit).
+    await hideChrome(page);
+    await expect(page.getByTestId('status-page')).toHaveText(/^1 \/ \d+$/);
+    await tapReader(page, 0.9);
+    await tapReader(page, 0.9);
+    await expect(page.getByTestId('status-page')).toHaveText(/^3 \/ \d+$/);
+    const status = await page.getByTestId('status-page').textContent();
     await page.waitForTimeout(600); // enregistrement différé de la position
 
+    await showChrome(page);
     await page.getByTestId('back').click();
     await expect(page.getByTestId('book-meta')).toContainText('2 chapitres');
-    await expect(page.getByTestId('book-meta')).toContainText(/7\d % lu/);
+    await expect(page.getByTestId('book-meta')).toContainText(/[5-9]\d % lu/);
 
     await page.reload();
     await expect(page.getByTestId('book-item')).toHaveCount(1);
     await page.getByTestId('book-item').getByRole('button').first().click();
     await expect(page.getByTestId('chapter-position')).toHaveText('2 / 2');
-    const ratio = await page.locator('.reader-scroll').evaluate((el) => el.scrollTop / (el.scrollHeight - el.clientHeight));
-    expect(ratio).toBeGreaterThan(0.4);
-    expect(ratio).toBeLessThan(0.6);
+    await expect(page.getByTestId('status-page')).toHaveText(status!);
   });
 
   test('importe un EPUB : sommaire, couverture, image, lien interne, contenu neutralisé', async ({ page }) => {

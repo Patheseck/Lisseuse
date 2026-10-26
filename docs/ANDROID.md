@@ -73,6 +73,10 @@ Pour ouvrir le projet dans Android Studio : `npm run android:sync` puis `npx cap
 | Écouter un chapitre | synthèse vocale du téléphone, à partir du paragraphe visible |
 | Rappel quotidien | notification locale à l'heure choisie (Ma mémoire → Réglages) |
 | Bouton retour | ferme le panneau ouvert, puis revient à la bibliothèque |
+| Touches de volume | tournent les pages pendant la lecture (désactivable dans « Aa ») |
+| Écran toujours allumé | pendant la lecture uniquement (désactivable dans « Aa ») |
+| Plein écran | les barres d'Android se masquent avec les menus ; un glisser depuis le bord les fait réapparaître |
+| Vibration | légère, au passage d'un chapitre à l'autre |
 
 ## Note technique : CSP et Capacitor
 

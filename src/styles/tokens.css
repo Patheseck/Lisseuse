@@ -60,3 +60,24 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) { --hl: rgba(217, 149, 75, 0.32); --flash: rgba(217, 149, 75, 0.5); }
 }
+
+/* Thèmes de lecture supplémentaires (choisis dans « Aa »). */
+:root[data-theme='sepia'] {
+  --bg: #f4ecd8; --panel: #f9f3e3; --ink: #4a3b2a; --muted: #7a6650; --border: #e0d2b4;
+  --accent: #9a5414; --accent-ink: #ffffff; --danger: #b3261e; --danger-ink: #ffffff;
+  --shadow: rgba(74, 59, 42, 0.18); --hl: rgba(214, 160, 60, 0.4); --flash: rgba(154, 84, 20, 0.35);
+  color-scheme: light;
+}
+:root[data-theme='gray'] {
+  --bg: #3b3d40; --panel: #45484c; --ink: #e4e2dc; --muted: #b3b0a8; --border: #56595e;
+  --accent: #e0a463; --accent-ink: #1f1a12; --danger: #f2b8b5; --danger-ink: #3a0907;
+  --shadow: rgba(0, 0, 0, 0.4); --hl: rgba(224, 164, 99, 0.32); --flash: rgba(224, 164, 99, 0.5);
+  color-scheme: dark;
+}
+/* Noir pur : économise la batterie des écrans OLED ; texte adouci pour limiter l'éblouissement. */
+:root[data-theme='black'] {
+  --bg: #000000; --panel: #0d0d0f; --ink: #c9c4b8; --muted: #8a857a; --border: #222226;
+  --accent: #d9954b; --accent-ink: #1a1508; --danger: #f2b8b5; --danger-ink: #3a0907;
+  --shadow: rgba(0, 0, 0, 0.6); --hl: rgba(217, 149, 75, 0.28); --flash: rgba(217, 149, 75, 0.45);
+  color-scheme: dark;
+}
