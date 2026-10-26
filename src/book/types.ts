@@ -1,4 +1,5 @@
-export type BookFormat = 'epub' | 'md';
+/** `legacy` : livre d'une très ancienne V5 dont seul le HTML des chapitres a été conservé. */
+export type BookFormat = 'epub' | 'md' | 'legacy';
 
 export interface Chapter {
   /** Libellé affiché dans la table des matières. */

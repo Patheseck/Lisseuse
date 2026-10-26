@@ -122,3 +122,11 @@ export function percentRead(book: Pick<BookRecord, 'chapterCount'>, progress: Pi
   const value = ((progress.chapter + progress.offset) / book.chapterCount) * 100;
   return Math.round(Math.min(100, Math.max(0, value)));
 }
+
+/** Enregistre un livre issu d'une migration ou d'une restauration (dates d'origine conservées). */
+export async function putImportedBook(book: BookRecord, parsed: Pick<ParsedBook, 'chapters' | 'resources'> | null): Promise<void> {
+  await tx(['books', 'chapters'], 'readwrite', (t) => {
+    t.objectStore('books').put(book);
+    if (parsed) t.objectStore('chapters').put({ bookId: book.id, parserVersion: PARSER_VERSION, chapters: parsed.chapters, resources: parsed.resources } satisfies ChapterCache);
+  });
+}

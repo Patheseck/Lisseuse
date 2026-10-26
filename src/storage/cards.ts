@@ -23,6 +23,21 @@ export interface CardRecord {
   steps: string[];
   /** État de révision ; null pour un simple surlignage. */
   srs: SrsState | null;
+  /** Aide-mémoire (table Mojor, palais mental), repris de la V5 ou créé à l'étape 5. */
+  mnemonic?: Mnemonic;
+  /** Fiche reprise de la V5 : sa question a été générée et mérite d'être personnalisée. */
+  origin?: 'v5';
+}
+
+export interface Mnemonic {
+  number: number | null;
+  word: string;
+  verb: string;
+  person: string;
+  place: string;
+  object: string;
+  color: string;
+  sound: string;
 }
 
 /** Confiance annoncée avant de voir la correction. */
@@ -34,7 +49,8 @@ export interface ReviewRecord {
   bookId: string;
   at: number;
   grade: Grade4;
-  confidence: Confidence;
+  /** null pour les révisions reprises de la V5, qui ne demandait pas la confiance. */
+  confidence: Confidence | null;
   durationMs: number;
   /** Réponse écrite par l'utilisateur avant la correction (peut être vide). */
   answer: string;
@@ -60,6 +76,8 @@ export function normalizeCard(raw: Partial<CardRecord> & Pick<CardRecord, 'id' |
     answer: raw.answer ?? '',
     steps: raw.steps ?? [],
     srs: raw.srs ?? null,
+    ...(raw.mnemonic ? { mnemonic: raw.mnemonic } : {}),
+    ...(raw.origin ? { origin: raw.origin } : {}),
     id: raw.id,
     bookId: raw.bookId,
     chapter: raw.chapter,

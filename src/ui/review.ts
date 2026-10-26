@@ -67,6 +67,7 @@ export function reviewScreen(navigate: Navigate): Screen {
     const chapter = labels.get(card.bookId)?.[card.chapter];
     return h('p', { className: 'review-context' },
       h('span', { className: 'pill' }, card.kind === 'sequence' ? 'Étapes' : 'Question'),
+      card.origin === 'v5' ? h('span', { className: 'pill pill-muted', title: 'Question générée lors de la reprise de la V5 : modifie-la depuis le lecteur.' }, 'Reprise V5') : null,
       ` ${titles.get(card.bookId) ?? 'Livre'}${chapter ? ` · ${chapter}` : ''}`);
   }
 

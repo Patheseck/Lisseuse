@@ -1,6 +1,6 @@
 import { openBook, type OpenedBook } from '../book/service';
 import { errorMessage, logError } from '../core/errors';
-import { anchorFromRange, locate, unwrap, wrapRange } from '../reader/anchor';
+import { anchorFromOffsets, anchorFromRange, locate, unwrap, wrapRange } from '../reader/anchor';
 import { htmlToText, type SearchHit } from '../reader/search';
 import { deleteCard, demoteCard, listCards, newCard, putCard, type CardRecord } from '../storage/cards';
 import { editCard } from './card-editor';
@@ -102,9 +102,9 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
       }
       orphans.delete(card.id);
       wrapRange(content, found.start, found.end, () => markFor(card));
-      if (found.start !== card.anchor.start) {
-        // Le passage a bougé (nouvelle analyse du livre) : on mémorise sa nouvelle position.
-        card.anchor = { ...card.anchor, start: found.start, end: found.end };
+      if (found.start !== card.anchor.start || found.end !== card.anchor.end) {
+        // Le passage a bougé (nouvelle analyse du livre, données V5) : on mémorise sa nouvelle position.
+        card.anchor = anchorFromOffsets(text, found.start, found.end);
         putCard({ ...card, updatedAt: Date.now() }).catch((err: unknown) => logError('surlignage', err));
       }
     }

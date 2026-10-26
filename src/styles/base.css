@@ -150,3 +150,7 @@ button { font: inherit; color: inherit; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
+
+.dialog-form { display: grid; gap: 0.75rem; }
+.dialog-form p { margin: 0; }
+.dialog ul { margin: 0 0 1rem; padding-left: 1.2rem; color: var(--muted); }

@@ -13,7 +13,9 @@ import './styles/review.css';
 
 import { logError } from './core/errors';
 import { applyReaderSettings, loadReaderSettings } from './storage/settings';
-import { toast } from './ui/feedback';
+import { migrateDeviceIfNeeded, type ImportReport } from './storage/migrate-v5';
+import { showImportReport } from './ui/data-sheet';
+import { toast, withBusy } from './ui/feedback';
 import { libraryScreen } from './ui/library';
 import { readerScreen } from './ui/reader';
 import { reviewScreen } from './ui/review';
@@ -40,8 +42,26 @@ function navigate(route: Route): void {
   document.documentElement.dataset.screen = route.name;
 }
 
-// Réglages (thème, taille…) appliqués avant le premier écran ; en cas d'échec, valeurs par défaut.
-loadReaderSettings()
-  .then(applyReaderSettings)
-  .catch((err: unknown) => logError('réglages', err))
-  .finally(() => navigate({ name: 'library' }));
+async function start(): Promise<void> {
+  // Premier lancement après la V5.7 : reprise automatique de ses données (jamais modifiées).
+  let report: ImportReport | null = null;
+  try {
+    report = await withBusy('Reprise de tes données de la version précédente…', migrateDeviceIfNeeded);
+  } catch (err) {
+    logError('migration V5', err);
+    toast('Une partie des données de la version précédente n’a pas pu être reprise. Elles restent intactes sur l’appareil.', 'error', 8000);
+  }
+  // Réglages (thème, taille…) appliqués avant le premier écran ; en cas d'échec, valeurs par défaut.
+  try {
+    applyReaderSettings(await loadReaderSettings());
+  } catch (err) {
+    logError('réglages', err);
+  }
+  navigate({ name: 'library' });
+  if (report) {
+    await showImportReport('Bienvenue dans la nouvelle version', 'Tes données de la V5.7 ont été reprises :', report);
+    if (report.cards) toast('Les questions des fiches reprises ont été générées automatiquement : personnalise-les depuis le lecteur.', 'info', 7000);
+  }
+}
+
+void start();

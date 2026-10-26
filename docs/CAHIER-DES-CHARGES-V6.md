@@ -123,8 +123,9 @@ WebView et lit les données V5.7 sur place.
 | `liseuse:review-log` | `reviews` |
 | `liseuse:progress`, `liseuse:prefs`, `liseuse:mojor` | `progress`, `settings` |
 
-Les anciennes clés ne sont supprimées qu'après une migration vérifiée ; une sauvegarde
-JSON automatique est proposée avant migration.
+Les données V5 d'origine ne sont **jamais modifiées ni supprimées** par la migration : elles
+restent sur l'appareil comme filet de sécurité. Une sauvegarde V5 (chiffrée ou non) peut aussi
+être restaurée depuis « Mes données ».
 
 ## 5. Qualité
 

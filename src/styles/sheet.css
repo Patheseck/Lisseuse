@@ -122,3 +122,13 @@
 .segmented input:checked + label { background: var(--accent); color: var(--accent-ink); font-weight: 500; }
 .segmented input:focus-visible + label { outline: 2px solid var(--accent); outline-offset: -2px; }
 .range { width: 100%; accent-color: var(--accent); min-height: 44px; }
+
+/* Mes données */
+.data-section { display: grid; gap: 0.6rem; padding-top: 0.9rem; border-top: 1px solid var(--border); }
+.data-section h3 { margin: 0; font-size: 0.95rem; }
+.data-section summary { cursor: pointer; min-height: 32px; color: var(--muted); }
+.check { display: flex; align-items: flex-start; gap: 0.6rem; min-height: 44px; cursor: pointer; }
+.check input { width: 20px; height: 20px; margin-top: 2px; accent-color: var(--accent); flex: 0 0 auto; }
+.check span { display: grid; gap: 0.1rem; }
+.check small { color: var(--muted); }
+.error-log { margin: 0; padding-left: 1.2rem; font-size: 0.78rem; color: var(--muted); display: grid; gap: 0.3rem; max-height: 14rem; overflow-y: auto; }

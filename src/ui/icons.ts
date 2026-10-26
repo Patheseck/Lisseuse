@@ -11,6 +11,7 @@ const PATHS = {
   card: 'M4 5h16v14H4zM8 10h8M8 14h5',
   check: 'M5 12l5 5 9-10',
   review: 'M4 12a8 8 0 0 1 14-5.3M20 12a8 8 0 0 1-14 5.3M18 3v4h-4M6 21v-4h4',
+  more: 'M12 6h.01M12 12h.01M12 18h.01',
   chevronLeft: 'M15 18l-6-6 6-6',
   chevronRight: 'M9 18l6-6-6-6',
 } as const;

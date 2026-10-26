@@ -6,6 +6,8 @@ import { deleteBook, listBooks, listProgress, percentRead, type BookRecord, type
 import { loadReviewSettings } from '../storage/settings';
 import { icon } from './icons';
 import { formatDue } from './review';
+import { dataSheet } from './data-sheet';
+import type { Sheet } from './sheet';
 import { clear, h } from './dom';
 import { confirmDialog, toast, withBusy } from './feedback';
 import type { Navigate, Screen } from './screen';
@@ -24,6 +26,7 @@ export function libraryScreen(navigate: Navigate): Screen {
     h('header', { className: 'topbar' },
       h('h1', { className: 'topbar-title' }, 'Bibliothèque'),
       h('button', { type: 'button', className: 'btn btn-primary', onclick: () => fileInput.click() }, '+ Importer'),
+      h('button', { type: 'button', className: 'icon-btn', 'aria-label': 'Mes données : sauvegarde et restauration', 'data-testid': 'open-data', onclick: () => openData() }, icon('more')),
     ),
     h('main', { className: 'scroll' }, body),
     fileInput,
@@ -59,6 +62,13 @@ export function libraryScreen(navigate: Navigate): Screen {
     void handleFile(e.dataTransfer?.files[0]);
   });
 
+  let data: Sheet | null = null;
+  function openData(): void {
+    data?.el.remove();
+    data = dataSheet(() => void render());
+    data.open();
+  }
+
   function revokeCovers(): void {
     coverUrls.forEach((u) => URL.revokeObjectURL(u));
     coverUrls = [];
@@ -74,7 +84,7 @@ export function libraryScreen(navigate: Navigate): Screen {
     } else {
       cover = h('span', { className: 'book-cover book-cover-empty', 'aria-hidden': 'true' }, book.title.trim().charAt(0).toUpperCase() || '📖');
     }
-    const meta = [book.format === 'epub' ? 'EPUB' : 'Markdown', `${book.chapterCount} chapitre${book.chapterCount > 1 ? 's' : ''}`, progress ? `${pct} % lu` : 'Pas commencé'];
+    const meta = [book.format === 'epub' ? 'EPUB' : book.format === 'md' ? 'Markdown' : 'Ancien format', `${book.chapterCount} chapitre${book.chapterCount > 1 ? 's' : ''}`, progress ? `${pct} % lu` : 'Pas commencé'];
     return h('li', { className: 'book-item', 'data-testid': 'book-item' },
       h('button', { type: 'button', className: 'book-open', onclick: () => navigate({ name: 'reader', bookId: book.id }) },
         cover,
@@ -170,5 +180,11 @@ export function libraryScreen(navigate: Navigate): Screen {
     body.append(h('p', { className: 'error-box' }, `La bibliothèque n’a pas pu être chargée : ${errorMessage(err)}`));
   });
 
-  return { el, destroy: revokeCovers };
+  return {
+    el,
+    destroy() {
+      revokeCovers();
+      data?.el.remove();
+    },
+  };
 }

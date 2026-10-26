@@ -17,6 +17,22 @@ export const FONT_SIZE_RANGE = { min: 14, max: 28 } as const;
 export const LEADING_RANGE = { min: 1.3, max: 2.1 } as const;
 
 const KEY = 'reader';
+
+/** Lecture / écriture brute d'un réglage (migration, sauvegarde). */
+export async function getSetting(key: string): Promise<unknown> {
+  const row = (await tx(['settings'], 'readonly', (t) => promisify(t.objectStore('settings').get(key)))) as { value?: unknown } | undefined;
+  return row?.value;
+}
+
+export async function putSetting(key: string, value: unknown): Promise<void> {
+  await tx(['settings'], 'readwrite', (t) => {
+    t.objectStore('settings').put({ key, value });
+  });
+}
+
+export async function listSettings(): Promise<{ key: string; value: unknown }[]> {
+  return (await tx(['settings'], 'readonly', (t) => promisify(t.objectStore('settings').getAll()))) as { key: string; value: unknown }[];
+}
 const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n));
 
 /** Valide des réglages venant du stockage ou d'une sauvegarde : toute valeur invalide revient au défaut. */

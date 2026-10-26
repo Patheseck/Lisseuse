@@ -13,7 +13,7 @@ Application Android via Capacitor.
 - [x] Étape 1 — Socle : Vite + TypeScript, IndexedDB, bibliothèque, import EPUB/Markdown, lecteur minimal, tests, CI
 - [x] Étape 2 — Lecteur complet (sommaire, recherche, réglages, surlignage, mode concentration)
 - [x] Étape 3 — Fiches question-réponse et étapes, révision FSRS-6 (confiance, réapprentissage, entrelacement)
-- [ ] Étape 4 — Migration V5.7 et sauvegarde
+- [x] Étape 4 — Reprise automatique des données V5.7, sauvegarde/restauration par fusion (livres inclus en option, chiffrement)
 - [ ] Étape 5 — Rappel de fin de chapitre, pré-questions, mnémotechnique, tableau de bord
 - [ ] Étape 6 — Android natif et APK
 

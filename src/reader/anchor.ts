@@ -53,10 +53,24 @@ function commonPrefixLength(a: string, b: string): number {
   return n;
 }
 
+/**
+ * Recherche tolérante aux espaces : une citation copiée depuis une sélection peut contenir
+ * des retours à la ligne là où le texte a des espaces (ou l'inverse). Sert aux données V5.
+ */
+export function locateLoose(text: string, quote: string, from = 0): { start: number; end: number } | null {
+  const words = quote.trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return null;
+  const re = new RegExp(words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s*'), 'g');
+  re.lastIndex = from;
+  const m = re.exec(text);
+  return m ? { start: m.index, end: m.index + m[0].length } : null;
+}
+
 /** Retrouve la position actuelle d'une ancre dans `text`, ou null si le passage a disparu. */
 export function locate(text: string, anchor: TextAnchor): { start: number; end: number } | null {
   if (!anchor.quote) return null;
   if (text.slice(anchor.start, anchor.end) === anchor.quote) return { start: anchor.start, end: anchor.end };
+  if (!text.includes(anchor.quote)) return locateLoose(text, anchor.quote);
   let best: { start: number; score: number } | null = null;
   for (let i = text.indexOf(anchor.quote); i !== -1; i = text.indexOf(anchor.quote, i + 1)) {
     const context =
