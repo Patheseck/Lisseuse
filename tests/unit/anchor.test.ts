@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { anchorFromOffsets, anchorFromRange, locate, unwrap, wrapRange } from '../../src/reader/anchor';
+import { anchorFromOffsets, anchorFromRange, expandToWords, locate, unwrap, wrapRange } from '../../src/reader/anchor';
 
 function root(html: string): HTMLElement {
   const el = document.createElement('article');
@@ -15,7 +15,7 @@ describe('anchorFromRange', () => {
     range.setStart(el.querySelector('p')!.firstChild!, 2); // " " avant "texte"
     range.setEnd(el.querySelector('em')!.firstChild!, 4);
     const anchor = anchorFromRange(el, range)!;
-    expect(anchor.quote).toBe('texte gras et ital');
+    expect(anchor.quote).toBe('texte gras et italique'); // mot coupé complété
     expect(el.textContent!.slice(anchor.start, anchor.end)).toBe(anchor.quote);
     expect(anchor.prefix).toBe('Un ');
   });
@@ -32,6 +32,20 @@ describe('anchorFromRange', () => {
     blank.setStart(el.firstChild!.firstChild!, 1);
     blank.setEnd(el.firstChild!.firstChild!, 1);
     expect(anchorFromRange(el, blank)).toBeNull();
+  });
+});
+
+describe('expandToWords', () => {
+  const text = 'L’illusion de compétence, c’est-à-dire 42 fois.';
+  it('complète les mots coupés aux deux bouts, sans déborder sur la ponctuation', () => {
+    const r = expandToWords(text, text.indexOf('lusion'), text.indexOf('péten'));
+    expect(text.slice(r.start, r.end)).toBe('L’illusion de compétence');
+  });
+  it('garde les traits d’union et les nombres, et laisse intacte une sélection propre', () => {
+    const r = expandToWords(text, text.indexOf('est-à'), text.indexOf('2 fois') + 1);
+    expect(text.slice(r.start, r.end)).toBe('c’est-à-dire 42');
+    const clean = expandToWords(text, 0, 10);
+    expect(text.slice(clean.start, clean.end)).toBe('L’illusion');
   });
 });
 

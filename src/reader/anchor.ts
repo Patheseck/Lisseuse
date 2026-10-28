@@ -39,7 +39,22 @@ export function anchorFromRange(root: Element, range: Range): TextAnchor | null 
   let end = textOffset(root, range.endContainer, range.endOffset);
   while (start < end && /\s/.test(text[start]!)) start++;
   while (end > start && /\s/.test(text[end - 1]!)) end--;
-  return end > start ? anchorFromOffsets(text, start, end) : null;
+  if (end <= start) return null;
+  ({ start, end } = expandToWords(text, start, end));
+  return anchorFromOffsets(text, start, end);
+}
+
+const WORD_CHAR = /[\p{L}\p{N}\p{M}'’-]/u;
+
+/**
+ * Étend une sélection aux mots entiers : au doigt, on coupe souvent la première ou la
+ * dernière lettre. Un mot partiellement sélectionné est inclus en entier.
+ */
+export function expandToWords(text: string, start: number, end: number): { start: number; end: number } {
+  const isWord = (i: number) => i >= 0 && i < text.length && WORD_CHAR.test(text[i]!);
+  while (isWord(start - 1) && isWord(start)) start--;
+  while (isWord(end) && isWord(end - 1)) end++;
+  return { start, end };
 }
 
 function commonSuffixLength(a: string, b: string): number {

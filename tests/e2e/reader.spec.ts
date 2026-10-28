@@ -167,4 +167,42 @@ test.describe('Étape 2 — lecteur complet', () => {
     expect(dim).toBeGreaterThan(0.2);
     await expect(page.getByTestId('status-page')).toHaveText(/^1 \//);
   });
+
+  test('sélection : mots complétés, barre utilisable même si la sélection a disparu, copier, rechercher', async ({ page, context }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    const bar = page.getByTestId('selection-bar');
+
+    // Sélection coupée au milieu des mots : le surlignage prend les mots entiers.
+    await selectText(page, 'otosynth', 'proces');
+    await expect(bar).toBeVisible();
+    // Sur Android, toucher un bouton efface la sélection avant le clic.
+    await page.evaluate(() => window.getSelection()!.removeAllRanges());
+    await bar.getByTestId('highlight-selection').click();
+    await expect(page.locator('mark.hl')).toHaveText('photosynthèse est le processus');
+
+    await selectText(page, 'chloroplas', 'chloroplas');
+    await bar.getByTestId('copy-selection').click();
+    await expect(page.getByTestId('toast').last()).toContainText('Passage copié');
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('chloroplastes');
+
+    await selectText(page, 'glucose', 'glucose');
+    await bar.getByTestId('search-selection').click();
+    await expect(page.getByTestId('search-input')).toHaveValue('glucose');
+    await expect(page.getByTestId('search-results').locator('li')).toHaveCount(1);
+  });
+
+  test('un tap pour annuler la sélection ne tourne pas la page', async ({ page }) => {
+    await page.getByTestId('next-chapter').click();
+    await hideChrome(page);
+    await expect(page.getByTestId('status-page')).toHaveText(/^1 \//);
+    await selectText(page, 'Phrase de', 'remplissage');
+    await expect(page.getByTestId('selection-bar')).toBeVisible();
+    // Tap dans le texte, loin de la barre de sélection.
+    await tapReader(page, 0.9, 0.8);
+    await expect(page.getByTestId('status-page')).toHaveText(/^1 \//);
+    await expect(page.getByTestId('selection-bar')).toBeHidden();
+    await expect(page.locator('.reader.chrome-hidden')).toHaveCount(1);
+    await tapReader(page, 0.9);
+    await expect(page.getByTestId('status-page')).toHaveText(/^2 \//);
+  });
 });

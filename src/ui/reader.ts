@@ -1,6 +1,6 @@
 import { openBook, type OpenedBook } from '../book/service';
 import { errorMessage, logError } from '../core/errors';
-import { anchorFromOffsets, anchorFromRange, locate, locateLoose, unwrap, wrapRange } from '../reader/anchor';
+import { anchorFromOffsets, anchorFromRange, locate, locateLoose, unwrap, wrapRange, type TextAnchor } from '../reader/anchor';
 import { htmlToText, type SearchHit } from '../reader/search';
 import { deleteCard, demoteCard, listAllCards, listCards, newCard, putCard, type CardRecord } from '../storage/cards';
 import { editCard, type CardEditorOptions } from './card-editor';
@@ -10,7 +10,8 @@ import { loadBookmarks, loadFocus, loadGuides, saveBookmarks, saveFocus, saveGui
 import { newSrs } from '../core/scheduler';
 import { applyReaderSettings, loadMojorTable, loadReaderSettings, saveReaderSettings, AUTO_SPEED_RANGE, BRIGHTNESS_RANGE, type ReaderSettings } from '../storage/settings';
 import { Pager } from '../reader/pager';
-import { applyReaderNative, chapterTick, onVolumeKey, setImmersive } from '../native/reader-native';
+import { applyReaderNative, chapterTick, onVolumeKey, setCustomSelectionMenu, setImmersive } from '../native/reader-native';
+import { shareText } from '../native/files';
 import { addRecall, listRecalls, markPretest, pretestDates, type RecallRecord } from '../storage/learning';
 import { chapterHeadings, chapterRecall, chapterSurveySheet, pretest } from './chapter-practice';
 import { add, clear, h } from './dom';
@@ -76,10 +77,25 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
   const footerMiddle = h('div', { className: 'footer-middle' });
   const footer = h('footer', { className: 'bottombar' }, prev, footerMiddle, next);
   const toolButtons = h('div', { className: 'reader-tools' });
-  const selectionBar = h('div', { className: 'selection-bar', role: 'toolbar', 'aria-label': 'Actions sur la sélection', hidden: true },
-    h('button', { type: 'button', className: 'btn', 'data-testid': 'highlight-selection', onmousedown: (e: Event) => e.preventDefault(), onclick: () => void highlightSelection(false) }, icon('highlight'), 'Surligner'),
-    h('button', { type: 'button', className: 'btn btn-primary', 'data-testid': 'card-from-selection', onmousedown: (e: Event) => e.preventDefault(), onclick: () => void highlightSelection(true) }, icon('card'), 'Créer une fiche'),
+  // Barre de sélection : remplace le menu d'Android (masqué côté natif pendant la lecture).
+  const selectionBar = h('div', { className: 'selection-bar', role: 'toolbar', 'aria-label': 'Actions sur la sélection', 'data-testid': 'selection-bar', hidden: true },
+    h('div', { className: 'selection-main' },
+      h('button', { type: 'button', className: 'btn', 'data-testid': 'highlight-selection', onclick: () => void highlightSelection(false) }, icon('highlight'), 'Surligner'),
+      h('button', { type: 'button', className: 'btn btn-primary', 'data-testid': 'card-from-selection', onclick: () => void highlightSelection(true) }, icon('card'), 'Fiche'),
+    ),
+    h('div', { className: 'selection-more' },
+      h('button', { type: 'button', className: 'icon-btn', 'aria-label': 'Copier', 'data-testid': 'copy-selection', onclick: () => void copySelection() }, icon('copy')),
+      h('button', { type: 'button', className: 'icon-btn', 'aria-label': 'Partager', 'data-testid': 'share-selection', onclick: () => void shareSelection() }, icon('share')),
+      h('button', { type: 'button', className: 'icon-btn', 'aria-label': 'Rechercher dans le livre', 'data-testid': 'search-selection', onclick: () => searchSelection() }, icon('search')),
+    ),
   );
+  // Sur ordinateur, cliquer un bouton ne doit pas effacer la sélection.
+  selectionBar.addEventListener('mousedown', (e) => e.preventDefault());
+  /**
+   * Dernière sélection valide, mémorisée : sur Android, toucher un bouton efface la sélection
+   * avant le clic, l'action s'appuie donc sur cette copie.
+   */
+  let pendingSelection: { chapter: number; anchor: TextAnchor } | null = null;
   const markMenu = h('div', { className: 'mark-menu', role: 'dialog', 'aria-label': 'Surlignage', hidden: true });
   const autoBar = h('div', { className: 'auto-bar', role: 'toolbar', 'aria-label': 'Défilement automatique', 'data-testid': 'auto-bar', hidden: true });
   footer.hidden = true;
@@ -425,21 +441,69 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
 
   function hideSelectionBar(): void {
     selectionBar.hidden = true;
+    pendingSelection = null;
   }
 
   function updateSelectionBar(): void {
     const range = currentSelectionRange();
-    if (!range || !range.toString().trim()) {
+    const anchor = range && range.toString().trim() ? anchorFromRange(content, range) : null;
+    if (!range || !anchor) {
       hideSelectionBar();
       return;
     }
-    const rect = range.getBoundingClientRect();
+    pendingSelection = { chapter: current, anchor };
+    const rects = Array.from(range.getClientRects()).filter((r) => r.width > 0);
+    const first = rects[0] ?? range.getBoundingClientRect();
+    const last = rects.at(-1) ?? first;
     selectionBar.hidden = false;
-    // Sous la sélection : le menu natif d'Android s'affiche au-dessus.
-    const top = Math.min(window.innerHeight - selectionBar.offsetHeight - 12, rect.bottom + 12);
-    const left = Math.min(window.innerWidth - selectionBar.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - selectionBar.offsetWidth / 2));
+    const barH = selectionBar.offsetHeight;
+    const barW = selectionBar.offsetWidth;
+    // Au-dessus de la sélection s'il y a la place, sinon en dessous en laissant de la place
+    // aux poignées de sélection (environ 2,5 rem sous la dernière ligne).
+    const above = first.top - barH - 14;
+    const top = above >= 12 ? above : Math.min(window.innerHeight - barH - 12, last.bottom + 40);
+    const anchorX = above >= 12 ? first.left + first.width / 2 : last.left + last.width / 2;
     selectionBar.style.top = `${Math.max(12, top)}px`;
-    selectionBar.style.left = `${left}px`;
+    selectionBar.style.left = `${Math.min(window.innerWidth - barW - 8, Math.max(8, anchorX - barW / 2))}px`;
+  }
+
+  /** Texte de la sélection en cours (mots complets), ou null. */
+  function takeSelection(): { chapter: number; anchor: TextAnchor } | null {
+    const range = currentSelectionRange();
+    const live = range ? anchorFromRange(content, range) : null;
+    const taken = live ? { chapter: current, anchor: live } : pendingSelection;
+    hideSelectionBar();
+    window.getSelection()?.removeAllRanges();
+    return taken && taken.chapter === current ? taken : null;
+  }
+
+  async function copySelection(): Promise<void> {
+    const taken = takeSelection();
+    if (!taken) return;
+    try {
+      await navigator.clipboard.writeText(taken.anchor.quote);
+      toast('Passage copié.');
+    } catch (err) {
+      logError('copie', err);
+      toast('Copie impossible sur cet appareil.', 'error');
+    }
+  }
+
+  async function shareSelection(): Promise<void> {
+    const taken = takeSelection();
+    if (!taken || !opened) return;
+    const text = `« ${taken.anchor.quote} »\n— ${opened.book.title}${opened.book.author ? `, ${opened.book.author}` : ''}`;
+    try {
+      await shareText(text);
+    } catch (err) {
+      logError('partage', err);
+      toast('Partage impossible sur cet appareil.', 'error');
+    }
+  }
+
+  function searchSelection(): void {
+    const taken = takeSelection();
+    if (taken) search.searchFor(taken.anchor.quote.slice(0, 80));
   }
 
   /** Options de l'éditeur ; `editing` est exclue de la recherche de doublons. */
@@ -470,12 +534,9 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
 
   /** Surligne la sélection ; avec `asCard`, ouvre aussitôt l'éditeur de fiche. */
   async function highlightSelection(asCard: boolean): Promise<void> {
-    const range = currentSelectionRange();
     // Les marques existantes ne changent pas le texte : les positions restent exactes.
-    const anchor = range ? anchorFromRange(content, range) : null;
-    hideSelectionBar();
+    const anchor = takeSelection()?.anchor;
     if (!anchor) return;
-    window.getSelection()?.removeAllRanges();
     const overlapping = cards.find((c) => c.chapter === current && c.origin !== 'guide' && !orphans.has(c.id) && c.anchor.start < anchor.end && anchor.start < c.anchor.end);
     if (overlapping) {
       toast('Ce passage chevauche un surlignage existant.');
@@ -888,7 +949,8 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
   }
 
   scroller.addEventListener('pointerdown', (e) => {
-    suppressClick = false;
+    // Un tap qui sert à annuler une sélection ne tourne pas la page et n'ouvre pas les menus.
+    suppressClick = hasSelection() || !selectionBar.hidden;
     if (e.pointerType === 'mouse' || hasSelection() || (e.target as Element).closest('button, a, input, textarea')) {
       gesture = null;
       return;
@@ -950,6 +1012,7 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
   scroller.addEventListener('click', (e) => {
     if (suppressClick) {
       suppressClick = false;
+      if (!hasSelection()) hideSelectionBar();
       return;
     }
     const target = e.target as Element;
@@ -1010,6 +1073,18 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
   const onPointerDown = (e: PointerEvent) => {
     if (!markMenu.hidden && !markMenu.contains(e.target as Node) && !(e.target as Element).closest('mark.hl')) hideMarkMenu();
   };
+  // Menu de sélection natif : masqué sur le texte du livre, rétabli dans les champs de saisie.
+  const editable = (t: EventTarget | null) => !!(t as Element | null)?.closest?.('input, textarea, [contenteditable]');
+  const onFocusIn = (e: FocusEvent) => void setCustomSelectionMenu(!editable(e.target));
+  const onFocusOut = () => void setCustomSelectionMenu(true);
+  void setCustomSelectionMenu(true);
+  document.addEventListener('focusin', onFocusIn);
+  document.addEventListener('focusout', onFocusOut);
+  cleanup.push(
+    () => document.removeEventListener('focusin', onFocusIn),
+    () => document.removeEventListener('focusout', onFocusOut),
+    () => void setCustomSelectionMenu(false),
+  );
   document.addEventListener('selectionchange', onSelectionChange);
   document.addEventListener('keydown', onKeyDown);
   document.addEventListener('pointerdown', onPointerDown);

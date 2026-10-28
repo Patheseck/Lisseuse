@@ -1,6 +1,6 @@
 {
   "name": "liseuse",
-  "version": "6.2.0",
+  "version": "6.2.1",
   "private": true,
   "description": "Liseuse d'apprentissage hors ligne : EPUB/Markdown, fiches, répétition espacée FSRS",
   "type": "module",

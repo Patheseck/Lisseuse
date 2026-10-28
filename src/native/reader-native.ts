@@ -9,6 +9,7 @@ interface ReaderNativePlugin {
   setVolumeKeys(options: { enabled: boolean }): Promise<void>;
   setKeepAwake(options: { enabled: boolean }): Promise<void>;
   setImmersive(options: { enabled: boolean }): Promise<void>;
+  setCustomSelection(options: { enabled: boolean }): Promise<void>;
 }
 
 const ReaderNative = registerPlugin<ReaderNativePlugin>('ReaderNative');
@@ -39,4 +40,13 @@ export function onVolumeKey(handler: (dir: 1 | -1) => void): () => void {
   const listener = (e: Event) => handler((e as Event & { direction?: string }).direction === 'prev' ? -1 : 1);
   window.addEventListener('liseuseVolume', listener);
   return () => window.removeEventListener('liseuseVolume', listener);
+}
+
+/**
+ * Pendant la lecture, le menu de sélection d'Android (Copier, Partager…) est masqué :
+ * la barre de l'app le remplace, sans superposition. Il reste actif dans les champs de saisie.
+ */
+export async function setCustomSelectionMenu(enabled: boolean): Promise<void> {
+  if (!isNative()) return;
+  await ReaderNative.setCustomSelection({ enabled }).catch(() => undefined);
 }

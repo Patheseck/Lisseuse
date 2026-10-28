@@ -20,6 +20,15 @@ public class ReaderNativePlugin extends Plugin {
     /** Lu par MainActivity pour décider d'intercepter les touches de volume. */
     static volatile boolean volumeKeysEnabled = false;
 
+    /** Lu par MainActivity : masquer le menu de sélection natif (la page affiche le sien). */
+    static volatile boolean customSelection = false;
+
+    @PluginMethod
+    public void setCustomSelection(PluginCall call) {
+        customSelection = Boolean.TRUE.equals(call.getBoolean("enabled", false));
+        call.resolve();
+    }
+
     @PluginMethod
     public void setVolumeKeys(PluginCall call) {
         volumeKeysEnabled = Boolean.TRUE.equals(call.getBoolean("enabled", false));

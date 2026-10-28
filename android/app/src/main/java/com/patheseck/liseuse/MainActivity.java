@@ -1,6 +1,7 @@
 package com.patheseck.liseuse;
 
 import android.os.Bundle;
+import android.view.ActionMode;
 import android.view.KeyEvent;
 import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.PluginHandle;
@@ -11,6 +12,18 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(ReaderNativePlugin.class);
         super.onCreate(savedInstanceState);
+    }
+
+    /**
+     * Sélection de texte dans le lecteur : le menu flottant d'Android est vidé (donc masqué),
+     * la barre de la page le remplace. Dans un champ de saisie, la page désactive ce mode.
+     */
+    @Override
+    public void onActionModeStarted(ActionMode mode) {
+        super.onActionModeStarted(mode);
+        if (ReaderNativePlugin.customSelection && mode.getType() == ActionMode.TYPE_FLOATING) {
+            mode.getMenu().clear();
+        }
     }
 
     /** Touches de volume : tournent les pages quand le lecteur l'a demandé, sinon comportement normal. */

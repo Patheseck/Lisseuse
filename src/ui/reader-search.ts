@@ -10,7 +10,7 @@ export function readerSearchSheet(options: {
   texts: () => string[];
   chapterLabel: (i: number) => string;
   onPick: (hit: SearchHit) => void;
-}): Sheet {
+}): Sheet & { searchFor(query: string): void } {
   const input = h('input', { type: 'search', className: 'input', placeholder: 'Rechercher dans ce livre…', 'aria-label': 'Rechercher dans ce livre', enterkeyhint: 'search', 'data-testid': 'search-input' });
   const status = h('p', { className: 'muted search-status', 'aria-live': 'polite' });
   const results = h('ol', { className: 'search-results', 'data-testid': 'search-results' });
@@ -60,5 +60,12 @@ export function readerSearchSheet(options: {
     input.select();
     if (!input.value) status.textContent = 'Saisis au moins deux caractères.';
   };
-  return sheet;
+  return Object.assign(sheet, {
+    /** Ouvre la recherche déjà lancée sur un texte (sélection du lecteur). */
+    searchFor(query: string) {
+      input.value = query;
+      open();
+      run();
+    },
+  });
 }

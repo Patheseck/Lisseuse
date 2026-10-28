@@ -29,3 +29,24 @@ export async function saveFile(blob: Blob, fileName: string): Promise<void> {
   a.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
+
+/** Partage un texte : menu de partage d'Android, Web Share si disponible, sinon copie. */
+export async function shareText(text: string): Promise<void> {
+  if (isNative()) {
+    try {
+      await Share.share({ text, dialogTitle: 'Partager ce passage' });
+    } catch (err) {
+      if (!/cancel/i.test(String((err as Error)?.message ?? err))) throw err;
+    }
+    return;
+  }
+  if (navigator.share) {
+    try {
+      await navigator.share({ text });
+    } catch (err) {
+      if ((err as Error)?.name !== 'AbortError') throw err;
+    }
+    return;
+  }
+  await navigator.clipboard.writeText(text);
+}

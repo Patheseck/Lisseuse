@@ -20,6 +20,8 @@ const PATHS = {
   chevronLeft: 'M15 18l-6-6 6-6',
   chevronRight: 'M9 18l6-6-6-6',
   bookmark: 'M7 3h10v18l-5-4-5 4z',
+  copy: 'M9 9h11v11H9zM5 15H4V4h11v1',
+  share: 'M18 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 22a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM8.6 13.5l6.8 4M15.4 6.5l-6.8 4',
   play: 'M8 5v14l11-7z',
   pause: 'M8 5v14M16 5v14',
   minus: 'M5 12h14',
