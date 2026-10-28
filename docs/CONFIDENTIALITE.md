@@ -21,6 +21,8 @@ Pour fonctionner, Liseuse enregistre dans la mémoire privée de l'application, 
 - les livres que tu importes (fichiers EPUB, Markdown ou texte) ;
 - tes surlignages, fiches, questions directrices, signets et révisions ;
 - ta progression de lecture, tes statistiques et tes réglages ;
+- les morceaux de musique que tu ajoutes aux ambiances de lecture (ils ne font pas partie des
+  sauvegardes) ;
 - un journal technique des erreurs, consultable dans « Mes données », qui n'est envoyé à personne.
 
 Ces données ne sont accessibles qu'à l'application. Désinstaller Liseuse les efface : pense à
@@ -32,6 +34,12 @@ Une sauvegarde est un fichier que **tu** exportes, à l'endroit que **tu** chois
 téléphone, Google Drive, e-mail…) grâce au menu de partage d'Android. Tu peux la chiffrer avec un
 mot de passe (AES-256) : sans ce mot de passe, son contenu est illisible. Liseuse n'envoie jamais
 de sauvegarde d'elle-même.
+
+## Applis de musique
+
+Dans « Ambiance musicale », des liens peuvent ouvrir une recherche dans Spotify, YouTube Music ou
+Deezer. Ces applis s'ouvrent hors de Liseuse et appliquent leurs propres règles de confidentialité ;
+Liseuse ne leur transmet rien d'autre que les mots de la recherche (par exemple « kora instrumental »).
 
 ## Autorisations Android utilisées
 

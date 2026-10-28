@@ -125,6 +125,22 @@ est plus faible sur appareil tenu en main que sur ordinateur.
 
 ---
 
+## 11. Musique de fond pendant la lecture — ★
+
+- **Paroles : à éviter.** La parole entendue, même ignorée, perturbe la mémoire de travail
+  verbale (« effet de la parole non pertinente ») ; la musique chantée gêne plus que la musique
+  instrumentale (Salamé & Baddeley, 1989).
+- **Instrumentale, lente et douce : gêne faible.** Une musique rapide *et* forte dégrade la
+  compréhension en lecture ; lente ou douce, l'effet devient faible (Thompson, Schellenberg &
+  Letnic, 2012). Une méta-analyse trouve un effet global proche de zéro, légèrement négatif
+  pour la lecture et la mémoire, mais positif sur l'humeur (Kämpfe, Sedlmeier & Renkewitz, 2011).
+- **Effet de contexte.** Retrouver au rappel la musique entendue à l'apprentissage aide un peu
+  (Smith, 1985) ; l'effet est modeste mais documenté.
+
+→ Dans l'app (6.4) : ambiances instrumentales, volume bas par défaut, conseil affiché ; la
+musique baisse pendant la lecture à voix haute. Piste suivante : rejouer l'ambiance d'un livre
+pendant la révision de ses fiches (option).
+
 ## Ce qui est retiré faute de preuves
 
 | Fonction V5.7 | Raison du retrait |
@@ -150,3 +166,7 @@ est plus faible sur appareil tenu en main que sur ordinateur.
 - Lecture écran vs papier (synthèse 2024). https://www.shanahanonliteracy.com/blog/is-comprehension-better-with-digital-text-1
 - ts-fsrs (FSRS-6, MIT). https://cdn.jsdelivr.net/npm/ts-fsrs@5.4.1/README.md
 - FSRS et révisions du même jour. https://forums.ankiweb.net/t/about-fsrs-algorithms-first-rating/50055/2
+- Salamé & Baddeley (1989). *Effects of background music on phonological short-term memory.* Quarterly Journal of Experimental Psychology.
+- Thompson, Schellenberg & Letnic (2012). *Fast and loud background music disrupts reading comprehension.* Psychology of Music.
+- Kämpfe, Sedlmeier & Renkewitz (2011). *The impact of background music on adult listeners: a meta-analysis.* Psychology of Music.
+- Smith (1985). *Background music and context-dependent memory.* American Journal of Psychology.

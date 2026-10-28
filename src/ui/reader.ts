@@ -13,6 +13,9 @@ import { Pager } from '../reader/pager';
 import { applyReaderNative, chapterTick, onVolumeKey, setCustomSelectionMenu, setImmersive } from '../native/reader-native';
 import { copyText, shareText } from '../native/files';
 import { syncSystemBars } from '../native/system-bars';
+import { ambiancePlayer } from '../audio/player';
+import { getBookAmbiance, loadAmbiancePrefs } from '../storage/audio';
+import { ambianceSheet } from './ambiance-sheet';
 import { addRecall, listRecalls, markPretest, pretestDates, type RecallRecord } from '../storage/learning';
 import { chapterHeadings, chapterRecall, chapterSurveySheet, pretest } from './chapter-practice';
 import { add, clear, h } from './dom';
@@ -844,6 +847,8 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
 
   function setSpeaking(on: boolean): void {
     speaking = on;
+    // La musique d'ambiance se fait discrète pendant la lecture à voix haute.
+    ambiance.setDucked(on);
     listenButton.setAttribute('aria-pressed', String(on));
     listenButton.setAttribute('aria-label', on ? 'Arrêter la lecture' : 'Écouter le chapitre');
     listenButton.replaceChildren(icon(on ? 'stop' : 'speaker'));
@@ -901,7 +906,31 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
     updateStatus();
   }
 
-  footerMiddle.append(autoButton, position, listenButton);
+  // ---------- Ambiance musicale ----------
+  const ambiance = ambiancePlayer();
+  const ambianceButton = h('button', { type: 'button', className: 'icon-btn', 'aria-label': 'Ambiance musicale', 'aria-pressed': 'false', 'data-testid': 'open-ambiance', 'data-state': 'stopped', onclick: () => openAmbiance() }, icon('music'));
+  let ambianceSheetRef: ReturnType<typeof ambianceSheet> | null = null;
+  function openAmbiance(): void {
+    if (!ambianceSheetRef) {
+      ambianceSheetRef = ambianceSheet(bookId);
+      sheets.push(ambianceSheetRef);
+    }
+    ambianceSheetRef.open();
+  }
+  const showAmbianceState = () => {
+    ambianceButton.dataset.state = ambiance.playing;
+    ambianceButton.setAttribute('aria-pressed', String(ambiance.playing === 'playing'));
+  };
+  cleanup.push(ambiance.onChange(showAmbianceState));
+
+  /** Reprend l'ambiance choisie pour ce livre (si elle a des morceaux). */
+  async function startBookAmbiance(): Promise<void> {
+    const [prefs, chosen] = await Promise.all([loadAmbiancePrefs(), getBookAmbiance(bookId)]);
+    ambiance.setVolume(prefs.volume);
+    if (chosen) await ambiance.play(chosen);
+  }
+
+  footerMiddle.append(autoButton, position, listenButton, ambianceButton);
   toolButtons.append(
     h('button', { type: 'button', className: 'icon-btn', 'aria-label': 'Rechercher dans le livre', 'data-testid': 'open-search', onclick: () => search.open() }, icon('search')),
     h('button', { type: 'button', className: 'icon-btn', 'aria-label': 'Sommaire, surlignages et signets', 'data-testid': 'open-toc', onclick: () => toc.open() }, icon('toc')),
@@ -1122,6 +1151,7 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
     const progress = await getProgress(bookId);
     const start = Math.min(Math.max(0, progress?.chapter ?? 0), opened.chapters.length - 1);
     go(start, { offset: progress?.offset ?? 0 });
+    void startBookAmbiance().catch((err: unknown) => logError('ambiance', err));
     await touchBook(bookId);
   })().catch((err: unknown) => {
     logError('ouverture', err);
@@ -1143,6 +1173,8 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
     },
     destroy() {
       stopAuto();
+      ambiance.stop();
+      ambianceSheetRef?.dispose();
       void stopListening();
       window.clearInterval(clockTimer);
       resize.disconnect();

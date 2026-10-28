@@ -2,9 +2,13 @@
 // (localStorage n'est utilisé que pour le journal d'erreurs, non critique).
 
 export const DB_NAME = 'liseuse';
-export const DB_VERSION = 1;
+/**
+ * Historique : 1 (6.0) schéma initial ; 2 (6.4) magasin « audio » des morceaux d'ambiance.
+ * Chaque version ne fait qu'ajouter des magasins : les données existantes sont conservées.
+ */
+export const DB_VERSION = 2;
 
-export type StoreName = 'books' | 'chapters' | 'progress' | 'settings' | 'cards' | 'reviews';
+export type StoreName = 'books' | 'chapters' | 'progress' | 'settings' | 'cards' | 'reviews' | 'audio';
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
@@ -30,6 +34,11 @@ export function openDb(): Promise<IDBDatabase> {
         const reviews = db.createObjectStore('reviews', { keyPath: 'id', autoIncrement: true });
         reviews.createIndex('cardId', 'cardId');
         reviews.createIndex('bookId', 'bookId');
+      }
+      // v2 : morceaux de musique importés pour les ambiances de lecture.
+      if (!db.objectStoreNames.contains('audio')) {
+        const audio = db.createObjectStore('audio', { keyPath: 'id' });
+        audio.createIndex('ambiance', 'ambiance');
       }
     };
     req.onsuccess = () => {

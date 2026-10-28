@@ -20,6 +20,7 @@ Application Android via Capacitor.
 - [x] Lot « méthode » (Lire · Poser · Récupérer) : aperçu du chapitre et question directrice, restitution en 3 couches, tri des idées en 3 niveaux et points « à approfondir », chapitres choisis pour son objectif
 - [x] Lot « premium 2 » : étagère en grille avec couvertures générées, tri, « Continuer la lecture », signets, défilement automatique, transitions animées
 - [x] Préparation à la vente (6.3) : livres protégés (DRM) détectés, chapitres géants découpés (fiches et positions migrées), langue des livres, presse-papiers natif, contrastes, barres système, « À propos » (version, confidentialité, licences), AAB et versions automatiques
+- [x] Ambiance musicale 1 (6.4) : une ambiance par livre parmi 16 traditions, import de ses propres morceaux, fondus et enchaînements, volume, baisse pendant la voix, arrêt écran éteint, recherche dans Spotify / YouTube Music / Deezer
 - [x] Étape 6 — Application Android (Capacitor) : partage, synthèse vocale, rappel quotidien, ouverture d'EPUB, bouton retour ; APK construit par la CI
 
 ## Développement

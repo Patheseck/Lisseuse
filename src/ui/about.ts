@@ -15,6 +15,7 @@ export const PRIVACY_POINTS = [
   'Les sauvegardes sont des fichiers que tu exportes toi-même, où tu le décides ; tu peux les chiffrer avec un mot de passe.',
   'Le rappel quotidien est une notification programmée sur l’appareil, sans serveur.',
   'Le journal d’erreurs reste sur l’appareil et n’est envoyé à personne.',
+  'Les morceaux de musique que tu ajoutes aux ambiances restent sur l’appareil. Les liens vers Spotify, YouTube Music ou Deezer ouvrent ces applis, qui ont leurs propres règles de confidentialité.',
   'Désinstaller l’application efface ses données de l’appareil : exporte une sauvegarde avant.',
 ];
 

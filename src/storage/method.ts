@@ -45,7 +45,7 @@ export const bookmarksKey = (bookId: string) => `bookmarks:${bookId}`;
  */
 export const layoutHintKey = (bookId: string) => `layout:${bookId}`;
 /** Clés de réglages propres à un livre (supprimées avec lui). */
-export const bookSettingKeys = (bookId: string) => [`recall:${bookId}`, `pretest:${bookId}`, guideKey(bookId), focusKey(bookId), bookmarksKey(bookId), layoutHintKey(bookId)];
+export const bookSettingKeys = (bookId: string) => [`recall:${bookId}`, `pretest:${bookId}`, guideKey(bookId), focusKey(bookId), bookmarksKey(bookId), layoutHintKey(bookId), `ambiance:${bookId}`];
 
 const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 

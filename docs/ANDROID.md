@@ -93,6 +93,7 @@ Pour ouvrir le projet dans Android Studio : `npm run android:sync` puis `npx cap
 | Copier un passage | presse-papiers d'Android (module officiel Capacitor) |
 | Barres système | icônes claires sur un thème sombre ; fond de fenêtre de la couleur du thème |
 | Lecture à voix haute | dans la langue du livre (déclarée par l'EPUB, ou devinée pour un texte) |
+| Musique d'ambiance | bouton ♪ : une ambiance par livre (16 au choix), avec tes MP3 ; s'arrête quand l'écran s'éteint ou qu'on quitte le livre, reprend au retour |
 
 ## Note technique : CSP et Capacitor
 

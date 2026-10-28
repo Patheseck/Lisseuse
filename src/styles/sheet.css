@@ -167,3 +167,31 @@
 .about-version { margin: 0.2rem 0 0.6rem; color: var(--accent); font-weight: 600; font-variant-numeric: tabular-nums; }
 .about-list { margin: 0; padding-left: 1.1rem; display: grid; gap: 0.35rem; font-size: 0.9rem; }
 .licenses-text { max-height: 50dvh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.7rem; line-height: 1.4; background: var(--bg); border-radius: 8px; padding: 0.6rem; }
+
+/* Ambiance musicale */
+.ambiance-now { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
+.ambiance-status { margin: 0; font-weight: 600; }
+.ambiance-now .btn { display: inline-flex; align-items: center; gap: 0.35rem; }
+.ambiance-choices { display: grid; gap: 0.3rem; }
+.ambiance-group { margin: 0.6rem 0 0.1rem; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); font-weight: 600; }
+.ambiance-option {
+  display: grid;
+  gap: 0.1rem;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+}
+.ambiance-option small { color: var(--muted); font-size: 0.78rem; }
+.ambiance-choices input:checked + .ambiance-option { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--panel)); box-shadow: inset 3px 0 0 var(--accent); }
+.ambiance-choices input:focus-visible + .ambiance-option { outline: 2px solid var(--accent); outline-offset: 2px; }
+[data-testid='ambiance-tracks'] { margin: 0.2rem 0 0.6rem 0.75rem; padding-left: 0.75rem; border-left: 2px solid var(--accent); }
+[data-testid='ambiance-tracks'][hidden] { display: none; }
+[data-testid='ambiance-tracks'] h3 { margin-top: 0.2rem; }
+.track-list { list-style: none; margin: 0 0 0.6rem; padding: 0; }
+.track-item { display: flex; align-items: center; gap: 0.4rem; border-bottom: 1px solid var(--border); }
+.track-name { flex: 1; min-width: 0; display: grid; overflow-wrap: anywhere; font-size: 0.9rem; padding: 0.4rem 0; }
+.track-name small { color: var(--muted); }
+[data-testid='add-tracks'] { display: inline-flex; align-items: center; gap: 0.35rem; }
+.music-apps { font-size: 0.85rem; color: var(--muted); }
+.music-apps a { color: var(--accent); font-weight: 600; }
