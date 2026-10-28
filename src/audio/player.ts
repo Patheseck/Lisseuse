@@ -235,10 +235,15 @@ export class AmbiancePlayer {
         const delta = deck.step * dt;
         deck.fade = deck.fade < deck.target ? Math.min(deck.target, deck.fade + delta) : Math.max(deck.target, deck.fade - delta);
         busy ||= deck.fade !== deck.target;
-        // Fondu de sortie terminé : on libère la piste (sauf pause, où elle reste chargée).
-        if (deck.fade === 0 && deck.target === 0) {
-          if (this.state === 'paused' && deck === this.decks[this.active]) deck.el.pause();
-          else if (deck.url) this.release(deck);
+      }
+      // Fondu de sortie terminé (ou piste déjà muette, par exemple arrêtée au tout début d'un
+      // fondu d'entrée) : on libère la piste, sauf en pause où elle reste chargée. Sans cela,
+      // elle continuerait de jouer en silence.
+      if (deck.fade === 0 && deck.target === 0 && deck.url) {
+        if (this.state === 'paused' && deck === this.decks[this.active]) {
+          if (!deck.el.paused) deck.el.pause();
+        } else {
+          this.release(deck);
         }
       }
     }
