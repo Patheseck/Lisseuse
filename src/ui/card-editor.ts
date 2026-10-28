@@ -1,3 +1,4 @@
+import { cardTemplates } from '../core/goal';
 import { coachTips, emptyMnemonic, fillFromTable, hasMnemonic, type MojorTable } from '../core/mnemonic';
 import { questionWarning } from '../core/question';
 import { newSrs } from '../core/scheduler';
@@ -5,13 +6,6 @@ import type { CardKind, CardRecord, Mnemonic } from '../storage/cards';
 import { clear, h } from './dom';
 import { createSheet } from './sheet';
 
-// Modèles de questions favorisant l'élaboration (« pourquoi », « quelle différence »…).
-const TEMPLATES: { label: string; text: string }[] = [
-  { label: 'Pourquoi… ?', text: 'Pourquoi ' },
-  { label: 'Qu’est-ce que… ?', text: 'Qu’est-ce que ' },
-  { label: 'Quelle différence… ?', text: 'Quelle est la différence entre  et  ?' },
-  { label: 'Comment… ?', text: 'Comment ' },
-];
 const SEQUENCE_QUESTION = 'Quelles sont les étapes de …, dans l’ordre ?';
 
 export interface CardEditorResult {
@@ -37,6 +31,11 @@ export interface CardEditorOptions {
   suggestedNumber?: number | null;
   /** Questions des autres fiches, pour signaler un doublon. */
   otherQuestions?: string[];
+  /**
+   * Modèles de questions proposés (selon l'objectif du livre : savoir, savoir-faire…).
+   * Par défaut, ceux qui favorisent l'élaboration (« pourquoi », « quelle différence »…).
+   */
+  templates?: { label: string; text: string }[];
 }
 
 export function editCard(source: CardRecord, options: CardEditorOptions = {}): Promise<CardEditorResult | null> {
@@ -64,7 +63,7 @@ export function editCard(source: CardRecord, options: CardEditorOptions = {}): P
     const error = h('p', { className: 'form-error', role: 'alert', hidden: true });
 
     const chips = h('div', { className: 'chips' });
-    for (const t of TEMPLATES) {
+    for (const t of options.templates ?? cardTemplates(null)) {
       chips.append(h('button', {
         type: 'button', className: 'chip',
         onclick: () => {

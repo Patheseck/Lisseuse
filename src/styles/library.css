@@ -156,3 +156,4 @@
   opacity: 0.85;
 }
 .book-grid .book-delete svg { width: 17px; height: 17px; }
+.continue-goal { font-size: 0.8rem; color: var(--ink); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }

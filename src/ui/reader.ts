@@ -6,7 +6,9 @@ import { deleteCard, demoteCard, listAllCards, listCards, newCard, putCard, type
 import { editCard, type CardEditorOptions } from './card-editor';
 import { nextFreeNumber } from '../core/mnemonic';
 import { getProgress, percentRead, saveProgress, touchBook } from '../storage/library';
-import { loadBookmarks, loadFocus, loadGuides, saveBookmarks, saveFocus, saveGuide, type Bookmark, type ChapterGuide } from '../storage/method';
+import { loadBookmarks, loadFocus, loadGoal, loadGuides, saveBookmarks, saveFocus, saveGoal, saveGuide, type Bookmark, type ChapterGuide } from '../storage/method';
+import { applyPrompt, cardTemplates, goalSummary, type BookGoal } from '../core/goal';
+import { goalSheet } from './goal-sheet';
 import { newSrs } from '../core/scheduler';
 import { applyReaderSettings, loadMojorTable, loadReaderSettings, saveReaderSettings, AUTO_SPEED_RANGE, BRIGHTNESS_RANGE, type ReaderSettings } from '../storage/settings';
 import { Pager } from '../reader/pager';
@@ -47,6 +49,8 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
   let guides: Record<string, ChapterGuide> = {};
   let focus: number[] = [];
   let bookmarks: Bookmark[] = [];
+  let goal: BookGoal | null = null;
+  let goalDismissed = false;
   const orphans = new Set<string>();
   const resourceUrls = new Map<string, string>();
   const sheets: Sheet[] = [];
@@ -56,10 +60,11 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
   const bookTitle = h('span', { className: 'reader-book', 'data-testid': 'reader-title' }, 'Chargement…');
   const chapterTitle = h('span', { className: 'reader-chapter', 'data-testid': 'reader-chapter' });
   const content = h('article', { className: 'reader-content', 'data-testid': 'reader-content', lang: 'fr' });
+  const goalBox = h('aside', { className: 'chapter-box goal-box', 'aria-label': 'Objectif du livre', 'data-testid': 'goal-box', hidden: true });
   const guideBox = h('aside', { className: 'chapter-box guide-box', 'aria-label': 'Avant de lire', 'data-testid': 'guide-box', hidden: true });
   const pretestBox = h('aside', { className: 'chapter-box', 'aria-label': 'Questions avant de relire', 'data-testid': 'pretest-box', hidden: true });
   const chapterEnd = h('aside', { className: 'chapter-box chapter-end', 'aria-label': 'Fin du chapitre', 'data-testid': 'chapter-end', hidden: true });
-  const column = h('div', { className: 'reader-column' }, guideBox, pretestBox, content, chapterEnd);
+  const column = h('div', { className: 'reader-column' }, goalBox, guideBox, pretestBox, content, chapterEnd);
   const scroller = h('main', { className: 'scroll reader-scroll' }, column);
   const pager = new Pager(scroller, column, () => onPositionChange());
   let settings: ReaderSettings | null = null;
@@ -231,6 +236,7 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
     prev.disabled = index === 0;
     next.disabled = index === opened.chapters.length - 1;
     void renderChapterExtras(index);
+    renderGoalBox();
     renderGuide(index);
     requestAnimationFrame(() => {
       pager.relayout(opts.offset ?? 0);
@@ -276,6 +282,7 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
     add(chapterEnd,
       h('p', {}, h('strong', {}, 'Fin du chapitre.'), ' Ferme le livre un instant : restitue de mémoire ce que tu viens de lire.'),
       guide?.question ? h('p', { className: 'guide-reminder', 'data-testid': 'end-question' }, 'Ta question : ', h('em', {}, guide.question)) : null,
+      guide?.apply ? h('p', { className: 'guide-reminder', 'data-testid': 'end-apply' }, `${applyPrompt(goal?.kind)?.label ?? 'Pour ton objectif'} : `, h('em', {}, guide.apply)) : null,
       previous ? h('p', { className: 'hint' }, `Dernier rappel : ${previous.found} / ${previous.total} idées retrouvées, le ${new Date(previous.at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })}.`) : null,
       hard.length
         ? h('div', { className: 'deepen', 'data-testid': 'deepen' },
@@ -294,12 +301,57 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
     );
   }
 
+  /**
+   * Objectif du livre, proposé tant qu'il n'est pas défini (méthode guidée) : une question à la
+   * fois, l'aperçu du chapitre attend que l'objectif soit défini ou reporté.
+   */
+  function renderGoalBox(): boolean {
+    clear(goalBox);
+    goalBox.hidden = !!goal || goalDismissed || !(settings?.guided ?? true);
+    if (goalBox.hidden) return false;
+    goalBox.append(
+      h('p', {}, h('strong', {}, 'Avant de commencer'), ' : pourquoi lis-tu ce livre, et qu’en attends-tu ? Cinq questions (≈ 2 min) pour lire avec un but.'),
+      h('div', { className: 'chapter-box-actions' },
+        h('button', { type: 'button', className: 'btn', 'data-testid': 'skip-goal', onclick: () => { goalDismissed = true; renderGoalBox(); renderGuide(current); pager.relayout(); } }, 'Plus tard'),
+        h('button', { type: 'button', className: 'btn btn-primary', 'data-testid': 'start-goal', onclick: () => void runGoal() }, icon('target'), 'Définir mon objectif'),
+      ),
+    );
+    return true;
+  }
+
+  async function runGoal(): Promise<void> {
+    if (!opened) return;
+    const result = await goalSheet({ bookTitle: opened.book.title, goal, chapters: opened.chapters, focus });
+    if (!result) return;
+    try {
+      await saveGoal(bookId, result.goal);
+      await saveFocus(bookId, result.focus);
+      goal = result.goal;
+      focus = result.focus;
+      renderGoalBox();
+      renderGuide(current);
+      void renderChapterExtras(current);
+      updateStatus();
+      toc.refresh();
+      requestAnimationFrame(() => pager.relayout());
+      toast('Objectif enregistré : il t’accompagnera dans chaque chapitre.');
+    } catch (err) {
+      logError('objectif', err);
+      toast(`Objectif non enregistré : ${errorMessage(err)}`, 'error');
+    }
+  }
+
   /** Étape « Lire » : proposition d'aperçu en tête de chapitre, et rappel de la question. */
   function renderGuide(index: number): void {
     const guide = guides[index];
     questionBar.textContent = guide?.question ?? '';
     questionBar.hidden = !guide?.question;
     clear(guideBox);
+    // Une proposition à la fois : l'objectif du livre d'abord.
+    if (!guide?.question && !goalBox.hidden) {
+      guideBox.hidden = true;
+      return;
+    }
     if (guide?.question) {
       guideBox.hidden = false;
       guideBox.append(
@@ -310,7 +362,8 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
       );
       return;
     }
-    guideBox.hidden = !(settings?.guided ?? true) || dismissedGuides.has(index);
+    // Lecture plaisir : la méthode se fait discrète, l'aperçu n'est plus proposé.
+    guideBox.hidden = !(settings?.guided ?? true) || dismissedGuides.has(index) || goal?.kind === 'plaisir';
     if (guideBox.hidden) return;
     guideBox.append(
       h('p', {}, h('strong', {}, 'Avant de lire'), ' : balaye le chapitre (≈ 1 min) et pose-toi une question. Ton cerveau passe en mode recherche.'),
@@ -324,6 +377,7 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
   async function runSurvey(index: number): Promise<void> {
     const all = await listAllCards().catch(() => cards);
     const question = await chapterSurveySheet({
+      goal,
       chapterLabel: opened?.chapters[index]?.label ?? `Chapitre ${index + 1}`,
       html: opened?.chapters[index]?.html ?? '',
       question: guides[index]?.question ?? '',
@@ -382,13 +436,14 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
       hasGuideCard: !!before?.cardId && cards.some((c) => c.id === before.cardId),
       passages: chapterCards(index),
       headings: chapterHeadings(opened?.chapters[index]?.html ?? ''),
+      applyPrompt: applyPrompt(goal?.kind),
     });
     if (!result) return;
     try {
       let guide: ChapterGuide = {
         ...(before ?? { question: '', questionAt: 0 }),
         answered: result.answered, main: result.main, args: result.text, explain: result.explain,
-        restitutedAt: Date.now(), gaps: result.gaps,
+        restitutedAt: Date.now(), gaps: result.gaps, ...(result.apply ? { apply: result.apply } : {}),
       };
       if (result.makeGuideCard && guide.question && result.main) {
         const card = guideCard(index, guide, result.main);
@@ -517,6 +572,7 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
       mojor,
       suggestedNumber: nextFreeNumber(cards.map((c) => c.mnemonic?.number)),
       otherQuestions: all.filter((c) => c.kind !== 'highlight' && c.id !== editing.id).map((c) => c.question),
+      templates: cardTemplates(goal?.kind),
     };
   }
 
@@ -646,6 +702,8 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
     },
     onEditCard: (card) => void openEditor(card),
     onDeleteCard: (card) => void removeCard(card),
+    goal: () => goalSummary(goal),
+    onEditGoal: () => void runGoal(),
     focus: () => focus,
     onToggleFocus: (i) => {
       focus = focus.includes(i) ? focus.filter((c) => c !== i) : [...focus, i].sort((a, b) => a - b);
@@ -900,6 +958,7 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
     } else {
       requestAnimationFrame(() => pager.relayout());
     }
+    renderGoalBox();
     renderGuide(current);
     void syncSystemBars();
     void applyReaderNative(next);
@@ -1140,6 +1199,7 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
       loadFocus(bookId, opened.chapters.length).catch(() => []),
       loadBookmarks(bookId).catch(() => []),
     ]);
+    goal = await loadGoal(bookId).catch(() => null);
     settings = await loadReaderSettings();
     pager.setMode(settings.layout);
     void applyReaderNative(settings);

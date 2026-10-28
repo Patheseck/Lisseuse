@@ -3,7 +3,8 @@ import { errorMessage, logError } from '../core/errors';
 import { planSession } from '../core/session';
 import { listAllCards, listReviews, type CardRecord } from '../storage/cards';
 import { deleteBook, listBooks, listProgress, percentRead, type BookRecord, type ProgressRecord } from '../storage/library';
-import { focusKey, loadShelf, normalizeFocus, saveShelf, type ShelfPrefs, type ShelfSort } from '../storage/method';
+import { focusKey, goalKey, loadShelf, normalizeFocus, saveShelf, type ShelfPrefs, type ShelfSort } from '../storage/method';
+import { goalSummary, normalizeGoal } from '../core/goal';
 import { listSettings, loadReviewSettings } from '../storage/settings';
 import { icon } from './icons';
 import { formatDue } from './review';
@@ -127,7 +128,7 @@ export function libraryScreen(navigate: Navigate): Screen {
   }
 
   /** Grand bouton « Continuer la lecture » : le dernier livre ouvert, s'il est commencé et pas fini. */
-  function continueCard(book: BookRecord, progress: ProgressRecord, focus: number[]): HTMLElement {
+  function continueCard(book: BookRecord, progress: ProgressRecord, focus: number[], goal: string | null): HTMLElement {
     const pct = percentRead(book, progress, focus);
     const chapter = book.chapterLabels?.[progress.chapter] ?? `Chapitre ${progress.chapter + 1}`;
     return h('section', { className: 'continue', 'data-testid': 'continue-card' },
@@ -136,6 +137,7 @@ export function libraryScreen(navigate: Navigate): Screen {
         h('span', { className: 'continue-kicker' }, 'Continuer la lecture'),
         h('strong', { className: 'continue-title' }, book.title),
         h('span', { className: 'muted continue-chapter' }, chapter),
+        goal ? h('span', { className: 'continue-goal', 'data-testid': 'continue-goal' }, `Objectif : ${goal}`) : null,
         h('span', { className: 'progress', role: 'progressbar', 'aria-valuemin': 0, 'aria-valuemax': 100, 'aria-valuenow': pct, 'aria-label': 'Progression' },
           h('span', { className: 'progress-fill', style: `width:${pct}%` })),
         h('button', { type: 'button', className: 'btn btn-primary', 'data-testid': 'continue-reading', onclick: () => navigate({ name: 'reader', bookId: book.id }) }, icon('play'), `Reprendre · ${pct} %`),
@@ -230,7 +232,10 @@ export function libraryScreen(navigate: Navigate): Screen {
     // Dernier livre ouvert, commencé et pas terminé.
     const last = books.reduce((a, b) => (b.lastOpenedAt > a.lastOpenedAt ? b : a));
     const lastProgress = progress.get(last.id);
-    if (lastProgress && percentRead(last, lastProgress, focusOf(last)) < 100) body.append(continueCard(last, lastProgress, focusOf(last)));
+    if (lastProgress && percentRead(last, lastProgress, focusOf(last)) < 100) {
+      const goal = goalSummary(normalizeGoal(settings.find((r) => r.key === goalKey(last.id))?.value));
+      body.append(continueCard(last, lastProgress, focusOf(last), goal));
+    }
     const banner = reviewBanner(books, cards, reviews, reviewSettings.newPerDay);
     if (banner) body.append(banner);
     body.append(shelfBar(renderList));

@@ -16,6 +16,9 @@ export interface TocOptions {
   onCard: (card: CardRecord) => void;
   onEditCard: (card: CardRecord) => void;
   onDeleteCard: (card: CardRecord) => void;
+  /** Résumé de l'objectif du livre (null s'il n'est pas défini). */
+  goal: () => string | null;
+  onEditGoal: () => void;
   /** Chapitres choisis pour l'objectif de lecture (vide = tout le livre). */
   focus: () => number[];
   onToggleFocus: (index: number) => void;
@@ -47,6 +50,11 @@ export function readerTocSheet(o: TocOptions): Sheet & { refresh(): void } {
     tabs.append(tabButton('chapters', 'Chapitres'), tabButton('highlights', `Passages (${cards.length})`), tabButton('bookmarks', `Signets (${bookmarks.length})`));
     clear(panel);
     if (tab === 'chapters') {
+      const goal = o.goal();
+      panel.append(h('div', { className: 'toc-goal', 'data-testid': 'toc-goal' },
+        goal ? h('p', {}, h('span', { className: 'field-label' }, 'Mon objectif'), h('span', { className: 'toc-goal-text' }, goal)) : h('p', { className: 'hint' }, 'Pourquoi lis-tu ce livre ? Un objectif guide ta lecture et tes questions.'),
+        h('button', { type: 'button', className: 'btn', 'data-testid': 'edit-goal', onclick: () => { sheet.close(); o.onEditGoal(); } }, icon('target'), goal ? 'Modifier' : 'Définir mon objectif'),
+      ));
       const focus = new Set(o.focus());
       panel.append(h('p', { className: 'hint toc-focus-hint', 'data-testid': 'focus-hint' },
         focus.size

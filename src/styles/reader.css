@@ -76,7 +76,9 @@ footer.reader-chrome { bottom: calc(var(--status-h) + var(--safe-bottom)); min-h
 .layout-paged .reader-content img { width: auto; max-width: 100%; max-height: calc(100dvh - 8rem); object-fit: contain; }
 .layout-paged .reader-content img, .layout-paged .reader-content pre, .layout-paged .reader-content blockquote, .layout-paged .chapter-box { break-inside: avoid; }
 .layout-paged .reader-content h1, .layout-paged .reader-content h2, .layout-paged .reader-content h3 { break-after: avoid; }
-.layout-paged .chapter-box:first-child { margin-top: 0; }
+/* Premier encadré visible d'un chapitre : sous la barre du haut, affichée à l'ouverture du livre. */
+.layout-paged .reader-column > .chapter-box { margin-top: 0; }
+.layout-paged .reader-column > .chapter-box:not([hidden]):not(.chapter-box:not([hidden]) ~ .chapter-box) { margin-top: calc(var(--bar-h) - 1rem); }
 .reader-content {
   font-family: var(--font-read);
   font-size: var(--reader-size);
@@ -214,3 +216,4 @@ footer.reader-chrome { bottom: calc(var(--status-h) + var(--safe-bottom)); min-h
 .selection-main, .selection-more { display: flex; align-items: center; gap: 0.3rem; }
 .selection-more { padding-left: 0.25rem; margin-left: 0.15rem; border-left: 1px solid var(--border); }
 .selection-more .icon-btn { min-width: 40px; min-height: 40px; }
+.goal-box { border-color: var(--accent); }

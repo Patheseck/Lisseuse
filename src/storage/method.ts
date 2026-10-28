@@ -1,3 +1,4 @@
+import { normalizeGoal, type BookGoal } from '../core/goal';
 import { getSetting, putSetting } from './settings';
 
 // Méthode « Lire, Poser, Récupérer » par chapitre, chapitres choisis et signets.
@@ -26,6 +27,8 @@ export interface ChapterGuide {
   gaps?: GapItem[];
   /** Fiche créée à partir de la question directrice et de l'idée principale. */
   cardId?: string;
+  /** Ce que le chapitre apporte à l'objectif du livre, ou action à essayer. */
+  apply?: string;
 }
 
 export interface Bookmark {
@@ -39,13 +42,14 @@ export interface Bookmark {
 export const guideKey = (bookId: string) => `guide:${bookId}`;
 export const focusKey = (bookId: string) => `focus:${bookId}`;
 export const bookmarksKey = (bookId: string) => `bookmarks:${bookId}`;
+export const goalKey = (bookId: string) => `goal:${bookId}`;
 /**
  * Version de découpage des données restaurées d'un livre absent de l'appareil : quand il sera
  * importé, il le sera dans cette version pour que ses fiches restent à leur place.
  */
 export const layoutHintKey = (bookId: string) => `layout:${bookId}`;
 /** Clés de réglages propres à un livre (supprimées avec lui). */
-export const bookSettingKeys = (bookId: string) => [`recall:${bookId}`, `pretest:${bookId}`, guideKey(bookId), focusKey(bookId), bookmarksKey(bookId), layoutHintKey(bookId), `ambiance:${bookId}`];
+export const bookSettingKeys = (bookId: string) => [`recall:${bookId}`, `pretest:${bookId}`, guideKey(bookId), focusKey(bookId), bookmarksKey(bookId), layoutHintKey(bookId), `ambiance:${bookId}`, goalKey(bookId)];
 
 const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 
@@ -85,6 +89,16 @@ export async function loadBookmarks(bookId: string): Promise<Bookmark[]> {
 
 export async function saveBookmarks(bookId: string, bookmarks: Bookmark[]): Promise<void> {
   await putSetting(bookmarksKey(bookId), bookmarks);
+}
+
+// ---------- Objectif du livre ----------
+
+export async function loadGoal(bookId: string): Promise<BookGoal | null> {
+  return normalizeGoal(await getSetting(goalKey(bookId)));
+}
+
+export async function saveGoal(bookId: string, goal: BookGoal): Promise<void> {
+  await putSetting(goalKey(bookId), goal);
 }
 
 // ---------- Préférences de la bibliothèque ----------

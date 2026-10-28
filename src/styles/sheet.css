@@ -195,3 +195,14 @@
 [data-testid='add-tracks'] { display: inline-flex; align-items: center; gap: 0.35rem; }
 .music-apps { font-size: 0.85rem; color: var(--muted); }
 .music-apps a { color: var(--accent); font-weight: 600; }
+
+/* Objectif du livre */
+.toc-goal { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; margin-bottom: 0.75rem; padding: 0.6rem 0.75rem; border-radius: 10px; background: color-mix(in srgb, var(--accent) 10%, var(--panel)); }
+.toc-goal p { margin: 0; display: grid; gap: 0.15rem; min-width: 0; }
+.toc-goal-text { font-family: var(--font-read); font-size: 0.9rem; overflow-wrap: anywhere; }
+.toc-goal .btn { display: inline-flex; align-items: center; gap: 0.3rem; flex: 0 0 auto; }
+.goal-kinds { display: grid; gap: 0.3rem; }
+.goal-kinds input:checked + .ambiance-option { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--panel)); box-shadow: inset 3px 0 0 var(--accent); }
+.goal-kinds input:focus-visible + .ambiance-option { outline: 2px solid var(--accent); outline-offset: 2px; }
+.goal-chapter-list { display: grid; gap: 0.1rem; max-height: 40dvh; overflow-y: auto; }
+.goal-chapter-list .goal-sub { padding-left: 1.4rem; }

@@ -25,6 +25,8 @@ async function openBook(page: Page): Promise<void> {
   await page.goto('/');
   await importFile(page, 'methode.md', 'text/markdown', Buffer.from(BOOK));
   await expect(page.getByTestId('reader-chapter')).toHaveText('Relire ou se tester');
+  // L'objectif du livre est proposé d'abord ; ces tests portent sur l'aperçu des chapitres.
+  await page.getByTestId('goal-box').getByTestId('skip-goal').click();
 }
 
 test.describe('Méthode Lire · Poser · Récupérer', () => {

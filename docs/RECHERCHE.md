@@ -141,6 +141,24 @@ est plus faible sur appareil tenu en main que sur ordinateur.
 musique baisse pendant la lecture à voix haute. Piste suivante : rejouer l'ambiance d'un livre
 pendant la révision de ses fiches (option).
 
+## 12. Lire avec un objectif — ★★
+
+- **But de lecture.** Une consigne de pertinence (« lis pour savoir… ») oriente l'attention et
+  améliore la mémoire de ce qui s'y rapporte (McCrudden & Schraw, 2007).
+- **Utilité personnelle.** Écrire en quoi ce qu'on apprend sert sa propre vie augmente l'intérêt
+  et les résultats, surtout chez ceux qui doutent d'eux (Hulleman & Harackiewicz, 2009).
+- **Ce que je sais / ce que je veux savoir / ce que j'ai appris** (K-W-L, Ogle, 1986) : activer
+  ses connaissances avant de lire, puis faire le bilan.
+- **Objectif formulé par un verbe d'action** (« être capable de… ») : savoir, savoir-faire ou
+  compétence n'appellent pas les mêmes questions ; un savoir-faire se travaille avec des
+  questions « comment faire », une compétence avec des situations (transfert).
+- **Action précise** (quoi, quand, où) : prévoir le moment et le lieu d'une action rend son
+  passage à l'acte bien plus probable (intentions de mise en œuvre, Gollwitzer, 1999).
+
+→ Dans l'app (6.5) : « Mon objectif pour ce livre » (cinq questions, facultatives) à la première
+ouverture ; l'objectif est rappelé dans l'aperçu des chapitres, relié à la restitution (« ce que ce
+chapitre t'apporte » ou « une action à essayer ») et aux modèles de fiches.
+
 ## Ce qui est retiré faute de preuves
 
 | Fonction V5.7 | Raison du retrait |
@@ -170,3 +188,7 @@ pendant la révision de ses fiches (option).
 - Thompson, Schellenberg & Letnic (2012). *Fast and loud background music disrupts reading comprehension.* Psychology of Music.
 - Kämpfe, Sedlmeier & Renkewitz (2011). *The impact of background music on adult listeners: a meta-analysis.* Psychology of Music.
 - Smith (1985). *Background music and context-dependent memory.* American Journal of Psychology.
+- McCrudden & Schraw (2007). *Relevance and goal-focusing in text processing.* Educational Psychology Review.
+- Hulleman & Harackiewicz (2009). *Promoting interest and performance in high school science classes.* Science.
+- Ogle (1986). *K-W-L: a teaching model that develops active reading of expository text.* The Reading Teacher.
+- Gollwitzer (1999). *Implementation intentions: strong effects of simple plans.* American Psychologist.

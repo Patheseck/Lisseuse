@@ -1,3 +1,4 @@
+import { goalSummary, guidingExamples, type BookGoal } from '../core/goal';
 import { questionWarning } from '../core/question';
 import { surveyChapter, surveyIsEmpty } from '../core/survey';
 import type { CardRecord } from '../storage/cards';
@@ -15,6 +16,8 @@ export interface RecallResult {
   answered?: Answered;
   main: string;
   explain: string;
+  /** Apport du chapitre à l'objectif du livre, ou action à essayer (vide si non demandé). */
+  apply: string;
   gaps: GapItem[];
   /** Créer (ou mettre à jour) la fiche « question directrice → idée principale ». */
   makeGuideCard: boolean;
@@ -55,7 +58,7 @@ const list = (title: string, items: string[], testId: string) =>
  * Étape « Lire » : aperçu du chapitre (intertitres, gras, italique, listes, figures),
  * puis question directrice. Résout avec la question, ou null si fermé sans l'écrire.
  */
-export function chapterSurveySheet(options: { chapterLabel: string; html: string; question: string; otherQuestions: string[] }): Promise<string | null> {
+export function chapterSurveySheet(options: { chapterLabel: string; html: string; question: string; otherQuestions: string[]; goal?: BookGoal | null }): Promise<string | null> {
   return new Promise((resolve) => {
     let saved: string | null = null;
     const sheet = createSheet({
@@ -68,7 +71,8 @@ export function chapterSurveySheet(options: { chapterLabel: string; html: string
       },
     });
     const s = surveyChapter(options.html);
-    const input = h('textarea', { className: 'input textarea', rows: 2, 'data-testid': 'guide-question', placeholder: 'Ex. : Pourquoi relire donne-t-il l’illusion de savoir ?', value: options.question });
+    const input = h('textarea', { className: 'input textarea', rows: 2, 'data-testid': 'guide-question', placeholder: options.goal ? guidingExamples(options.goal.kind) : 'Ex. : Pourquoi relire donne-t-il l’illusion de savoir ?', value: options.question });
+    const goal = goalSummary(options.goal ?? null);
     input.value = options.question;
     const warning = h('p', { className: 'form-warning', role: 'status', 'data-testid': 'guide-warning', hidden: true });
     const start = h('button', {
@@ -99,6 +103,13 @@ export function chapterSurveySheet(options: { chapterLabel: string; html: string
       list('Listes', s.lists, 'survey-lists'),
       s.figureCount ? h('section', { className: 'survey-group', 'data-testid': 'survey-figures' }, h('h3', {}, `Figures et tableaux : ${s.figureCount}`), s.figures.length ? h('ul', {}, ...s.figures.map((t) => h('li', {}, t))) : null) : null,
       surveyIsEmpty(s) ? h('p', { className: 'muted', 'data-testid': 'survey-empty' }, 'Ce chapitre n’a pas de repères visuels : parcours rapidement son premier et son dernier paragraphe.') : null,
+      goal
+        ? h('div', { className: 'review-block survey-goal', 'data-testid': 'survey-goal' },
+            h('span', { className: 'field-label' }, 'Ton objectif pour ce livre'),
+            h('p', { className: 'guide-question-text' }, goal),
+            h('span', { className: 'hint' }, 'En quoi ce chapitre peut-il t’y aider ? Ta question directrice peut le dire.'),
+          )
+        : null,
       field('Ta question directrice', input, 'Transforme ce qui semble être l’idée centrale en une question à laquelle le chapitre devrait répondre. Garde-la en tête en lisant.'),
       warning,
       h('div', { className: 'sheet-actions' }, start),
@@ -119,6 +130,8 @@ export function chapterRecall(options: {
   hasGuideCard: boolean;
   passages: CardRecord[];
   headings: string[];
+  /** Question reliant le chapitre à l'objectif du livre (selon son type), ou null. */
+  applyPrompt?: { label: string; hint: string; placeholder: string } | null;
 }): Promise<RecallResult | null> {
   return new Promise((resolve) => {
     let result: RecallResult | null = null;
@@ -142,6 +155,7 @@ export function chapterRecall(options: {
     const main = h('textarea', { className: 'input textarea', rows: 2, 'data-testid': 'recall-main', placeholder: 'Ce chapitre montre que…' });
     const text = h('textarea', { className: 'input textarea recall-text', rows: 5, 'data-testid': 'recall-text', placeholder: 'Arguments, exemples, mots-clés, dans le désordre…' });
     const explain = h('textarea', { className: 'input textarea', rows: 4, 'data-testid': 'recall-explain', placeholder: 'Imagine que tu l’expliques à un ami, simplement…' });
+    const apply = h('textarea', { className: 'input textarea', rows: 2, 'data-testid': 'recall-apply', placeholder: options.applyPrompt?.placeholder ?? '' });
     const finish = h('button', { type: 'button', className: 'btn btn-primary', 'data-testid': 'recall-finish', onclick: () => compare() }, 'J’ai fini');
     add(sheet.body,
       h('p', { className: 'recall-head' }, h('span', {}, `Chapitre : ${options.chapterLabel}`), clock),
@@ -156,6 +170,7 @@ export function chapterRecall(options: {
       field('1. L’idée principale, en une phrase', main),
       field('2. Les arguments qui l’appuient', text),
       field('3. Explique-le avec tes mots', explain, 'Comme si tu l’enseignais à quelqu’un : là où tu bloques se trouvent tes trous.'),
+      options.applyPrompt ? field(`4. ${options.applyPrompt.label}`, apply, options.applyPrompt.hint) : null,
       note,
       h('div', { className: 'sheet-actions' }, finish),
     );
@@ -172,9 +187,9 @@ export function chapterRecall(options: {
     // ---------- Phase 2 : comparer et trier ----------
     function compare(): void {
       window.clearInterval(timer);
-      const written = { main: main.value.trim(), text: text.value.trim(), explain: explain.value.trim() };
+      const written = { main: main.value.trim(), text: text.value.trim(), explain: explain.value.trim(), apply: apply.value.trim() };
       clear(sheet.body);
-      const yours = [['Idée principale', written.main], ['Arguments', written.text], ['Avec tes mots', written.explain]].filter(([, v]) => v);
+      const yours = [['Idée principale', written.main], ['Arguments', written.text], ['Avec tes mots', written.explain], [options.applyPrompt?.label ?? 'Objectif', written.apply]].filter(([, v]) => v);
       add(sheet.body,
         h('p', { className: 'hint' }, 'Rouvre le livre et rebalaye le chapitre. Pour chaque idée, sois honnête : l’avais-tu retrouvée ?'),
         yours.length ? h('div', { className: 'review-block' }, h('span', { className: 'field-label' }, 'Ta restitution'), ...yours.map(([k, v]) => h('p', { className: 'review-attempt-text' }, h('strong', {}, `${k} : `), v!))) : null,
