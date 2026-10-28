@@ -1,6 +1,6 @@
 {
   "name": "liseuse",
-  "version": "6.2.1",
+  "version": "6.3.0",
   "private": true,
   "description": "Liseuse d'apprentissage hors ligne : EPUB/Markdown, fiches, répétition espacée FSRS",
   "type": "module",
@@ -20,6 +20,7 @@
     "@capacitor-community/text-to-speech": "^8.0.2",
     "@capacitor/android": "^8.5.3",
     "@capacitor/app": "^8.1.2",
+    "@capacitor/clipboard": "^8.0.1",
     "@capacitor/core": "^8.5.3",
     "@capacitor/filesystem": "^8.1.5",
     "@capacitor/haptics": "^8.0.2",

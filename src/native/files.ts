@@ -1,3 +1,4 @@
+import { Clipboard } from '@capacitor/clipboard';
 import { Directory, Filesystem } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
 import { bytesToBase64 } from '../core/base64';
@@ -49,4 +50,10 @@ export async function shareText(text: string): Promise<void> {
     return;
   }
   await navigator.clipboard.writeText(text);
+}
+
+/** Copie un texte : presse-papiers d'Android (fiable dans l'app), sinon celui du navigateur. */
+export async function copyText(text: string): Promise<void> {
+  if (isNative()) await Clipboard.write({ string: text });
+  else await navigator.clipboard.writeText(text);
 }

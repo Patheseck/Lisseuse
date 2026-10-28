@@ -19,7 +19,7 @@ d'apprentissage hors ligne, simple, fiable, fondée sur la recherche** (voir
 
 | Domaine | Fonction |
 |---|---|
-| Lecture | Import EPUB 2/3 et Markdown, table des matières, reprise à la position exacte, recherche dans le livre, thème auto/clair/sombre, taille, police, interligne, marges, mode concentration |
+| Lecture | Import EPUB 2/3 et Markdown, table des matières, reprise à la position exacte, recherche dans le livre, thème auto/clair/sombre, taille, police, interligne, marges, plein écran immersif |
 | Bibliothèque | Liste avec couverture, progression réelle (%), recherche, suppression (avec nettoyage complet des données liées) |
 | Fiches | Créées depuis une sélection, surlignage persistant (y compris sélection sur plusieurs éléments), édition, suppression |
 | Révision | FSRS-6 (ts-fsrs), rappel écrit/dicté avant correction, 4 boutons Encore / Difficile / Bien / Facile |

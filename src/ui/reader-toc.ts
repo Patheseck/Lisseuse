@@ -6,6 +6,8 @@ import { createSheet, type Sheet } from './sheet';
 
 export interface TocOptions {
   labels: () => string[];
+  /** Niveau de chaque chapitre : 1 pour une section d'un chapitre découpé. */
+  depth: (index: number) => number;
   current: () => number;
   cards: () => CardRecord[];
   /** Ids des surlignages dont le passage n'a pas été retrouvé dans le texte. */
@@ -55,7 +57,7 @@ export function readerTocSheet(o: TocOptions): Sheet & { refresh(): void } {
       const list = h('ol', { className: 'toc-list' });
       o.labels().forEach((label, i) => {
         const chosen = focus.has(i);
-        list.append(h('li', { className: `toc-row${focus.size && !chosen ? ' toc-out' : ''}` },
+        list.append(h('li', { className: `toc-row${focus.size && !chosen ? ' toc-out' : ''}${o.depth(i) ? ' toc-sub' : ''}` },
           h('button', {
             type: 'button', className: 'toc-item', 'aria-current': i === o.current() ? 'page' : null,
             onclick: () => { sheet.close(); o.onChapter(i); },
@@ -99,8 +101,8 @@ export function readerTocSheet(o: TocOptions): Sheet & { refresh(): void } {
       list.append(h('li', { className: 'hl-item', 'data-testid': 'highlight-item' },
         h('button', { type: 'button', className: 'hl-open', onclick: () => { sheet.close(); o.onCard(card); } },
           h('span', { className: 'hl-chapter' }, o.labels()[card.chapter] ?? `Chapitre ${card.chapter + 1}`, orphans.has(card.id) ? ' · passage introuvable' : ''),
-          h('span', { className: 'hl-quote' }, card.anchor.quote.length > 220 ? `${card.anchor.quote.slice(0, 220)}…` : card.anchor.quote),
-          card.kind !== 'highlight' ? h('span', { className: 'hl-question' }, h('span', { className: 'pill' }, 'Fiche'), card.question) : null,
+          card.origin === 'guide' ? null : h('span', { className: 'hl-quote' }, card.anchor.quote.length > 220 ? `${card.anchor.quote.slice(0, 220)}…` : card.anchor.quote),
+          card.kind !== 'highlight' ? h('span', { className: 'hl-question' }, h('span', { className: 'pill' }, card.origin === 'guide' ? 'Question directrice' : 'Fiche'), card.question) : null,
         ),
         h('button', { type: 'button', className: 'icon-btn', 'aria-label': card.kind === 'highlight' ? 'Créer une fiche' : 'Modifier la fiche', 'data-testid': 'toc-edit-card', onclick: () => { sheet.close(); o.onEditCard(card); } }, icon('card')),
         h('button', { type: 'button', className: 'icon-btn', 'aria-label': 'Retirer ce surlignage', onclick: () => o.onDeleteCard(card) }, icon('trash')),

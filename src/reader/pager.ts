@@ -2,6 +2,14 @@ import type { ReaderLayout } from '../storage/settings';
 
 // Mise en page du chapitre : vraies pages (colonnes CSS, une colonne = un écran) ou
 // défilement continu. Les deux modes partagent la même notion de position (0 à 1).
+//
+// Le glissement des pages est animé image par image (requestAnimationFrame) et non par une
+// transition CSS : sur une colonne très large (long chapitre), Chromium repeint tout le chapitre
+// au début de chaque animation CSS, ce qui figeait l'écran (0,7 s par page sur ordinateur pour
+// 500 pages). Image par image, une page se tourne en une trame quelle que soit la longueur.
+
+const TURN_MS = 280;
+const easeOut = (k: number) => 1 - Math.pow(1 - k, 3);
 
 function cssLength(value: string, rootPx: number): number {
   const n = Number.parseFloat(value);
@@ -15,6 +23,9 @@ export class Pager {
   pages = 1;
   private width = 0;
   private dragX = 0;
+  /** Décalage horizontal affiché (px), y compris pendant une animation. */
+  private shownX = 0;
+  private frame: number | undefined;
 
   constructor(
     private readonly scroller: HTMLElement,
@@ -35,6 +46,8 @@ export class Pager {
   relayout(keep = this.offset()): void {
     const style = this.column.style;
     if (this.mode === 'scroll') {
+      this.stopAnimation();
+      this.shownX = 0;
       for (const prop of ['width', 'column-width', 'column-gap', 'padding-left', 'padding-right', 'transform']) style.removeProperty(prop);
       this.pages = 1;
       this.page = 0;
@@ -78,13 +91,8 @@ export class Pager {
   goTo(page: number, animate = true): void {
     this.page = Math.min(this.pages - 1, Math.max(0, page));
     this.dragX = 0;
-    this.column.classList.toggle('no-anim', !animate);
-    this.apply();
-    if (!animate) {
-      // Force l'application immédiate avant de réactiver l'animation.
-      void this.column.offsetWidth;
-      this.column.classList.remove('no-anim');
-    }
+    if (animate) this.animateTo(this.targetX());
+    else this.setX(this.targetX());
     this.onChange();
   }
 
@@ -118,13 +126,11 @@ export class Pager {
     // Résistance au-delà de la première et de la dernière page.
     const atEdge = (dx > 0 && this.page === 0) || (dx < 0 && this.page === this.pages - 1);
     this.dragX = atEdge ? dx * 0.35 : dx;
-    this.column.classList.add('no-anim');
-    this.apply();
+    this.setX(this.targetX());
   }
 
   /** Fin du glisser : tourne la page si le geste est assez ample ou rapide. Renvoie la direction, ou 0. */
   release(dx: number, velocity: number): -1 | 0 | 1 {
-    this.column.classList.remove('no-anim');
     const decisive = Math.abs(dx) > this.width * 0.18 || Math.abs(velocity) > 0.45;
     const dir = decisive ? (dx < 0 ? 1 : -1) : 0;
     if (dir === 1 && this.page < this.pages - 1) {
@@ -136,7 +142,7 @@ export class Pager {
       return -1;
     }
     this.dragX = 0;
-    this.apply();
+    this.animateTo(this.targetX());
     return dir === 0 ? 0 : (dir as -1 | 1); // bord du chapitre : le lecteur décide
   }
 
@@ -161,9 +167,40 @@ export class Pager {
     return Math.max(0, elements.findIndex((e) => e.getBoundingClientRect().bottom > top + 8));
   }
 
-  private apply(): void {
-    if (this.mode !== 'paged') return;
-    this.column.style.transform = `translate3d(${-this.page * this.width + this.dragX}px, 0, 0)`;
+  private targetX(): number {
+    return -this.page * this.width + this.dragX;
+  }
+
+  private stopAnimation(): void {
+    if (this.frame !== undefined) cancelAnimationFrame(this.frame);
+    this.frame = undefined;
+  }
+
+  private setX(x: number): void {
+    this.stopAnimation();
+    this.paint(x);
+  }
+
+  private paint(x: number): void {
+    this.shownX = x;
+    if (this.mode === 'paged') this.column.style.transform = `translate3d(${x}px, 0, 0)`;
+  }
+
+  /** Glisse jusqu'à `to` depuis la position affichée (reprend une animation en cours sans à-coup). */
+  private animateTo(to: number): void {
+    this.stopAnimation();
+    const from = this.shownX;
+    if (this.mode !== 'paged' || from === to || matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      this.paint(to);
+      return;
+    }
+    const start = performance.now();
+    const step = (now: number) => {
+      const k = Math.min(1, (now - start) / TURN_MS);
+      this.paint(from + (to - from) * easeOut(k));
+      this.frame = k < 1 ? requestAnimationFrame(step) : undefined;
+    };
+    this.frame = requestAnimationFrame(step);
   }
 
 }

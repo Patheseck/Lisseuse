@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { markdownToHtml, parseMarkdown } from '../../src/book/markdown';
+import { markdownToHtml, parseMarkdown, txtParagraphs } from '../../src/book/markdown';
 
 describe('markdownToHtml', () => {
   it('convertit titres, paragraphes et emphase', () => {
@@ -42,5 +42,26 @@ describe('parseMarkdown', () => {
 
   it('produit au moins un chapitre pour un fichier vide', () => {
     expect(parseMarkdown('', 'vide.md').chapters).toHaveLength(1);
+  });
+});
+
+describe('fichiers texte (.txt)', () => {
+  const long = (i: number) => `Ligne ${i} : un paragraphe entier écrit sur une seule ligne, assez long pour ressembler à un vrai paragraphe de roman.`;
+
+  it('un paragraphe par ligne, sans ligne vide : chaque ligne devient un paragraphe', () => {
+    const txt = Array.from({ length: 6 }, (_, i) => long(i)).join('\n');
+    const book = parseMarkdown(txt, 'roman.txt');
+    expect((book.chapters[0]!.html.match(/<p>/g) ?? []).length).toBe(6);
+  });
+
+  it('texte coupé à largeur fixe (paragraphes séparés par une ligne vide) : inchangé', () => {
+    const txt = 'Il était une fois un texte\ncoupé à soixante-dix colonnes\ncomme ceux du projet Gutenberg.\n\nUn second paragraphe\nsur deux lignes.';
+    expect(txtParagraphs(txt)).toBe(txt);
+    expect((parseMarkdown(txt, 'vieux.txt').chapters[0]!.html.match(/<p>/g) ?? []).length).toBe(2);
+  });
+
+  it('ne touche pas aux fichiers Markdown', () => {
+    const md = Array.from({ length: 6 }, (_, i) => long(i)).join('\n');
+    expect((parseMarkdown(md, 'notes.md').chapters[0]!.html.match(/<p>/g) ?? []).length).toBe(1);
   });
 });

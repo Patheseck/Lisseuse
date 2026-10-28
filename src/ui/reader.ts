@@ -11,7 +11,8 @@ import { newSrs } from '../core/scheduler';
 import { applyReaderSettings, loadMojorTable, loadReaderSettings, saveReaderSettings, AUTO_SPEED_RANGE, BRIGHTNESS_RANGE, type ReaderSettings } from '../storage/settings';
 import { Pager } from '../reader/pager';
 import { applyReaderNative, chapterTick, onVolumeKey, setCustomSelectionMenu, setImmersive } from '../native/reader-native';
-import { shareText } from '../native/files';
+import { copyText, shareText } from '../native/files';
+import { syncSystemBars } from '../native/system-bars';
 import { addRecall, listRecalls, markPretest, pretestDates, type RecallRecord } from '../storage/learning';
 import { chapterHeadings, chapterRecall, chapterSurveySheet, pretest } from './chapter-practice';
 import { add, clear, h } from './dom';
@@ -52,9 +53,9 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
   const bookTitle = h('span', { className: 'reader-book', 'data-testid': 'reader-title' }, 'Chargement…');
   const chapterTitle = h('span', { className: 'reader-chapter', 'data-testid': 'reader-chapter' });
   const content = h('article', { className: 'reader-content', 'data-testid': 'reader-content', lang: 'fr' });
-  const guideBox = h('aside', { className: 'chapter-box guide-box', 'data-testid': 'guide-box', hidden: true });
-  const pretestBox = h('aside', { className: 'chapter-box', 'data-testid': 'pretest-box', hidden: true });
-  const chapterEnd = h('aside', { className: 'chapter-box chapter-end', 'data-testid': 'chapter-end', hidden: true });
+  const guideBox = h('aside', { className: 'chapter-box guide-box', 'aria-label': 'Avant de lire', 'data-testid': 'guide-box', hidden: true });
+  const pretestBox = h('aside', { className: 'chapter-box', 'aria-label': 'Questions avant de relire', 'data-testid': 'pretest-box', hidden: true });
+  const chapterEnd = h('aside', { className: 'chapter-box chapter-end', 'aria-label': 'Fin du chapitre', 'data-testid': 'chapter-end', hidden: true });
   const column = h('div', { className: 'reader-column' }, guideBox, pretestBox, content, chapterEnd);
   const scroller = h('main', { className: 'scroll reader-scroll' }, column);
   const pager = new Pager(scroller, column, () => onPositionChange());
@@ -481,7 +482,7 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
     const taken = takeSelection();
     if (!taken) return;
     try {
-      await navigator.clipboard.writeText(taken.anchor.quote);
+      await copyText(taken.anchor.quote);
       toast('Passage copié.');
     } catch (err) {
       logError('copie', err);
@@ -621,11 +622,17 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
   // ---------- Panneaux ----------
   const toc = readerTocSheet({
     labels: () => opened?.chapters.map((c) => c.label) ?? [],
+    depth: (i) => opened?.chapters[i]?.depth ?? 0,
     current: () => current,
     cards: () => cards,
     orphans: () => orphans,
     onChapter: (i) => go(i),
     onCard: (card) => {
+      // Fiche de question directrice : elle concerne tout le chapitre, on l'ouvre à son début.
+      if (card.origin === 'guide') {
+        go(card.chapter);
+        return;
+      }
       const goToCard = () => {
         const found = locate(content.textContent ?? '', card.anchor);
         if (found) flash(found.start, found.end);
@@ -857,7 +864,7 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
     if (!queue.length) return;
     setSpeaking(true);
     try {
-      await speak(queue.map((b) => b.textContent ?? ''), (i) => {
+      await speak(queue.map((b) => b.textContent ?? ''), opened?.book.language, (i) => {
         content.querySelectorAll('.speaking').forEach((el) => el.classList.remove('speaking'));
         queue[i]!.classList.add('speaking');
         pager.reveal(queue[i]!, true);
@@ -889,6 +896,7 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
       requestAnimationFrame(() => pager.relayout());
     }
     renderGuide(current);
+    void syncSystemBars();
     void applyReaderNative(next);
     updateStatus();
   }
@@ -1107,6 +1115,8 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
     pager.setMode(settings.layout);
     void applyReaderNative(settings);
     bookTitle.textContent = opened.book.title;
+    // Langue du livre : césure des mots et prononciation de la lecture à voix haute.
+    content.lang = opened.book.language || 'fr';
     footer.hidden = false;
     toolButtons.hidden = false;
     const progress = await getProgress(bookId);

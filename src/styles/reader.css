@@ -70,10 +70,9 @@ footer.reader-chrome { bottom: calc(var(--status-h) + var(--safe-bottom)); min-h
   padding-top: calc(var(--safe-top) + 1.5rem);
   padding-bottom: calc(var(--status-h) + var(--safe-bottom) + 0.75rem);
   column-fill: auto;
-  transition: transform 0.3s cubic-bezier(0.2, 0.7, 0.2, 1);
+  /* Pas de transition CSS : le glissement est animé image par image (voir pager.ts). */
   will-change: transform;
 }
-.reader-scroll.layout-paged .reader-column.no-anim { transition: none; }
 .layout-paged .reader-content img { width: auto; max-width: 100%; max-height: calc(100dvh - 8rem); object-fit: contain; }
 .layout-paged .reader-content img, .layout-paged .reader-content pre, .layout-paged .reader-content blockquote, .layout-paged .chapter-box { break-inside: avoid; }
 .layout-paged .reader-content h1, .layout-paged .reader-content h2, .layout-paged .reader-content h3 { break-after: avoid; }

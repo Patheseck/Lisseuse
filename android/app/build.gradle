@@ -1,5 +1,13 @@
 apply plugin: 'com.android.application'
 
+import groovy.json.JsonSlurper
+
+// Version unique : celle de package.json (« 6.3.0 » → versionName 6.3.0, versionCode 60300).
+// Il suffit de la changer là ; le numéro croît à chaque version, comme l'exige Android.
+def appVersion = new JsonSlurper().parse(rootProject.file('../package.json')).version as String
+def versionParts = appVersion.tokenize('.-').take(3).collect { it as int }
+def appVersionCode = versionParts[0] * 10000 + versionParts[1] * 100 + versionParts[2]
+
 // Signature de la version publiée : fournie par variables d'environnement (CI) ou propriétés
 // Gradle (-P…). Aucune clé n'est jamais versionnée. Voir docs/ANDROID.md.
 def signingValue = { name -> project.findProperty(name) ?: System.getenv(name) }
@@ -13,8 +21,8 @@ android {
         applicationId "com.patheseck.liseuse"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 60201
-        versionName "6.2.1"
+        versionCode appVersionCode
+        versionName appVersion
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

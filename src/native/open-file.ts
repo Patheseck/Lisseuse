@@ -15,6 +15,7 @@ export function fileNameFromUri(uri: string, bytes: Uint8Array): string {
   last = last.split(/[:/]/).pop() ?? '';
   if (/\.(epub|md|markdown|txt)$/i.test(last)) return last;
   const isZip = bytes[0] === 0x50 && bytes[1] === 0x4b;
+  // Sans extension connue : EPUB si c'est une archive, sinon texte (vérifié à l'import).
   return isZip ? `${last || 'livre'}.epub` : `${last || 'document'}.md`;
 }
 

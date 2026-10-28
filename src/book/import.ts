@@ -22,11 +22,28 @@ export interface ImportedBook {
   parsed: ParsedBook;
 }
 
+/** Texte lisible (UTF-8 valide, sans octets nuls), ou null pour un fichier binaire. */
+export function decodeText(buffer: ArrayBuffer): string | null {
+  const bytes = new Uint8Array(buffer, 0, Math.min(buffer.byteLength, 1 << 16));
+  if (bytes.includes(0)) return null;
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(buffer).replace(/^\uFEFF/, '');
+  } catch {
+    // Ancien fichier texte Windows (accents en Latin-1) : on le lit quand même.
+    const latin = new TextDecoder('windows-1252').decode(buffer);
+    return /[\u0000-\u0008\u000E-\u001F]/.test(latin.slice(0, 65536)) ? null : latin;
+  }
+}
+
 export async function parseBookFile(file: Blob, fileName: string): Promise<ImportedBook> {
   const buffer = await file.arrayBuffer();
-  const format = detectFormat(fileName, new Uint8Array(buffer, 0, Math.min(4, buffer.byteLength)));
-  if (!format) throw new ImportError('Format non pris en charge. Choisis un fichier .epub ou .md.');
+  const head = new Uint8Array(buffer, 0, Math.min(5, buffer.byteLength));
+  if (String.fromCharCode(...head) === '%PDF-') throw new ImportError('Les fichiers PDF ne sont pas encore pris en charge. Choisis un fichier .epub, .md ou .txt.');
+  const format = detectFormat(fileName, head);
+  if (!format) throw new ImportError('Format non pris en charge. Choisis un fichier .epub, .md ou .txt.');
   const id = await sha256Hex(buffer);
-  const parsed = format === 'epub' ? await parseEpub(buffer, fileName) : parseMarkdown(new TextDecoder().decode(buffer), fileName);
-  return { id, parsed };
+  if (format === 'epub') return { id, parsed: await parseEpub(buffer, fileName) };
+  const text = decodeText(buffer);
+  if (text === null) throw new ImportError('Ce fichier n’est pas un texte lisible. Choisis un fichier .epub, .md ou .txt.');
+  return { id, parsed: parseMarkdown(text, fileName) };
 }

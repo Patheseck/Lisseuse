@@ -10,6 +10,7 @@ interface ReaderNativePlugin {
   setKeepAwake(options: { enabled: boolean }): Promise<void>;
   setImmersive(options: { enabled: boolean }): Promise<void>;
   setCustomSelection(options: { enabled: boolean }): Promise<void>;
+  setWindowBackground(options: { color: string }): Promise<void>;
 }
 
 const ReaderNative = registerPlugin<ReaderNativePlugin>('ReaderNative');
@@ -49,4 +50,10 @@ export function onVolumeKey(handler: (dir: 1 | -1) => void): () => void {
 export async function setCustomSelectionMenu(enabled: boolean): Promise<void> {
   if (!isNative()) return;
   await ReaderNative.setCustomSelection({ enabled }).catch(() => undefined);
+}
+
+/** Couleur de fond de la fenêtre Android (derrière les barres système). */
+export async function setWindowBackground(color: string): Promise<void> {
+  if (!isNative()) return;
+  await ReaderNative.setWindowBackground({ color }).catch(() => undefined);
 }

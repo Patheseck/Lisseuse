@@ -39,8 +39,13 @@ export interface Bookmark {
 export const guideKey = (bookId: string) => `guide:${bookId}`;
 export const focusKey = (bookId: string) => `focus:${bookId}`;
 export const bookmarksKey = (bookId: string) => `bookmarks:${bookId}`;
+/**
+ * Version de découpage des données restaurées d'un livre absent de l'appareil : quand il sera
+ * importé, il le sera dans cette version pour que ses fiches restent à leur place.
+ */
+export const layoutHintKey = (bookId: string) => `layout:${bookId}`;
 /** Clés de réglages propres à un livre (supprimées avec lui). */
-export const bookSettingKeys = (bookId: string) => [`recall:${bookId}`, `pretest:${bookId}`, guideKey(bookId), focusKey(bookId), bookmarksKey(bookId)];
+export const bookSettingKeys = (bookId: string) => [`recall:${bookId}`, `pretest:${bookId}`, guideKey(bookId), focusKey(bookId), bookmarksKey(bookId), layoutHintKey(bookId)];
 
 const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 

@@ -1,8 +1,19 @@
 import JSZip from 'jszip';
+import { detectLanguage, normalizeLanguage } from '../core/language';
 import type { Chapter, ParsedBook } from './types';
 import { sanitizeHtml } from './sanitize';
 
 export class EpubError extends Error {}
+
+/** Livre verrouillé par une protection (DRM) : son texte est chiffré, il ne peut pas être lu. */
+export class DrmError extends EpubError {
+  constructor(readonly vendor: string) {
+    super(`Ce livre est verrouillé par un DRM (${vendor}) : son texte est chiffré.`);
+  }
+}
+
+/** Algorithmes d'obfuscation des polices : autorisés, ils ne touchent pas au texte. */
+const FONT_OBFUSCATION = new Set(['http://www.idpf.org/2008/embedding', 'http://ns.adobe.com/pdf/enc#RC']);
 
 /** Résout `relative` par rapport au fichier `basePath` (chemins internes à l'archive). */
 export function resolvePath(basePath: string, relative: string): string {
@@ -71,6 +82,27 @@ class Archive {
   }
 }
 
+/**
+ * Refuse les livres protégés : Adobe (rights.xml), Readium LCP (license.lcpl), Apple (sinf.xml),
+ * ou tout fichier chiffré autrement que par l'obfuscation des polices (encryption.xml).
+ */
+async function assertNoDrm(archive: Archive): Promise<void> {
+  if (archive.find('META-INF/license.lcpl')) throw new DrmError('Readium LCP');
+  if (archive.find('META-INF/sinf.xml')) throw new DrmError('Apple');
+  const rights = await archive.text('META-INF/rights.xml');
+  if (rights && /adept|adobe/i.test(rights)) throw new DrmError('Adobe');
+  const encryption = await archive.text('META-INF/encryption.xml');
+  if (!encryption) return;
+  let doc: Document;
+  try {
+    doc = parseXml(encryption);
+  } catch {
+    return; // fichier illisible : on laisse l'analyse continuer
+  }
+  const methods = byLocalName(doc, 'EncryptionMethod').map((m) => m.getAttribute('Algorithm') ?? '');
+  if (methods.some((a) => !FONT_OBFUSCATION.has(a))) throw new DrmError(rights ? 'Adobe' : 'inconnu');
+}
+
 interface ManifestItem {
   href: string;
   mediaType: string;
@@ -92,6 +124,7 @@ export async function parseEpub(data: Blob | ArrayBuffer | Uint8Array, fileName:
     throw new EpubError('Ce fichier n’est pas une archive EPUB valide.');
   }
   const archive = new Archive(zip);
+  await assertNoDrm(archive);
 
   // 1. Localiser le fichier OPF.
   let opfPath: string | null = null;
@@ -220,5 +253,31 @@ export async function parseEpub(data: Blob | ArrayBuffer | Uint8Array, fileName:
   }
   if (!chapters.length) throw new EpubError('Ce livre ne contient aucun chapitre lisible.');
 
-  return { format: 'epub', title, author, chapters, resources, cover };
+  const language = normalizeLanguage(metaText('language')) ?? detectLanguage(textSample(chapters));
+  return { format: 'epub', title, author, chapters, resources, cover, language };
+}
+
+/** Début du texte du livre, pour deviner sa langue. */
+export function textSample(chapters: Chapter[]): string {
+  let out = '';
+  for (const c of chapters) {
+    const tpl = document.createElement('template');
+    tpl.innerHTML = c.html;
+    out += ` ${tpl.content.textContent ?? ''}`;
+    if (out.length > 30_000) break;
+  }
+  return out;
+}
+
+/** Langue déclarée par un EPUB (métadonnée dc:language), sans analyser tout le livre. */
+export async function readEpubLanguage(data: Blob): Promise<string | null> {
+  try {
+    const archive = new Archive(await JSZip.loadAsync(await data.arrayBuffer()));
+    const container = await archive.text('META-INF/container.xml');
+    const opfPath = (container ? byLocalName(parseXml(container), 'rootfile')[0]?.getAttribute('full-path') : null) ?? archive.firstMatching(/\.opf$/);
+    const opf = opfPath ? await archive.text(opfPath) : null;
+    return opf ? normalizeLanguage(byLocalName(parseXml(opf), 'language')[0]?.textContent) : null;
+  } catch {
+    return null;
+  }
 }

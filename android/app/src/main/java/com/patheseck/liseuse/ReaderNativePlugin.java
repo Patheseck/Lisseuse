@@ -1,5 +1,6 @@
 package com.patheseck.liseuse;
 
+import android.graphics.Color;
 import android.view.Window;
 import android.view.WindowManager;
 import androidx.core.view.WindowCompat;
@@ -59,6 +60,21 @@ public class ReaderNativePlugin extends Plugin {
                 controller.show(WindowInsetsCompat.Type.systemBars());
             }
         });
+        call.resolve();
+    }
+
+    /** Fond de la fenêtre (couleur CSS « #rrggbb ») : visible derrière les barres système. */
+    @PluginMethod
+    public void setWindowBackground(PluginCall call) {
+        final String color = call.getString("color", "");
+        final int parsed;
+        try {
+            parsed = Color.parseColor(color.trim());
+        } catch (IllegalArgumentException e) {
+            call.reject("Couleur invalide : " + color);
+            return;
+        }
+        getActivity().runOnUiThread(() -> getActivity().getWindow().getDecorView().setBackgroundColor(parsed));
         call.resolve();
     }
 

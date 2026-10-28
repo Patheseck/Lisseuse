@@ -72,7 +72,7 @@ export function reviewScreen(navigate: Navigate): Screen {
     return h('div', { className: 'review-context' },
       h('p', { className: 'review-chapter', 'data-testid': 'review-chapter' }, chapter ?? `Chapitre ${card.chapter + 1}`),
       h('p', { className: 'review-book' },
-        h('span', { className: 'pill' }, card.kind === 'sequence' ? 'Étapes' : 'Question'),
+        h('span', { className: 'pill' }, card.kind === 'sequence' ? 'Étapes' : card.origin === 'guide' ? 'Question directrice' : 'Question'),
         card.origin === 'v5' ? h('span', { className: 'pill pill-muted', title: 'Question générée lors de la reprise de la V5 : modifie-la depuis le lecteur.' }, 'Reprise V5') : null,
         ` ${titles.get(card.bookId) ?? 'Livre'}`),
     );
@@ -84,7 +84,9 @@ export function reviewScreen(navigate: Navigate): Screen {
    */
   function hintButton(card: CardRecord): HTMLElement | null {
     const hints: { testId: string; label: string; text: string }[] = [];
-    if (card.anchor.quote.trim()) hints.push({ testId: 'show-start', label: 'Voir le début du passage', text: `« ${passageStart(card.anchor.quote)} »` });
+    // Une fiche « question directrice » couvre tout le chapitre : son ancre (début du chapitre)
+    // n'est pas un indice utile.
+    if (card.origin !== 'guide' && card.anchor.quote.trim()) hints.push({ testId: 'show-start', label: 'Voir le début du passage', text: `« ${passageStart(card.anchor.quote)} »` });
     if (hasMnemonic(card.mnemonic)) hints.push({ testId: 'show-hint', label: 'Voir mon aide-mémoire', text: hintText(card.mnemonic) });
     if (!hints.length) return null;
     const wrap = h('div', { className: 'review-hint-wrap' }, h('span', { className: 'hint-label' }, 'Bloqué ?'));
@@ -147,7 +149,7 @@ export function reviewScreen(navigate: Navigate): Screen {
       h('h2', { className: 'review-question' }, card.question),
       attempt ? h('div', { className: 'review-block' }, h('span', { className: 'field-label' }, 'Ta réponse'), h('p', { className: 'review-attempt-text' }, attempt)) : null,
       h('div', { className: 'review-block review-block-answer' }, h('span', { className: 'field-label' }, 'Réponse'), answerBlock(card)),
-      h('details', { className: 'review-passage' }, h('summary', {}, 'Passage du livre'), h('blockquote', { className: 'passage' }, card.anchor.quote)),
+      card.origin === 'guide' ? null : h('details', { className: 'review-passage' }, h('summary', {}, 'Passage du livre'), h('blockquote', { className: 'passage' }, card.anchor.quote)),
       h('p', { className: 'field-label review-ask' }, 'Compare honnêtement avec la réponse : comment s’est passé ton rappel ?'),
       h('div', { className: 'grades', role: 'group', 'aria-label': 'Note' },
         ...GRADES.map((g) => h('button', { type: 'button', className: `btn grade grade-${g}`, 'data-testid': `grade-${g}`, onclick: () => void grade(card, attempt, confidence, g) },

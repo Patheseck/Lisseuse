@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { EpubError, parseEpub, resolvePath } from '../../src/book/epub';
+import { DrmError, EpubError, parseEpub, resolvePath } from '../../src/book/epub';
 import { detectFormat, parseBookFile } from '../../src/book/import';
-import { makeEpub2, makeEpub3 } from '../fixtures/make-epub';
+import { makeEpub2, makeEpub3, makeProtectedEpub } from '../fixtures/make-epub';
 
 describe('resolvePath', () => {
   it('résout les chemins relatifs', () => {
@@ -73,5 +73,35 @@ describe('erreurs', () => {
     const b = await parseBookFile(new Blob([bytes as BlobPart]), 'b.epub');
     expect(a.id).toMatch(/^[0-9a-f]{64}$/);
     expect(a.id).toBe(b.id);
+  });
+});
+
+describe('livres protégés (DRM)', () => {
+  it.each([
+    ['adobe', 'Adobe'],
+    ['lcp', 'Readium LCP'],
+    ['apple', 'Apple'],
+    ['encrypted', 'inconnu'],
+  ] as const)('refuse un EPUB %s avec un message clair', async (kind, vendor) => {
+    const err = await parseEpub(await makeProtectedEpub(kind), 'drm.epub').catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(DrmError);
+    expect((err as DrmError).vendor).toBe(vendor);
+    expect((err as DrmError).message).toContain('DRM');
+  });
+
+  it('accepte l’obfuscation des polices, qui laisse le texte lisible', async () => {
+    const book = await parseEpub(await makeProtectedEpub('fonts'), 'polices.epub');
+    expect(book.chapters[0]!.html).toContain('readable');
+    expect(book.language).toBe('en-GB');
+  });
+});
+
+describe('fichiers qui ne sont pas des livres', () => {
+  it('refuse un PDF et un binaire, accepte un texte Latin-1', async () => {
+    await expect(parseBookFile(new Blob(['%PDF-1.7 ...']), 'doc.pdf')).rejects.toThrow('PDF');
+    await expect(parseBookFile(new Blob([new Uint8Array([0x41, 0, 0x42, 0x43])]), 'image.txt')).rejects.toThrow('pas un texte lisible');
+    const latin = new Uint8Array([0x23, 0x20, 0x43, 0x61, 0x66, 0xe9, 0x0a]); // « # Café » en Latin-1
+    const { parsed } = await parseBookFile(new Blob([latin]), 'ancien.txt');
+    expect(parsed.chapters[0]!.label).toBe('Café');
   });
 });

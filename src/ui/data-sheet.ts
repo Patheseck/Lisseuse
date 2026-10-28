@@ -7,6 +7,7 @@ import type { ImportReport } from '../storage/migrate-v5';
 import { h } from './dom';
 import { infoDialog, passwordDialog, toast, withBusy } from './feedback';
 import { createSheet, type Sheet } from './sheet';
+import { aboutSheet } from './about';
 
 /** Affiche le bilan d'une migration ou d'une restauration. */
 export function showImportReport(title: string, intro: string, r: ImportReport): Promise<void> {
@@ -21,7 +22,7 @@ export function showImportReport(title: string, intro: string, r: ImportReport):
   ]);
 }
 
-/** Panneau « Mes données » : sauvegarde, restauration, journal d'erreurs. */
+/** Panneau « Mes données » : sauvegarde, restauration, journal d'erreurs, et accès à « À propos ». */
 export function dataSheet(onRestored: () => void): Sheet {
   const sheet = createSheet({ title: 'Mes données', kind: 'bottom', testId: 'data-sheet' });
   const includeBooks = h('input', { type: 'checkbox', id: 'backup-books', 'data-testid': 'backup-books' });
@@ -86,8 +87,15 @@ export function dataSheet(onRestored: () => void): Sheet {
   void refreshMojor();
 
   const errors = readErrors();
+  const usage = h('p', { className: 'hint', 'data-testid': 'storage-usage', hidden: true });
+  void navigator.storage?.estimate?.().then(({ usage: used }) => {
+    if (typeof used !== 'number') return;
+    usage.textContent = `Espace occupé par Liseuse sur l’appareil : ${used < 1_048_576 ? '< 1' : Math.round(used / 1_048_576)} Mo.`;
+    usage.hidden = false;
+  }).catch(() => undefined);
   sheet.body.append(
     h('p', { className: 'hint' }, 'Tes livres et tes fiches restent uniquement sur cet appareil. Exporte une sauvegarde de temps en temps pour ne rien perdre.'),
+    usage,
     h('section', { className: 'data-section' },
       h('h3', {}, 'Sauvegarder'),
       h('label', { className: 'check', for: 'backup-books' }, includeBooks, h('span', {}, 'Inclure les fichiers des livres', h('small', {}, 'Fichier plus lourd, mais tout se restaure d’un coup.'))),
@@ -112,6 +120,14 @@ export function dataSheet(onRestored: () => void): Sheet {
         ? h('ol', { className: 'error-log' }, ...errors.slice().reverse().map((e) => h('li', {}, h('time', {}, new Date(e.at).toLocaleString('fr-FR')), ` ${e.context} — ${e.message}`)))
         : h('p', { className: 'hint' }, 'Aucune erreur enregistrée.'),
     ),
+    h('button', {
+      type: 'button', className: 'btn wide-btn', 'data-testid': 'open-about',
+      onclick: () => {
+        const about = aboutSheet();
+        about.el.addEventListener('close', () => about.el.remove());
+        about.open();
+      },
+    }, 'À propos de Liseuse (version, confidentialité, licences)'),
   );
   return sheet;
 }

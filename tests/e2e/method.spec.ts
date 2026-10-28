@@ -82,6 +82,8 @@ test.describe('Méthode Lire · Poser · Récupérer', () => {
     await page.getByTestId('start-review').click();
     await expect(page.getByTestId('review-chapter')).toHaveText('Relire ou se tester');
     await expect(page.locator('.review-question')).toHaveText('Pourquoi la relecture donne-t-elle une illusion de savoir ?');
+    // Fiche de question directrice : pas d'indice « début du passage » (ce serait le début du chapitre).
+    await expect(page.getByTestId('show-start')).toHaveCount(0);
 
     // La question survit au rechargement.
     await page.goto('/');

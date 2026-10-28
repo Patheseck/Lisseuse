@@ -1,12 +1,15 @@
 // Sauvegarde et restauration. La restauration FUSIONNE : elle n'efface ni n'écrase jamais
 // un livre présent, et garde la version la plus récente de chaque fiche.
 
+import { computeLayout, layoutChapters } from '../book/layout';
 import { parseStoredBook } from '../book/service';
 import { base64ToBytes, bytesToBase64 } from '../core/base64';
 import { errorMessage, logError } from '../core/errors';
 import { normalizeCard, type CardRecord, type ReviewRecord } from './cards';
 import { promisify, tx } from './db';
-import { putImportedBook, type BookRecord, type ProgressRecord } from './library';
+import { getBook, putImportedBook, type BookRecord, type ProgressRecord } from './library';
+import { layoutHintKey } from './method';
+import { createRemapper, parseChapterSettingKey, upgradeLayout, type Remapper } from './relayout';
 import { emptyReport, importV5Snapshot, type ImportReport } from './migrate-v5';
 import { isV5Backup, snapshotFromV5Backup, type V5Snapshot } from './v5';
 
@@ -184,9 +187,11 @@ export async function restoreBackup(parsed: ParsedBackup): Promise<ImportReport>
     }
     try {
       const { file: encodedFile, cover: encodedCover, ...meta } = b;
-      const record: BookRecord = { ...meta, file: decodeBlob(encodedFile), cover: encodedCover ? decodeBlob(encodedCover) : null };
+      // Restauré avec le découpage qu'il avait à l'export : ses fiches s'y réfèrent.
+      const record: BookRecord = { ...meta, layout: typeof meta.layout === 'number' ? meta.layout : 0, file: decodeBlob(encodedFile), cover: encodedCover ? decodeBlob(encodedCover) : null };
       const parsedBook = await parseStoredBook(record);
-      await putImportedBook({ ...record, chapterCount: parsedBook.chapters.length, chapterLabels: parsedBook.chapters.map((c) => c.label) }, parsedBook);
+      const chapters = layoutChapters(parsedBook.chapters, record, record.layout ?? 0);
+      await putImportedBook({ ...record, chapterCount: chapters.length, chapterLabels: chapters.map((c) => c.label) }, { chapters, resources: parsedBook.resources });
       report.books++;
     } catch (err) {
       logError('restauration', err);
@@ -194,16 +199,64 @@ export async function restoreBackup(parsed: ParsedBackup): Promise<ImportReport>
     }
   }
 
-  const cardsToPut = backup.cards
-    .filter((c) => c && typeof c.id === 'string' && typeof c.bookId === 'string' && c.anchor)
-    .map(normalizeCard)
+  // Les fiches, la progression et les réglages par livre se réfèrent au découpage des chapitres
+  // du livre au moment de l'export ; on les convertit vers celui du livre sur cet appareil.
+  const exportedLayout = new Map(backup.books.filter((b) => b && typeof b.id === 'string').map((b) => [b.id, typeof b.layout === 'number' ? b.layout : 0]));
+  const remappers = new Map<string, Remapper | null>();
+  const hints = new Map<string, number>();
+  const remapperFor = async (bookId: string): Promise<Remapper | null> => {
+    if (remappers.has(bookId)) return remappers.get(bookId)!;
+    const from = exportedLayout.get(bookId) ?? 0;
+    let device = await getBook(bookId);
+    let remapper: Remapper | null = null;
+    if (!device) {
+      hints.set(bookId, from); // livre absent : il sera importé dans ce découpage
+    } else {
+      if ((device.layout ?? 0) < from) {
+        const base = await parseStoredBook(device);
+        device = (await upgradeLayout(device, base.chapters, base.resources)).book;
+      }
+      if (from < (device.layout ?? 0)) {
+        const base = await parseStoredBook(device);
+        const layout = computeLayout(base.chapters, device);
+        remapper = layout.chapters === base.chapters ? null : createRemapper(base.chapters, layout);
+      }
+    }
+    remappers.set(bookId, remapper);
+    return remapper;
+  };
+  const validCards = backup.cards.filter((c) => c && typeof c.id === 'string' && typeof c.bookId === 'string' && c.anchor).map(normalizeCard);
+  const validProgress = (backup.progress ?? []).filter((p) => p && typeof p.bookId === 'string');
+  const validSettings = (backup.settings ?? []).filter((s) => s && typeof s.key === 'string' && !LOCAL_ONLY_SETTINGS.has(s.key));
+  for (const id of new Set([...validCards.map((c) => c.bookId), ...validProgress.map((p) => p.bookId), ...validSettings.flatMap((s) => parseChapterSettingKey(s.key)?.bookId ?? [])])) {
+    try {
+      await remapperFor(id);
+    } catch (err) {
+      logError('restauration', err);
+      remappers.set(id, null);
+    }
+  }
+
+  const cardsToPut = validCards
+    .map((c) => remappers.get(c.bookId)?.card(c) ?? c)
     .filter((c) => {
       const local = cards.get(c.id);
       return !local || c.updatedAt > local.updatedAt;
     });
   const reviewsToAdd = (backup.reviews ?? []).filter((r) => r && typeof r.cardId === 'string' && !reviews.has(`${r.cardId}|${r.at}`));
-  const progressToPut = (backup.progress ?? []).filter((p) => p && typeof p.bookId === 'string' && (!progress.has(p.bookId) || p.updatedAt > progress.get(p.bookId)!.updatedAt));
-  const settingsToPut = (backup.settings ?? []).filter((s) => s && typeof s.key === 'string' && !LOCAL_ONLY_SETTINGS.has(s.key) && !settings.has(s.key));
+  const progressToPut = validProgress
+    .map((p) => remappers.get(p.bookId)?.position(p) ?? p)
+    .filter((p) => !progress.has(p.bookId) || p.updatedAt > progress.get(p.bookId)!.updatedAt);
+  const settingsToPut = validSettings
+    .filter((s) => !settings.has(s.key))
+    .map((s) => {
+      const key = parseChapterSettingKey(s.key);
+      const remapper = key && remappers.get(key.bookId);
+      return remapper ? { key: s.key, value: remapper.setting(key.kind, s.value) } : s;
+    });
+  for (const [bookId, layout] of hints) {
+    if (!settings.has(layoutHintKey(bookId)) && !settingsToPut.some((s) => s.key === layoutHintKey(bookId))) settingsToPut.push({ key: layoutHintKey(bookId), value: layout });
+  }
 
   await tx(['cards', 'reviews', 'progress', 'settings'], 'readwrite', (t) => {
     cardsToPut.forEach((c) => t.objectStore('cards').put(c));

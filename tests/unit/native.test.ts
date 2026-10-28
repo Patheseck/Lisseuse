@@ -30,3 +30,20 @@ describe('base64', () => {
     expect(base64ToBytes(bytesToBase64(bytes))).toEqual(bytes);
   });
 });
+
+describe('barres système et erreurs', () => {
+  it('reconnaît un fond sombre (icônes claires) pour chaque thème', async () => {
+    const { isDarkBackground } = await import('../../src/native/system-bars');
+    expect(isDarkBackground('#f6f1e7')).toBe(false); // Jour
+    expect(isDarkBackground('#f4ecd8')).toBe(false); // Sépia
+    expect(isDarkBackground('#3b3d40')).toBe(true); // Gris
+    expect(isDarkBackground('#17161b')).toBe(true); // Nuit
+    expect(isDarkBackground('#000000')).toBe(true); // Noir
+    expect(isDarkBackground('rouge')).toBe(false);
+  });
+
+  it('explique un stockage plein', async () => {
+    const { errorMessage } = await import('../../src/core/errors');
+    expect(errorMessage(new DOMException('quota', 'QuotaExceededError'))).toContain('Espace de stockage insuffisant');
+  });
+});

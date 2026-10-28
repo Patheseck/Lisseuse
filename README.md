@@ -12,13 +12,14 @@ Application Android via Capacitor.
 ## Avancement V6
 
 - [x] Étape 1 — Socle : Vite + TypeScript, IndexedDB, bibliothèque, import EPUB/Markdown, lecteur minimal, tests, CI
-- [x] Étape 2 — Lecteur complet (sommaire, recherche, réglages, surlignage, mode concentration)
+- [x] Étape 2 — Lecteur complet (sommaire, recherche, réglages, surlignage)
 - [x] Étape 3 — Fiches question-réponse et étapes, révision FSRS-6 (confiance, réapprentissage, entrelacement)
 - [x] Étape 4 — Reprise automatique des données V5.7, sauvegarde/restauration par fusion (livres inclus en option, chiffrement)
 - [x] Étape 5 — Rappel libre de fin de chapitre, pré-questions, aide-mémoire (Mojor, palais mental), tableau de bord « Ma mémoire »
 - [x] Lot « premium » : pages tournées (glisser, taps, volume), plein écran, barre d'état, 6 thèmes, luminosité, typographie fine
 - [x] Lot « méthode » (Lire · Poser · Récupérer) : aperçu du chapitre et question directrice, restitution en 3 couches, tri des idées en 3 niveaux et points « à approfondir », chapitres choisis pour son objectif
 - [x] Lot « premium 2 » : étagère en grille avec couvertures générées, tri, « Continuer la lecture », signets, défilement automatique, transitions animées
+- [x] Préparation à la vente (6.3) : livres protégés (DRM) détectés, chapitres géants découpés (fiches et positions migrées), langue des livres, presse-papiers natif, contrastes, barres système, « À propos » (version, confidentialité, licences), AAB et versions automatiques
 - [x] Étape 6 — Application Android (Capacitor) : partage, synthèse vocale, rappel quotidien, ouverture d'EPUB, bouton retour ; APK construit par la CI
 
 ## Développement

@@ -60,7 +60,7 @@ jobs:
           name: liseuse-test-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
-      - name: APK signé (si la clé est configurée)
+      - name: APK et AAB signés (si la clé est configurée)
         if: env.HAS_RELEASE_KEY == 'true'
         working-directory: android
         env:
@@ -70,11 +70,18 @@ jobs:
           LISEUSE_KEY_PASSWORD: ${{ secrets.LISEUSE_KEY_PASSWORD }}
         run: |
           echo "$LISEUSE_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/liseuse.jks"
-          LISEUSE_KEYSTORE_FILE="$RUNNER_TEMP/liseuse.jks" ./gradlew assembleRelease --no-daemon
+          # APK à installer soi-même ; AAB (Android App Bundle) : le format exigé par Google Play.
+          LISEUSE_KEYSTORE_FILE="$RUNNER_TEMP/liseuse.jks" ./gradlew assembleRelease bundleRelease --no-daemon
           rm -f "$RUNNER_TEMP/liseuse.jks"
       - uses: actions/upload-artifact@v4
         if: env.HAS_RELEASE_KEY == 'true'
         with:
           name: liseuse-apk-signe
           path: android/app/build/outputs/apk/release/app-release.apk
+          retention-days: 90
+      - uses: actions/upload-artifact@v4
+        if: env.HAS_RELEASE_KEY == 'true'
+        with:
+          name: liseuse-aab-signe
+          path: android/app/build/outputs/bundle/release/app-release.aab
           retention-days: 90

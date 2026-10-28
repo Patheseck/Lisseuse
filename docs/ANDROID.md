@@ -47,8 +47,18 @@ quatre secrets :
 | `LISEUSE_KEY_ALIAS` | `liseuse` |
 | `LISEUSE_KEY_PASSWORD` | le mot de passe de la clé (souvent le même) |
 
-Dès lors, chaque exécution de la CI produit aussi `liseuse-apk-signe` : c'est la version
-à installer au quotidien (« Liseuse »). Les suivantes s'installeront par-dessus, données conservées.
+Dès lors, chaque exécution de la CI produit aussi :
+
+- `liseuse-apk-signe` : la version à installer au quotidien (« Liseuse »). Les suivantes
+  s'installeront par-dessus, données conservées ;
+- `liseuse-aab-signe` : le même programme au format **Android App Bundle** (`.aab`), le seul
+  accepté par Google Play pour une publication.
+
+## Numéro de version
+
+La version vient uniquement de `package.json` (`"version": "6.3.0"`) : Android en déduit
+`versionName` (6.3.0) et `versionCode` (60300 = majeure × 10 000 + mineure × 100 + correctif).
+Pour publier une nouvelle version, il suffit d'augmenter ce numéro ; « À propos » l'affiche aussi.
 
 ## Construire sur son ordinateur
 
@@ -60,6 +70,8 @@ npm run android:debug          # → android/app/build/outputs/apk/debug/app-deb
 # Version signée :
 LISEUSE_KEYSTORE_FILE=/chemin/liseuse.jks LISEUSE_KEYSTORE_PASSWORD=… \
 LISEUSE_KEY_ALIAS=liseuse LISEUSE_KEY_PASSWORD=… npm run android:release
+# Format Google Play (.aab), mêmes variables :
+cd android && ./gradlew bundleRelease    # → android/app/build/outputs/bundle/release/app-release.aab
 ```
 
 Pour ouvrir le projet dans Android Studio : `npm run android:sync` puis `npx cap open android`.
@@ -68,7 +80,7 @@ Pour ouvrir le projet dans Android Studio : `npm run android:sync` puis `npx cap
 
 | Fonction | Fonctionnement |
 |---|---|
-| Ouvrir un EPUB depuis un gestionnaire de fichiers | « Ouvrir avec → Liseuse » importe le livre et l'ouvre |
+| Ouvrir un EPUB depuis un gestionnaire de fichiers | « Ouvrir avec → Liseuse » importe le livre et l'ouvre (EPUB, Markdown, texte, y compris les fichiers reçus sans type précis ; un livre protégé par DRM ou un PDF est refusé avec une explication) |
 | Exporter une sauvegarde | menu de partage d'Android (Drive, e-mail, Fichiers…) |
 | Écouter un chapitre | synthèse vocale du téléphone, à partir du paragraphe visible |
 | Rappel quotidien | notification locale à l'heure choisie (Ma mémoire → Réglages) |
@@ -77,6 +89,10 @@ Pour ouvrir le projet dans Android Studio : `npm run android:sync` puis `npx cap
 | Écran toujours allumé | pendant la lecture uniquement (désactivable dans « Aa ») |
 | Plein écran | les barres d'Android se masquent avec les menus ; un glisser depuis le bord les fait réapparaître |
 | Vibration | légère, au passage d'un chapitre à l'autre |
+| Sélection de texte | le menu d'Android est remplacé par celui de l'app (Surligner, Fiche, Copier, Partager, Rechercher) ; il reste actif dans les champs de saisie |
+| Copier un passage | presse-papiers d'Android (module officiel Capacitor) |
+| Barres système | icônes claires sur un thème sombre ; fond de fenêtre de la couleur du thème |
+| Lecture à voix haute | dans la langue du livre (déclarée par l'EPUB, ou devinée pour un texte) |
 
 ## Note technique : CSP et Capacitor
 

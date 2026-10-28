@@ -25,6 +25,7 @@ import { App } from '@capacitor/app';
 import { listenForOpenedFiles } from './native/open-file';
 import { isNative } from './native/platform';
 import { applyReminder, loadReminder } from './native/reminder';
+import { watchSystemBars } from './native/system-bars';
 import { importAndOpen } from './ui/import-flow';
 import { toast, withBusy } from './ui/feedback';
 import { libraryScreen } from './ui/library';
@@ -73,6 +74,8 @@ async function start(): Promise<void> {
   } catch (err) {
     logError('réglages', err);
   }
+  // Demande que les livres et fiches ne soient jamais effacés pour libérer de la place.
+  void navigator.storage?.persist?.().catch(() => false);
   navigate({ name: 'library' });
   void setupNative();
   if (report) {
@@ -84,6 +87,7 @@ async function start(): Promise<void> {
 /** Intégrations Android : bouton retour, « Ouvrir avec Liseuse », rappel quotidien. */
 async function setupNative(): Promise<void> {
   if (!isNative()) return;
+  watchSystemBars();
   await App.addListener('backButton', () => {
     // 1. Une fenêtre ou un panneau ouvert se ferme (comme avec Échap).
     const dialogs = Array.from(document.querySelectorAll<HTMLDialogElement>('dialog[open]'));
@@ -93,7 +97,7 @@ async function setupNative(): Promise<void> {
       if (top.dispatchEvent(cancel)) top.close();
       return;
     }
-    // 2. L'écran gère lui-même (mode concentration…), sinon retour à la bibliothèque.
+    // 2. L'écran gère lui-même (menus, sélection…), sinon retour à la bibliothèque.
     if (screen?.onBack?.()) return;
     if (document.documentElement.dataset.screen !== 'library') navigate({ name: 'library' });
     else void App.minimizeApp();

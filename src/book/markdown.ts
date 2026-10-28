@@ -1,3 +1,4 @@
+import { detectLanguage } from '../core/language';
 import type { Chapter, ParsedBook } from './types';
 import { sanitizeHtml } from './sanitize';
 
@@ -104,8 +105,23 @@ export function markdownToHtml(md: string): string {
   return out.join('\n');
 }
 
+/**
+ * Texte brut (.txt) écrit avec un paragraphe par ligne, sans ligne vide entre eux : en Markdown,
+ * tout le fichier deviendrait un seul paragraphe. On sépare alors les lignes. Un texte coupé
+ * à largeur fixe (lignes courtes, paragraphes séparés par une ligne vide) est laissé tel quel.
+ */
+export function txtParagraphs(text: string): string {
+  const lines = text.replace(/\r\n?/g, '\n').split('\n');
+  const filled = lines.filter((l) => l.trim());
+  if (filled.length < 4) return text;
+  const blank = lines.length - filled.length;
+  const average = filled.reduce((n, l) => n + l.trim().length, 0) / filled.length;
+  return blank < filled.length * 0.1 && average > 80 ? lines.join('\n\n') : text;
+}
+
 /** Découpe un document Markdown en chapitres sur les titres de niveau 1. */
-export function parseMarkdown(text: string, fileName: string): ParsedBook {
+export function parseMarkdown(raw: string, fileName: string): ParsedBook {
+  const text = /\.txt$/i.test(fileName) ? txtParagraphs(raw) : raw;
   const parts = text.replace(/\r\n?/g, '\n').split(/\n(?=#\s)/).filter((p) => p.trim());
   const chapters: Chapter[] = parts.map((part, i) => {
     const m = /^#\s+(.+)$/m.exec(part);
@@ -119,5 +135,6 @@ export function parseMarkdown(text: string, fileName: string): ParsedBook {
     chapters,
     resources: {},
     cover: null,
+    language: detectLanguage(text),
   };
 }

@@ -18,11 +18,20 @@ export interface BookRecord {
   chapterLabels?: string[];
   addedAt: number;
   lastOpenedAt: number;
+  /**
+   * Version du découpage des chapitres (book/layout.ts) à laquelle se réfèrent les fiches,
+   * la progression et les signets. Absente : chapitres de l'analyseur (avant la 6.3).
+   */
+  layout?: number;
+  /** Langue du texte (BCP 47), null si inconnue ; absente pour un livre importé avant la 6.3. */
+  language?: string | null;
 }
 
 export interface ChapterCache {
   bookId: string;
   parserVersion: number;
+  /** Version du découpage des chapitres en cache (absente : 0). */
+  layout?: number;
   chapters: Chapter[];
   resources: Record<string, Blob>;
 }
@@ -35,8 +44,11 @@ export interface ProgressRecord {
   updatedAt: number;
 }
 
-/** Enregistre un livre analysé. Si le livre existe déjà, conserve sa date d'ajout. */
-export async function saveBook(id: string, parsed: ParsedBook, file: Blob, fileName: string): Promise<{ book: BookRecord; existed: boolean }> {
+/**
+ * Enregistre un livre analysé, avec ses chapitres déjà découpés selon `layout`.
+ * Si le livre existe déjà, conserve sa date d'ajout.
+ */
+export async function saveBook(id: string, parsed: ParsedBook, file: Blob, fileName: string, layout = 0): Promise<{ book: BookRecord; existed: boolean }> {
   return tx(['books', 'chapters'], 'readwrite', async (t) => {
     const books = t.objectStore('books');
     const existing = (await promisify(books.get(id))) as BookRecord | undefined;
@@ -54,9 +66,11 @@ export async function saveBook(id: string, parsed: ParsedBook, file: Blob, fileN
       chapterLabels: parsed.chapters.map((c) => c.label),
       addedAt: existing?.addedAt ?? now,
       lastOpenedAt: now,
+      layout,
+      language: parsed.language ?? null,
     };
     books.put(book);
-    t.objectStore('chapters').put({ bookId: id, parserVersion: PARSER_VERSION, chapters: parsed.chapters, resources: parsed.resources } satisfies ChapterCache);
+    t.objectStore('chapters').put({ bookId: id, parserVersion: PARSER_VERSION, layout, chapters: parsed.chapters, resources: parsed.resources } satisfies ChapterCache);
     return { book, existed: !!existing };
   });
 }
@@ -68,6 +82,15 @@ export function getBook(id: string): Promise<BookRecord | undefined> {
 export async function listBooks(): Promise<BookRecord[]> {
   const books = (await tx(['books'], 'readonly', (t) => promisify(t.objectStore('books').getAll()))) as BookRecord[];
   return books.sort((a, b) => b.lastOpenedAt - a.lastOpenedAt);
+}
+
+/** Met à jour quelques champs d'un livre (langue détectée…). */
+export async function updateBook(id: string, patch: Partial<Pick<BookRecord, 'language' | 'title' | 'author'>>): Promise<void> {
+  await tx(['books'], 'readwrite', async (t) => {
+    const store = t.objectStore('books');
+    const book = (await promisify(store.get(id))) as BookRecord | undefined;
+    if (book) store.put({ ...book, ...patch });
+  });
 }
 
 export async function touchBook(id: string): Promise<void> {
@@ -134,10 +157,13 @@ export function percentRead(book: Pick<BookRecord, 'chapterCount'>, progress: Pi
   return Math.round(Math.min(100, Math.max(0, value)));
 }
 
-/** Enregistre un livre issu d'une migration ou d'une restauration (dates d'origine conservées). */
+/**
+ * Enregistre un livre issu d'une migration ou d'une restauration (dates d'origine conservées).
+ * `parsed.chapters` doit correspondre à `book.layout` (absent : chapitres de l'analyseur).
+ */
 export async function putImportedBook(book: BookRecord, parsed: Pick<ParsedBook, 'chapters' | 'resources'> | null): Promise<void> {
   await tx(['books', 'chapters'], 'readwrite', (t) => {
     t.objectStore('books').put(book);
-    if (parsed) t.objectStore('chapters').put({ bookId: book.id, parserVersion: PARSER_VERSION, chapters: parsed.chapters, resources: parsed.resources } satisfies ChapterCache);
+    if (parsed) t.objectStore('chapters').put({ bookId: book.id, parserVersion: PARSER_VERSION, layout: book.layout ?? 0, chapters: parsed.chapters, resources: parsed.resources } satisfies ChapterCache);
   });
 }

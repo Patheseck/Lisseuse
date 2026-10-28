@@ -32,6 +32,10 @@
                 <data android:mimeType="application/epub+zip" />
                 <data android:mimeType="text/markdown" />
                 <data android:mimeType="text/x-markdown" />
+                <data android:mimeType="text/plain" />
+                <!-- EPUB transmis sans type précis (pièces jointes, certains gestionnaires de
+                     fichiers) : le contenu est vérifié à l'import, un autre fichier est refusé. -->
+                <data android:mimeType="application/octet-stream" />
             </intent-filter>
 
         </activity>

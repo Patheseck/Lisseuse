@@ -8,6 +8,8 @@ export interface ErrorEntry {
 }
 
 export function errorMessage(err: unknown): string {
+  // Stockage plein : IndexedDB refuse l'écriture (QuotaExceededError).
+  if ((err as { name?: string } | null)?.name === 'QuotaExceededError') return 'Espace de stockage insuffisant sur l’appareil : libère de la place (ou supprime des livres), puis réessaie.';
   if (err instanceof Error) return err.message;
   if (typeof err === 'string') return err;
   return 'Erreur inconnue';
