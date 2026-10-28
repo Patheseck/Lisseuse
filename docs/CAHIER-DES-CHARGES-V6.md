@@ -35,7 +35,10 @@ d'apprentissage hors ligne, simple, fiable, fondée sur la recherche** (voir
 | **Confiance** avant la correction, alerte sur erreur à forte confiance | Hypercorrection, métacognition |
 | **Réapprentissage dans la séance** pour les fiches ratées | Réapprentissage successif |
 | File de révision **entrelacée** (livres et chapitres mélangés) | Entrelacement |
-| **Rappel libre de fin de chapitre** (minuteur 2 min, puis comparaison avec ses surlignages) | Récupération après lecture |
+| **Aperçu du chapitre** (intertitres, gras, italique, listes, figures) puis **question directrice**, rappelée en haut pendant la lecture | Pré-questions, lecture orientée par un but (méthode SQ3R, « Lire ») |
+| **Restitution de fin de chapitre** (minuteur 3 min) : réponse à la question, idée principale en une phrase, arguments, explication avec ses mots | Récupération après lecture, auto-explication (« Poser ») |
+| **Tri des idées en 3 niveaux** (retrouvé / revenu en relisant / mal compris) : fiches proposées, fiches « mal comprises » remontées en révision, liste « À approfondir » ; fiche automatique « question directrice → idée principale » | Repérage des lacunes, illusion de compétence (« Récupérer ») |
+| **Chapitres choisis** pour son objectif : la progression ne compte qu'eux | Lecture sélective guidée par un but |
 | **Pré-questions** en rouvrant un chapitre qui a des fiches | Pré-test |
 | **Rappel quotidien** à heure choisie (notification locale) | Espacement, habitude |
 | Fiche **séquence** : étapes à remettre dans l'ordre, option palais mental | Méthode des lieux |

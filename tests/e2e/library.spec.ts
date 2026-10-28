@@ -77,7 +77,7 @@ test.describe('Étape 1 — démarrage et bibliothèque', () => {
     await expect(content.getByText('Voici la suite annoncée.')).toBeInViewport();
 
     await page.getByTestId('back').click();
-    await expect(page.locator('.book-cover')).toHaveAttribute('src', /^blob:/);
+    await expect(page.locator('.book-item .book-cover')).toHaveAttribute('src', /^blob:/);
     await expect(page.locator('.book-author')).toHaveText('Ada Lovelace');
   });
 

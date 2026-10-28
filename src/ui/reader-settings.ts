@@ -98,6 +98,9 @@ export function readerSettingsSheet(initial: ReaderSettings, actions: { onChange
     segmented<ParagraphSpacing>('Espace entre paragraphes', 'set-paragraph', [['compact', 'Serré'], ['normal', 'Normal'], ['airy', 'Aéré']], settings.paragraph, (paragraph) => update({ paragraph })),
     toggle('Retrait de première ligne', 'set-indent', settings.indent, (indent) => update({ indent })),
 
+    h('h3', { className: 'settings-group' }, 'Apprentissage'),
+    toggle('Méthode guidée', 'set-guided', settings.guided, (guided) => update({ guided }), 'Avant chaque chapitre : aperçu et question directrice. À la fin : restitution.'),
+
     h('h3', { className: 'settings-group' }, 'Mise en page'),
     segmented<ReaderLayout>('Lecture', 'set-layout', [['paged', 'Pages'], ['scroll', 'Défilement']], settings.layout, (layout) => update({ layout })),
     segmented<ReaderWidth>('Marges', 'set-width', [['narrow', 'Larges'], ['normal', 'Normales'], ['wide', 'Fines']], settings.width, (width) => update({ width })),

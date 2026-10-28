@@ -33,8 +33,8 @@ test.describe('Étape 2 — lecteur complet', () => {
   test('le sommaire liste les chapitres et permet d’y aller', async ({ page }) => {
     await page.getByTestId('open-toc').click();
     const toc = page.getByTestId('toc-sheet');
-    await expect(toc.getByRole('button', { name: 'Introduction' })).toHaveAttribute('aria-current', 'page');
-    await toc.getByRole('button', { name: 'Conclusion' }).click();
+    await expect(toc.getByRole('button', { name: 'Introduction', exact: true })).toHaveAttribute('aria-current', 'page');
+    await toc.getByRole('button', { name: 'Conclusion', exact: true }).click();
     await expect(toc).toBeHidden();
     await expect(page.getByTestId('reader-chapter')).toHaveText('Conclusion');
     await expect(page.getByTestId('chapter-position')).toHaveText('3 / 3');

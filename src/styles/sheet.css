@@ -150,3 +150,12 @@
 .switch:checked { background: var(--accent); }
 .switch:checked::after { transform: translateX(18px); }
 .switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Sommaire : chapitres choisis pour l'objectif */
+.toc-focus-hint { margin: 0 0 0.5rem; font-size: 0.8rem; }
+.toc-row { display: flex; align-items: center; gap: 0.2rem; }
+.toc-row .toc-item { flex: 1; min-width: 0; }
+.toc-focus { color: var(--muted); flex: 0 0 auto; }
+.toc-focus[aria-pressed='true'] { color: var(--accent); }
+.toc-out .toc-item { color: var(--muted); opacity: 0.75; }
+.bm-quote { border-left-color: var(--accent); }

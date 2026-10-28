@@ -154,3 +154,16 @@ button { font: inherit; color: inherit; }
 .dialog-form { display: grid; gap: 0.75rem; }
 .dialog-form p { margin: 0; }
 .dialog ul { margin: 0 0 1rem; padding-left: 1.2rem; color: var(--muted); }
+
+/* Transitions entre écrans (désactivées si l'appareil demande moins d'animations) */
+@keyframes enter-forward { from { opacity: 0; transform: translateX(28px); } to { opacity: 1; transform: none; } }
+@keyframes enter-back { from { opacity: 0; transform: translateX(-28px); } to { opacity: 1; transform: none; } }
+.screen.enter-forward { animation: enter-forward 0.24s cubic-bezier(0.2, 0.7, 0.2, 1); }
+.screen.enter-back { animation: enter-back 0.24s cubic-bezier(0.2, 0.7, 0.2, 1); }
+@keyframes sheet-up { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes sheet-side { from { transform: translateX(-24px); opacity: 0; } to { transform: none; opacity: 1; } }
+.sheet-bottom[open], .sheet-full[open] { animation: sheet-up 0.22s cubic-bezier(0.2, 0.7, 0.2, 1); }
+.sheet-side[open] { animation: sheet-side 0.22s cubic-bezier(0.2, 0.7, 0.2, 1); }
+@media (prefers-reduced-motion: reduce) {
+  .screen.enter-forward, .screen.enter-back, .sheet[open] { animation: none; }
+}

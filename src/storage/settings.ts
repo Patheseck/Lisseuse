@@ -26,15 +26,20 @@ export interface ReaderSettings {
   volumeKeys: boolean;
   /** Android : l'écran reste allumé pendant la lecture. */
   keepAwake: boolean;
+  /** Vitesse du défilement automatique, de 1 (lent) à 10. */
+  autoSpeed: number;
+  /** Méthode guidée : aperçu et question directrice proposés au début de chaque chapitre. */
+  guided: boolean;
 }
 
 export const DEFAULT_READER_SETTINGS: ReaderSettings = {
   fontSize: 18, font: 'serif', leading: 1.7, width: 'normal', theme: 'auto',
-  layout: 'paged', justify: true, paragraph: 'normal', indent: false, brightness: 1, volumeKeys: true, keepAwake: true,
+  layout: 'paged', justify: true, paragraph: 'normal', indent: false, brightness: 1, volumeKeys: true, keepAwake: true, autoSpeed: 4, guided: true,
 };
 export const FONT_SIZE_RANGE = { min: 14, max: 32 } as const;
 export const LEADING_RANGE = { min: 1.3, max: 2.1 } as const;
 export const BRIGHTNESS_RANGE = { min: 0.3, max: 1 } as const;
+export const AUTO_SPEED_RANGE = { min: 1, max: 10 } as const;
 
 const THEMES: readonly Theme[] = ['auto', 'light', 'sepia', 'gray', 'dark', 'black'];
 const FONTS: readonly ReaderFont[] = ['serif', 'sans', 'atkinson', 'dyslexic'];
@@ -79,6 +84,8 @@ export function normalizeReaderSettings(raw: unknown): ReaderSettings {
     brightness: Math.round(clamp(num(r.brightness, d.brightness), BRIGHTNESS_RANGE.min, BRIGHTNESS_RANGE.max) * 100) / 100,
     volumeKeys: bool(r.volumeKeys, d.volumeKeys),
     keepAwake: bool(r.keepAwake, d.keepAwake),
+    autoSpeed: Math.round(clamp(num(r.autoSpeed, d.autoSpeed), AUTO_SPEED_RANGE.min, AUTO_SPEED_RANGE.max)),
+    guided: bool(r.guided, d.guided),
   };
 }
 

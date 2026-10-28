@@ -40,7 +40,7 @@ test.describe('Étape 5 — apprentissage actif', () => {
     expect(errors, 'aucune erreur JavaScript').toEqual([]);
   });
 
-  test('rappel libre de fin de chapitre : minuteur, comparaison, bilan', async ({ page }) => {
+  test('restitution de fin de chapitre : minuteur, 3 couches, tri des idées en 3 niveaux', async ({ page }) => {
     await page.clock.install();
     await openBook(page);
     await selectText(page, 'La consolidation', 'durable.');
@@ -49,28 +49,38 @@ test.describe('Étape 5 — apprentissage actif', () => {
 
     await page.getByTestId('start-recall').click();
     const sheet = page.getByTestId('recall-sheet');
-    await expect(sheet.getByTestId('recall-clock')).toHaveText('2:00');
+    await expect(sheet.getByTestId('recall-clock')).toHaveText('3:00');
     await page.clock.runFor(30_000);
-    await expect(sheet.getByTestId('recall-clock')).toHaveText('1:30');
+    await expect(sheet.getByTestId('recall-clock')).toHaveText('2:30');
+    await sheet.getByTestId('recall-main').fill('Le sommeil consolide les souvenirs.');
     await sheet.getByTestId('recall-text').fill('Le sommeil aide à consolider.');
-    await page.clock.runFor(95_000);
+    await sheet.getByTestId('recall-explain').fill('Pendant la nuit, le cerveau range ce qu’on a appris.');
+    await page.clock.runFor(155_000);
     await expect(sheet).toContainText('Temps écoulé');
     await sheet.getByTestId('recall-finish').click();
 
     await expect(sheet).toContainText('Le sommeil aide à consolider.');
-    const checks = sheet.getByTestId('recall-check');
-    await expect(checks).toHaveCount(2);
-    await checks.nth(1).check();
+    await expect(sheet).toContainText('le cerveau range');
+    const items = sheet.getByTestId('recall-item');
+    await expect(items).toHaveCount(2);
+    // Surlignage « mal compris » : proposé en fiche (décoché ici) ; fiche « retrouvée ».
+    await items.nth(0).getByTestId('recall-level-hard').click();
+    await items.nth(0).getByTestId('recall-make-card').uncheck();
+    await items.nth(1).getByTestId('recall-level-easy').click();
     await sheet.getByTestId('recall-done').click();
-    await expect(page.getByTestId('toast')).toContainText('1 / 2 idées retrouvées');
-    await expect(page.getByTestId('chapter-end')).toContainText('Dernier rappel : 1 / 2');
+    await expect(page.getByTestId('toast')).toContainText('1 / 2 idées retrouvées. 1 point à approfondir.');
+    const end = page.getByTestId('chapter-end');
+    await expect(end).toContainText('Dernier rappel : 1 / 2');
+    await expect(end.getByTestId('deepen')).toContainText('La consolidation transforme');
+    await end.getByRole('button', { name: 'Voir le passage' }).click();
+    await expect(page.locator('mark.flash')).toHaveCount(1);
   });
 
   test('sans passage marqué, le rappel s’appuie sur les sections du chapitre', async ({ page }) => {
     await openBook(page);
     await page.getByTestId('start-recall').click();
     await page.getByTestId('recall-finish').click();
-    await expect(page.getByTestId('recall-check')).toHaveCount(1);
+    await expect(page.getByTestId('recall-item')).toHaveCount(1);
     await expect(page.getByTestId('recall-sheet')).toContainText('Les trois étapes');
   });
 

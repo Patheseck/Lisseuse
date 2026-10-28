@@ -50,6 +50,10 @@ let screen: Screen | null = null;
 function navigate(route: Route): void {
   screen?.destroy();
   screen = route.name === 'reader' ? readerScreen(route.bookId, navigate) : route.name === 'review' ? reviewScreen(navigate) : route.name === 'stats' ? statsScreen(navigate) : libraryScreen(navigate);
+  // Transition douce : on entre dans un écran en avançant, on revient à la bibliothèque en reculant.
+  const from = document.documentElement.dataset.screen;
+  if (from) screen.el.classList.add(route.name === 'library' ? 'enter-back' : 'enter-forward');
+  screen.el.addEventListener('animationend', () => screen?.el.classList.remove('enter-back', 'enter-forward'), { once: true });
   root!.replaceChildren(screen.el);
   document.documentElement.dataset.screen = route.name;
 }

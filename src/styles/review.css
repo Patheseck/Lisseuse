@@ -102,3 +102,16 @@ ol.review-answer { padding-left: 1.3rem; white-space: normal; }
 .recall-item .link-btn { margin-left: 2rem; }
 .form-warning { color: var(--ink); background: color-mix(in srgb, var(--accent) 12%, var(--panel)); border-left: 3px solid var(--accent); padding: 0.5rem 0.7rem; border-radius: 0 8px 8px 0; }
 .form-warning { margin: 0; font-size: 0.85rem; } .form-warning[hidden] { display: none; }
+
+/* Méthode Lire · Poser · Récupérer */
+.survey-group h3 { margin: 0.4rem 0 0.25rem; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); font-weight: 600; }
+.survey-group ul { margin: 0; padding-left: 1.1rem; display: grid; gap: 0.15rem; }
+.survey-group li { font-family: var(--font-read); }
+
+.guide-question-text { margin: 0; font-family: var(--font-read); font-weight: 600; }
+.recall-label { margin: 0 0 0.35rem; font-family: var(--font-read); }
+.recall-item { padding: 0.6rem 0; }
+.recall-item .segmented label { font-size: 0.8rem; padding-inline: 0.3rem; }
+.recall-extra[hidden] { display: none; }
+.recall-extra { min-height: 36px; margin-top: 0.3rem; font-size: 0.85rem; }
+.recall-guide { margin-top: 0.8rem; padding: 0.6rem 0.7rem; border-radius: 10px; background: color-mix(in srgb, var(--accent) 10%, var(--panel)); }

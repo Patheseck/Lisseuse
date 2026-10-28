@@ -25,8 +25,11 @@ export interface CardRecord {
   srs: SrsState | null;
   /** Aide-mémoire (table Mojor, palais mental), repris de la V5 ou créé à l'étape 5. */
   mnemonic?: Mnemonic;
-  /** Fiche reprise de la V5 : sa question a été générée et mérite d'être personnalisée. */
-  origin?: 'v5';
+  /**
+   * `v5` : fiche reprise de la V5 (question générée, à personnaliser) ;
+   * `guide` : fiche née de la question directrice d'un chapitre (ancrée au début du chapitre, sans surlignage).
+   */
+  origin?: 'v5' | 'guide';
 }
 
 export interface Mnemonic {

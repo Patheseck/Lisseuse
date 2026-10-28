@@ -17,6 +17,8 @@ Application Android via Capacitor.
 - [x] Étape 4 — Reprise automatique des données V5.7, sauvegarde/restauration par fusion (livres inclus en option, chiffrement)
 - [x] Étape 5 — Rappel libre de fin de chapitre, pré-questions, aide-mémoire (Mojor, palais mental), tableau de bord « Ma mémoire »
 - [x] Lot « premium » : pages tournées (glisser, taps, volume), plein écran, barre d'état, 6 thèmes, luminosité, typographie fine
+- [x] Lot « méthode » (Lire · Poser · Récupérer) : aperçu du chapitre et question directrice, restitution en 3 couches, tri des idées en 3 niveaux et points « à approfondir », chapitres choisis pour son objectif
+- [x] Lot « premium 2 » : étagère en grille avec couvertures générées, tri, « Continuer la lecture », signets, défilement automatique, transitions animées
 - [x] Étape 6 — Application Android (Capacitor) : partage, synthèse vocale, rappel quotidien, ouverture d'EPUB, bouton retour ; APK construit par la CI
 
 ## Développement

@@ -54,14 +54,17 @@ describe('bibliothèque', () => {
     await saveBook('b', parsed('B'), new Blob(['b']), 'b.md');
     await saveProgress('a', 1, 0.5);
     await saveProgress('b', 2, 0);
-    await tx(['cards', 'reviews'], 'readwrite', (t) => {
+    await tx(['cards', 'reviews', 'settings'], 'readwrite', (t) => {
       t.objectStore('cards').put({ id: 'ca', bookId: 'a' });
       t.objectStore('cards').put({ id: 'cb', bookId: 'b' });
       t.objectStore('reviews').put({ cardId: 'ca', bookId: 'a' });
       t.objectStore('reviews').put({ cardId: 'cb', bookId: 'b' });
+      for (const key of ['guide:a', 'focus:a', 'bookmarks:a', 'recall:a', 'guide:b']) t.objectStore('settings').put({ key, value: 1 });
     });
 
     await deleteBook('a');
+    const keys = await tx(['settings'], 'readonly', (t) => promisify(t.objectStore('settings').getAllKeys()));
+    expect(keys).toEqual(['guide:b']);
 
     expect(await getBook('a')).toBeUndefined();
     expect(await getChapterCache('a')).toBeUndefined();

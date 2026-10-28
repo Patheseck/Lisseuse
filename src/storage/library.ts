@@ -1,6 +1,7 @@
 import type { BookFormat, Chapter, ParsedBook } from '../book/types';
 import { PARSER_VERSION } from '../book/types';
 import { promisify, tx } from './db';
+import { bookSettingKeys } from './method';
 
 export interface BookRecord {
   schemaVersion: 1;
@@ -92,8 +93,7 @@ export async function putChapterCache(cache: ChapterCache): Promise<void> {
 export async function deleteBook(id: string): Promise<void> {
   await tx(['books', 'chapters', 'progress', 'cards', 'reviews', 'settings'], 'readwrite', async (t) => {
     t.objectStore('books').delete(id);
-    t.objectStore('settings').delete(`recall:${id}`);
-    t.objectStore('settings').delete(`pretest:${id}`);
+    bookSettingKeys(id).forEach((key) => t.objectStore('settings').delete(key));
     t.objectStore('chapters').delete(id);
     t.objectStore('progress').delete(id);
     const cardKeys = await promisify(t.objectStore('cards').index('bookId').getAllKeys(id));
@@ -118,10 +118,19 @@ export async function saveProgress(bookId: string, chapter: number, offset: numb
   });
 }
 
-/** Pourcentage lu, de 0 à 100. */
-export function percentRead(book: Pick<BookRecord, 'chapterCount'>, progress: Pick<ProgressRecord, 'chapter' | 'offset'> | undefined): number {
+/**
+ * Pourcentage lu, de 0 à 100. Avec des chapitres choisis (`focus`), seuls ceux-là comptent :
+ * un chapitre choisi est lu s'il est avant la position, partiellement s'il est en cours.
+ */
+export function percentRead(book: Pick<BookRecord, 'chapterCount'>, progress: Pick<ProgressRecord, 'chapter' | 'offset'> | undefined, focus: number[] = []): number {
   if (!progress || book.chapterCount <= 0) return 0;
-  const value = ((progress.chapter + progress.offset) / book.chapterCount) * 100;
+  let value: number;
+  if (focus.length) {
+    const done = focus.reduce((sum, c) => sum + (c < progress.chapter ? 1 : c === progress.chapter ? progress.offset : 0), 0);
+    value = (done / focus.length) * 100;
+  } else {
+    value = ((progress.chapter + progress.offset) / book.chapterCount) * 100;
+  }
   return Math.round(Math.min(100, Math.max(0, value)));
 }
 

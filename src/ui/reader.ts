@@ -1,17 +1,19 @@
 import { openBook, type OpenedBook } from '../book/service';
 import { errorMessage, logError } from '../core/errors';
-import { anchorFromOffsets, anchorFromRange, locate, unwrap, wrapRange } from '../reader/anchor';
+import { anchorFromOffsets, anchorFromRange, locate, locateLoose, unwrap, wrapRange } from '../reader/anchor';
 import { htmlToText, type SearchHit } from '../reader/search';
 import { deleteCard, demoteCard, listAllCards, listCards, newCard, putCard, type CardRecord } from '../storage/cards';
 import { editCard, type CardEditorOptions } from './card-editor';
 import { nextFreeNumber } from '../core/mnemonic';
-import { getProgress, saveProgress, touchBook } from '../storage/library';
-import { applyReaderSettings, loadMojorTable, loadReaderSettings, saveReaderSettings, BRIGHTNESS_RANGE, type ReaderSettings } from '../storage/settings';
+import { getProgress, percentRead, saveProgress, touchBook } from '../storage/library';
+import { loadBookmarks, loadFocus, loadGuides, saveBookmarks, saveFocus, saveGuide, type Bookmark, type ChapterGuide } from '../storage/method';
+import { newSrs } from '../core/scheduler';
+import { applyReaderSettings, loadMojorTable, loadReaderSettings, saveReaderSettings, AUTO_SPEED_RANGE, BRIGHTNESS_RANGE, type ReaderSettings } from '../storage/settings';
 import { Pager } from '../reader/pager';
 import { applyReaderNative, chapterTick, onVolumeKey, setImmersive } from '../native/reader-native';
 import { addRecall, listRecalls, markPretest, pretestDates, type RecallRecord } from '../storage/learning';
-import { chapterHeadings, chapterRecall, pretest } from './chapter-practice';
-import { clear, h } from './dom';
+import { chapterHeadings, chapterRecall, chapterSurveySheet, pretest } from './chapter-practice';
+import { add, clear, h } from './dom';
 import { confirmDialog, toast } from './feedback';
 import { speak, stop as stopSpeech, ttsAvailable } from '../native/tts';
 import { icon } from './icons';
@@ -37,6 +39,9 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
   let selectionTimer: number | undefined;
   let texts: string[] | null = null;
   let cards: CardRecord[] = [];
+  let guides: Record<string, ChapterGuide> = {};
+  let focus: number[] = [];
+  let bookmarks: Bookmark[] = [];
   const orphans = new Set<string>();
   const resourceUrls = new Map<string, string>();
   const sheets: Sheet[] = [];
@@ -46,9 +51,10 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
   const bookTitle = h('span', { className: 'reader-book', 'data-testid': 'reader-title' }, 'Chargement…');
   const chapterTitle = h('span', { className: 'reader-chapter', 'data-testid': 'reader-chapter' });
   const content = h('article', { className: 'reader-content', 'data-testid': 'reader-content', lang: 'fr' });
+  const guideBox = h('aside', { className: 'chapter-box guide-box', 'data-testid': 'guide-box', hidden: true });
   const pretestBox = h('aside', { className: 'chapter-box', 'data-testid': 'pretest-box', hidden: true });
   const chapterEnd = h('aside', { className: 'chapter-box chapter-end', 'data-testid': 'chapter-end', hidden: true });
-  const column = h('div', { className: 'reader-column' }, pretestBox, content, chapterEnd);
+  const column = h('div', { className: 'reader-column' }, guideBox, pretestBox, content, chapterEnd);
   const scroller = h('main', { className: 'scroll reader-scroll' }, column);
   const pager = new Pager(scroller, column, () => onPositionChange());
   let settings: ReaderSettings | null = null;
@@ -59,17 +65,23 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
   const statusBar = h('div', { className: 'status-bar', 'aria-hidden': 'true' }, statusPage, statusClock, statusProgress);
   const dim = h('div', { className: 'dim-layer', 'aria-hidden': 'true' });
   const brightnessBadge = h('div', { className: 'brightness-badge', 'data-testid': 'brightness-badge', hidden: true });
+  // Question directrice du chapitre, rappelée discrètement en haut pendant la lecture.
+  const questionBar = h('div', { className: 'question-bar', 'data-testid': 'question-bar', hidden: true });
+  const ribbon = h('div', { className: 'bookmark-ribbon', 'data-testid': 'bookmark-ribbon', 'aria-hidden': 'true', hidden: true });
+  const dismissedGuides = new Set<number>();
   const dismissedPretests = new Set<number>();
-  const prev = h('button', { type: 'button', className: 'btn', 'data-testid': 'prev-chapter', 'aria-label': 'Chapitre précédent', onclick: () => go(current - 1) }, icon('chevronLeft'), 'Précédent');
-  const next = h('button', { type: 'button', className: 'btn', 'data-testid': 'next-chapter', 'aria-label': 'Chapitre suivant', onclick: () => go(current + 1) }, 'Suivant', icon('chevronRight'));
+  const prev = h('button', { type: 'button', className: 'btn', 'data-testid': 'prev-chapter', 'aria-label': 'Chapitre précédent', onclick: () => go(current - 1) }, icon('chevronLeft'), h('span', { className: 'btn-label' }, 'Précédent'));
+  const next = h('button', { type: 'button', className: 'btn', 'data-testid': 'next-chapter', 'aria-label': 'Chapitre suivant', onclick: () => go(current + 1) }, h('span', { className: 'btn-label' }, 'Suivant'), icon('chevronRight'));
   const position = h('span', { className: 'muted', 'data-testid': 'chapter-position' });
-  const footer = h('footer', { className: 'bottombar' }, prev, position, next);
+  const footerMiddle = h('div', { className: 'footer-middle' });
+  const footer = h('footer', { className: 'bottombar' }, prev, footerMiddle, next);
   const toolButtons = h('div', { className: 'reader-tools' });
   const selectionBar = h('div', { className: 'selection-bar', role: 'toolbar', 'aria-label': 'Actions sur la sélection', hidden: true },
     h('button', { type: 'button', className: 'btn', 'data-testid': 'highlight-selection', onmousedown: (e: Event) => e.preventDefault(), onclick: () => void highlightSelection(false) }, icon('highlight'), 'Surligner'),
     h('button', { type: 'button', className: 'btn btn-primary', 'data-testid': 'card-from-selection', onmousedown: (e: Event) => e.preventDefault(), onclick: () => void highlightSelection(true) }, icon('card'), 'Créer une fiche'),
   );
   const markMenu = h('div', { className: 'mark-menu', role: 'dialog', 'aria-label': 'Surlignage', hidden: true });
+  const autoBar = h('div', { className: 'auto-bar', role: 'toolbar', 'aria-label': 'Défilement automatique', 'data-testid': 'auto-bar', hidden: true });
   footer.hidden = true;
   toolButtons.hidden = true;
 
@@ -80,7 +92,10 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
       toolButtons,
     ),
     scroller,
+    questionBar,
+    ribbon,
     statusBar,
+    autoBar,
     footer,
     dim,
     brightnessBadge,
@@ -119,13 +134,14 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
     const o = offset();
     statusPage.textContent = pager.mode === 'paged' ? `${pager.page + 1} / ${pager.pages}` : `${Math.round(o * 100)} %`;
     statusClock.textContent = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-    const book = Math.round(((current + o) / opened.chapters.length) * 100);
+    const book = percentRead({ chapterCount: opened.chapters.length }, { chapter: current, offset: o }, focus);
     const minutes = Math.round((chapterWords(current) * (1 - o)) / WORDS_PER_MINUTE);
     statusProgress.textContent = `${book} %${o < 1 ? ` · ${minutes < 1 ? '< 1' : minutes} min` : ''}`;
   }
 
   function onPositionChange(): void {
     hideMarkMenu();
+    updateRibbon();
     if (!selectionBar.hidden) updateSelectionBar();
     updateStatus();
     if (saveTimer === undefined) saveTimer = window.setTimeout(persist, SAVE_DELAY_MS);
@@ -161,7 +177,7 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
   function paintHighlights(): void {
     unwrap(content, 'mark.hl');
     const text = content.textContent ?? '';
-    for (const card of cards.filter((c) => c.chapter === current)) {
+    for (const card of cards.filter((c) => c.chapter === current && c.origin !== 'guide')) {
       const found = locate(text, card.anchor);
       if (!found) {
         orphans.add(card.id);
@@ -195,6 +211,7 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
     prev.disabled = index === 0;
     next.disabled = index === opened.chapters.length - 1;
     void renderChapterExtras(index);
+    renderGuide(index);
     requestAnimationFrame(() => {
       pager.relayout(opts.offset ?? 0);
       opts.after?.();
@@ -231,15 +248,91 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
       );
     }
     const previous = recalls.filter((r) => r.chapter === index).at(-1);
+    const guide = guides[index];
+    const hard = (guide?.gaps ?? []).filter((g) => g.level === 'hard');
+    const nextFocus = focus.find((c) => c > index);
     clear(chapterEnd);
     chapterEnd.hidden = false;
-    chapterEnd.append(
-      h('p', {}, h('strong', {}, 'Fin du chapitre.'), ' Avant de continuer : 2 minutes pour écrire ce dont tu te souviens, sans regarder.'),
-      previous ? h('p', { className: 'hint' }, `Dernier rappel : ${previous.found} / ${previous.total} idées retrouvées, le ${new Date(previous.at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })}.`) : '',
+    add(chapterEnd,
+      h('p', {}, h('strong', {}, 'Fin du chapitre.'), ' Ferme le livre un instant : restitue de mémoire ce que tu viens de lire.'),
+      guide?.question ? h('p', { className: 'guide-reminder', 'data-testid': 'end-question' }, 'Ta question : ', h('em', {}, guide.question)) : null,
+      previous ? h('p', { className: 'hint' }, `Dernier rappel : ${previous.found} / ${previous.total} idées retrouvées, le ${new Date(previous.at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })}.`) : null,
+      hard.length
+        ? h('div', { className: 'deepen', 'data-testid': 'deepen' },
+            h('span', { className: 'field-label' }, 'À approfondir'),
+            h('ul', {}, ...hard.map((g) => h('li', {},
+              h('span', {}, g.label.length > 120 ? `${g.label.slice(0, 120)}…` : g.label),
+              h('button', { type: 'button', className: 'link-btn', onclick: () => showGap(g.label, g.cardId) }, 'Voir le passage'))),
+            ))
+        : null,
       h('div', { className: 'chapter-box-actions' },
-        h('button', { type: 'button', className: 'btn btn-primary', 'data-testid': 'start-recall', onclick: () => void runRecall(index) }, icon('timer'), 'Faire un rappel libre'),
+        nextFocus !== undefined && nextFocus > index + 1
+          ? h('button', { type: 'button', className: 'btn', 'data-testid': 'next-focus', onclick: () => go(nextFocus) }, 'Prochain chapitre choisi')
+          : null,
+        h('button', { type: 'button', className: 'btn btn-primary', 'data-testid': 'start-recall', onclick: () => void runRecall(index) }, icon('timer'), 'Restituer le chapitre'),
       ),
     );
+  }
+
+  /** Étape « Lire » : proposition d'aperçu en tête de chapitre, et rappel de la question. */
+  function renderGuide(index: number): void {
+    const guide = guides[index];
+    questionBar.textContent = guide?.question ?? '';
+    questionBar.hidden = !guide?.question;
+    clear(guideBox);
+    if (guide?.question) {
+      guideBox.hidden = false;
+      guideBox.append(
+        h('p', { 'data-testid': 'guide-current' }, h('strong', {}, 'Ta question directrice : '), h('em', {}, guide.question)),
+        h('div', { className: 'chapter-box-actions' },
+          h('button', { type: 'button', className: 'btn', 'data-testid': 'start-survey', onclick: () => void runSurvey(index) }, 'Modifier'),
+        ),
+      );
+      return;
+    }
+    guideBox.hidden = !(settings?.guided ?? true) || dismissedGuides.has(index);
+    if (guideBox.hidden) return;
+    guideBox.append(
+      h('p', {}, h('strong', {}, 'Avant de lire'), ' : balaye le chapitre (≈ 1 min) et pose-toi une question. Ton cerveau passe en mode recherche.'),
+      h('div', { className: 'chapter-box-actions' },
+        h('button', { type: 'button', className: 'btn', 'data-testid': 'skip-survey', onclick: () => { dismissedGuides.add(index); renderGuide(index); pager.relayout(); } }, 'Plus tard'),
+        h('button', { type: 'button', className: 'btn btn-primary', 'data-testid': 'start-survey', onclick: () => void runSurvey(index) }, icon('compass'), 'Aperçu du chapitre'),
+      ),
+    );
+  }
+
+  async function runSurvey(index: number): Promise<void> {
+    const all = await listAllCards().catch(() => cards);
+    const question = await chapterSurveySheet({
+      chapterLabel: opened?.chapters[index]?.label ?? `Chapitre ${index + 1}`,
+      html: opened?.chapters[index]?.html ?? '',
+      question: guides[index]?.question ?? '',
+      otherQuestions: [...all.filter((c) => c.kind !== 'highlight').map((c) => c.question), ...Object.entries(guides).filter(([k]) => Number(k) !== index).map(([, g]) => g.question)],
+    });
+    if (question === null) return;
+    const guide: ChapterGuide = { ...guides[index], question, questionAt: Date.now() };
+    try {
+      await saveGuide(bookId, index, guide);
+      guides[index] = guide;
+      if (index === current) {
+        renderGuide(index);
+        void renderChapterExtras(index);
+        requestAnimationFrame(() => pager.relayout());
+      }
+      setChrome(false);
+    } catch (err) {
+      logError('question directrice', err);
+      toast(`Question non enregistrée : ${errorMessage(err)}`, 'error');
+    }
+  }
+
+  /** Amène à l'écran un point « mal compris » (passage surligné ou intertitre). */
+  function showGap(label: string, cardId?: string): void {
+    const card = cardId ? cards.find((c) => c.id === cardId) : undefined;
+    const text = content.textContent ?? '';
+    const found = card ? locate(text, card.anchor) : locateLoose(text, label);
+    if (found) flash(found.start, found.end);
+    else toast('Ce passage n’a pas été retrouvé dans le texte.');
   }
 
   async function runPretest(index: number): Promise<void> {
@@ -250,18 +343,65 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
     if (completed) await markPretest(bookId, index).catch((err: unknown) => logError('pré-questions', err));
   }
 
+  /** Fiche « question directrice → idée principale », ancrée au début du chapitre (sans surlignage). */
+  function guideCard(index: number, guide: ChapterGuide, main: string): CardRecord {
+    const existing = guide.cardId ? cards.find((c) => c.id === guide.cardId) : undefined;
+    if (existing) return { ...existing, question: guide.question, answer: main, updatedAt: Date.now() };
+    const text = chapterTexts()[index] ?? '';
+    const lead = text.trimStart();
+    const start = text.length - lead.length;
+    const end = Math.min(text.length, start + Math.max(1, Math.min(160, lead.length)));
+    return { ...newCard(bookId, index, anchorFromOffsets(text, start, end)), kind: 'qa', question: guide.question, answer: main, srs: newSrs(), origin: 'guide' };
+  }
+
   async function runRecall(index: number): Promise<void> {
+    const before = guides[index];
     const result = await chapterRecall({
       chapterLabel: opened?.chapters[index]?.label ?? `Chapitre ${index + 1}`,
+      question: before?.question ?? '',
+      hasGuideCard: !!before?.cardId && cards.some((c) => c.id === before.cardId),
       passages: chapterCards(index),
       headings: chapterHeadings(opened?.chapters[index]?.html ?? ''),
-      onCreateCard: (card) => void openEditor(card),
     });
     if (!result) return;
     try {
-      await addRecall(bookId, { chapter: index, at: Date.now(), ...result });
-      toast(result.total ? `Rappel enregistré : ${result.found} / ${result.total} idées retrouvées.` : 'Rappel enregistré.');
+      let guide: ChapterGuide = {
+        ...(before ?? { question: '', questionAt: 0 }),
+        answered: result.answered, main: result.main, args: result.text, explain: result.explain,
+        restitutedAt: Date.now(), gaps: result.gaps,
+      };
+      if (result.makeGuideCard && guide.question && result.main) {
+        const card = guideCard(index, guide, result.main);
+        await putCard(card);
+        cards = [...cards.filter((c) => c.id !== card.id), card];
+        sortCards();
+        guide = { ...guide, cardId: card.id };
+      }
+      // Fiches existantes jugées « mal comprises » : elles remontent en tête des révisions.
+      const now = Date.now();
+      for (const gap of result.gaps.filter((g) => g.level === 'hard' && g.cardId)) {
+        const card = cards.find((c) => c.id === gap.cardId);
+        if (card?.srs && card.srs.due > now) {
+          const updated = { ...card, srs: { ...card.srs, due: now }, updatedAt: now };
+          await putCard(updated);
+          cards = cards.map((c) => (c.id === updated.id ? updated : c));
+        }
+      }
+      await saveGuide(bookId, index, guide);
+      guides[index] = guide;
+      await addRecall(bookId, { chapter: index, at: Date.now(), text: [result.main, result.text, result.explain].filter(Boolean).join('\n\n'), found: result.found, total: result.total });
+      const hardCount = result.gaps.filter((g) => g.level === 'hard').length;
+      toast([
+        result.total ? `Rappel enregistré : ${result.found} / ${result.total} idées retrouvées.` : 'Rappel enregistré.',
+        hardCount ? `${hardCount} point${hardCount > 1 ? 's' : ''} à approfondir.` : '',
+      ].filter(Boolean).join(' '));
       if (index === current) void renderChapterExtras(index);
+      toc.refresh();
+      // Étape « Récupérer » : les passages qui ont résisté deviennent des fiches.
+      for (const card of result.cardsToCreate) {
+        const fresh = cards.find((c) => c.id === card.id);
+        if (fresh?.kind === 'highlight') await openEditor(fresh);
+      }
     } catch (err) {
       logError('rappel libre', err);
       toast(`Rappel non enregistré : ${errorMessage(err)}`, 'error');
@@ -336,7 +476,7 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
     hideSelectionBar();
     if (!anchor) return;
     window.getSelection()?.removeAllRanges();
-    const overlapping = cards.find((c) => c.chapter === current && !orphans.has(c.id) && c.anchor.start < anchor.end && anchor.start < c.anchor.end);
+    const overlapping = cards.find((c) => c.chapter === current && c.origin !== 'guide' && !orphans.has(c.id) && c.anchor.start < anchor.end && anchor.start < c.anchor.end);
     if (overlapping) {
       toast('Ce passage chevauche un surlignage existant.');
       return;
@@ -435,7 +575,188 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
     },
     onEditCard: (card) => void openEditor(card),
     onDeleteCard: (card) => void removeCard(card),
+    focus: () => focus,
+    onToggleFocus: (i) => {
+      focus = focus.includes(i) ? focus.filter((c) => c !== i) : [...focus, i].sort((a, b) => a - b);
+      void persistFocus();
+    },
+    onClearFocus: () => {
+      focus = [];
+      void persistFocus();
+    },
+    bookmarks: () => bookmarks,
+    onBookmark: (b) => go(b.chapter, { offset: b.offset }),
+    onDeleteBookmark: (b) => {
+      bookmarks = bookmarks.filter((x) => x.id !== b.id);
+      void persistBookmarks();
+      toc.refresh();
+    },
   });
+
+  async function persistFocus(): Promise<void> {
+    try {
+      await saveFocus(bookId, focus);
+      updateStatus();
+      void renderChapterExtras(current);
+    } catch (err) {
+      logError('objectif', err);
+      toast(`Choix non enregistré : ${errorMessage(err)}`, 'error');
+    }
+  }
+
+  // ---------- Signets ----------
+  function bookmarkHere(): Bookmark | undefined {
+    const o = offset();
+    return bookmarks.find((b) => {
+      if (b.chapter !== current) return false;
+      if (pager.mode === 'paged') return pager.pages <= 1 || Math.round(b.offset * (pager.pages - 1)) === pager.page;
+      const max = scroller.scrollHeight - scroller.clientHeight;
+      return max <= 0 || Math.abs(b.offset - o) * max < scroller.clientHeight / 2;
+    });
+  }
+
+  function updateRibbon(): void {
+    const here = !!opened && !!bookmarkHere();
+    ribbon.hidden = !here;
+    bookmarkButton.setAttribute('aria-pressed', String(here));
+    bookmarkButton.setAttribute('aria-label', here ? 'Retirer le signet de cette page' : 'Ajouter un signet sur cette page');
+  }
+
+  async function persistBookmarks(): Promise<void> {
+    try {
+      await saveBookmarks(bookId, bookmarks);
+    } catch (err) {
+      logError('signet', err);
+      toast(`Signet non enregistré : ${errorMessage(err)}`, 'error');
+    }
+    updateRibbon();
+  }
+
+  function toggleBookmark(): void {
+    const here = bookmarkHere();
+    if (here) {
+      bookmarks = bookmarks.filter((b) => b.id !== here.id);
+      toast('Signet retiré.');
+    } else {
+      const blocks = readableBlocks();
+      const first = blocks[pager.firstVisible(blocks)]?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+      bookmarks = [...bookmarks, { id: crypto.randomUUID(), chapter: current, offset: offset(), label: first.length > 90 ? `${first.slice(0, 90)}…` : first, at: Date.now() }]
+        .sort((a, b) => a.chapter - b.chapter || a.offset - b.offset);
+      toast('Signet ajouté.');
+    }
+    void persistBookmarks();
+  }
+  const bookmarkButton = h('button', { type: 'button', className: 'icon-btn', 'aria-pressed': 'false', 'aria-label': 'Ajouter un signet sur cette page', 'data-testid': 'toggle-bookmark', onclick: () => toggleBookmark() }, icon('bookmark'));
+
+  // ---------- Défilement automatique ----------
+  let auto: { paused: boolean; timer?: number; frame?: number; last?: number; acc: number } | null = null;
+  const autoSpeed = h('output', { className: 'auto-speed', 'data-testid': 'auto-speed' });
+  const autoPause = h('button', { type: 'button', className: 'icon-btn', 'data-testid': 'auto-pause', 'aria-label': 'Pause', onclick: () => (auto?.paused ? resumeAuto() : pauseAuto()) }, icon('pause'));
+  /** Pages : secondes par page ; défilement : pixels par seconde. */
+  const pageSeconds = (speed: number) => Math.round(70 / (speed + 1.5));
+  const pixelsPerSecond = (speed: number) => 12 + speed * 9;
+
+  function speedOf(): number {
+    return settings?.autoSpeed ?? 4;
+  }
+
+  function changeSpeed(delta: number): void {
+    if (!settings) return;
+    const speed = Math.min(AUTO_SPEED_RANGE.max, Math.max(AUTO_SPEED_RANGE.min, settings.autoSpeed + delta));
+    settings = { ...settings, autoSpeed: speed };
+    saveReaderSettings(settings).catch((err: unknown) => logError('réglages', err));
+    refreshAutoBar();
+    if (auto && !auto.paused) {
+      stopTimers();
+      runAuto();
+    }
+  }
+
+  function refreshAutoBar(): void {
+    autoBar.hidden = !auto;
+    autoSpeed.textContent = pager.mode === 'paged' ? `Vitesse ${speedOf()} · ${pageSeconds(speedOf())} s/page` : `Vitesse ${speedOf()}`;
+    autoPause.replaceChildren(icon(auto?.paused ? 'play' : 'pause'));
+    autoPause.setAttribute('aria-label', auto?.paused ? 'Reprendre' : 'Pause');
+    autoButton.setAttribute('aria-pressed', String(!!auto));
+  }
+
+  function stopTimers(): void {
+    if (!auto) return;
+    window.clearInterval(auto.timer);
+    if (auto.frame !== undefined) cancelAnimationFrame(auto.frame);
+    auto.timer = undefined;
+    auto.frame = undefined;
+    auto.last = undefined;
+  }
+
+  function atBookEnd(): boolean {
+    return !!opened && current >= opened.chapters.length - 1 && offset() >= 1;
+  }
+
+  function runAuto(): void {
+    if (!auto) return;
+    if (pager.mode === 'paged') {
+      auto.timer = window.setInterval(() => {
+        if (atBookEnd()) return stopAuto();
+        turn(1);
+      }, pageSeconds(speedOf()) * 1000);
+      return;
+    }
+    const step = (t: number) => {
+      if (!auto || auto.paused) return;
+      const dt = auto.last === undefined ? 0 : Math.min(100, t - auto.last);
+      auto.last = t;
+      auto.acc += (pixelsPerSecond(speedOf()) * dt) / 1000;
+      const max = scroller.scrollHeight - scroller.clientHeight;
+      if (scroller.scrollTop >= max - 1) {
+        if (atBookEnd() || !opened) return stopAuto();
+        auto.acc = 0;
+        go(current + 1);
+      } else if (auto.acc >= 1) {
+        const whole = Math.floor(auto.acc);
+        auto.acc -= whole;
+        scroller.scrollTop += whole;
+      }
+      auto.frame = requestAnimationFrame(step);
+    };
+    auto.frame = requestAnimationFrame(step);
+  }
+
+  function startAuto(): void {
+    if (auto) return stopAuto();
+    auto = { paused: false, acc: 0 };
+    setChrome(false);
+    refreshAutoBar();
+    runAuto();
+  }
+
+  function pauseAuto(): void {
+    if (!auto || auto.paused) return;
+    stopTimers();
+    auto.paused = true;
+    refreshAutoBar();
+  }
+
+  function resumeAuto(): void {
+    if (!auto || !auto.paused) return;
+    auto.paused = false;
+    refreshAutoBar();
+    runAuto();
+  }
+
+  function stopAuto(): void {
+    stopTimers();
+    auto = null;
+    refreshAutoBar();
+  }
+  const autoButton = h('button', { type: 'button', className: 'icon-btn', 'aria-pressed': 'false', 'aria-label': 'Défilement automatique', 'data-testid': 'auto-scroll', onclick: () => startAuto() }, icon('play'));
+  autoBar.append(
+    h('button', { type: 'button', className: 'icon-btn', 'aria-label': 'Plus lent', 'data-testid': 'auto-slower', onclick: () => changeSpeed(-1) }, icon('minus')),
+    autoSpeed,
+    h('button', { type: 'button', className: 'icon-btn', 'aria-label': 'Plus rapide', 'data-testid': 'auto-faster', onclick: () => changeSpeed(1) }, icon('plus')),
+    autoPause,
+    h('button', { type: 'button', className: 'icon-btn', 'aria-label': 'Arrêter le défilement automatique', 'data-testid': 'auto-stop', onclick: () => stopAuto() }, icon('stop')),
+  );
   const search = readerSearchSheet({
     texts: chapterTexts,
     chapterLabel: (i) => opened?.chapters[i]?.label ?? `Chapitre ${i + 1}`,
@@ -500,16 +821,22 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
   function applySettings(next: ReaderSettings): void {
     const layoutChanged = settings?.layout !== next.layout;
     settings = next;
-    if (layoutChanged) pager.setMode(next.layout);
-    else requestAnimationFrame(() => pager.relayout());
+    if (layoutChanged) {
+      pager.setMode(next.layout);
+      if (auto) stopAuto();
+    } else {
+      requestAnimationFrame(() => pager.relayout());
+    }
+    renderGuide(current);
     void applyReaderNative(next);
     updateStatus();
   }
 
+  footerMiddle.append(autoButton, position, listenButton);
   toolButtons.append(
     h('button', { type: 'button', className: 'icon-btn', 'aria-label': 'Rechercher dans le livre', 'data-testid': 'open-search', onclick: () => search.open() }, icon('search')),
-    h('button', { type: 'button', className: 'icon-btn', 'aria-label': 'Sommaire et surlignages', 'data-testid': 'open-toc', onclick: () => toc.open() }, icon('toc')),
-    listenButton,
+    h('button', { type: 'button', className: 'icon-btn', 'aria-label': 'Sommaire, surlignages et signets', 'data-testid': 'open-toc', onclick: () => toc.open() }, icon('toc')),
+    bookmarkButton,
     h('button', { type: 'button', className: 'icon-btn', 'aria-label': 'Réglages d’affichage', 'data-testid': 'open-settings', onclick: () => void openSettings() }, icon('text')),
   );
 
@@ -627,6 +954,12 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
     }
     const target = e.target as Element;
     if (e.defaultPrevented || hasSelection() || target.closest('mark.hl, a, button, input, textarea')) return;
+    if (auto) {
+      // Pendant le défilement automatique, un tap met en pause ou relance.
+      if (auto.paused) resumeAuto();
+      else pauseAuto();
+      return;
+    }
     if (chromeVisible()) {
       setChrome(false);
       return;
@@ -652,6 +985,7 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
   const resize = new ResizeObserver(() => pager.relayout());
   resize.observe(scroller);
   const removeVolume = onVolumeKey((dir) => {
+    if (auto) pauseAuto();
     if (!sheets.some((s) => s.isOpen)) turn(dir);
   });
   void document.fonts?.ready.then(() => pager.relayout());
@@ -689,6 +1023,11 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
   (async () => {
     opened = await openBook(bookId);
     cards = await listCards(bookId);
+    [guides, focus, bookmarks] = await Promise.all([
+      loadGuides(bookId).catch(() => ({})),
+      loadFocus(bookId, opened.chapters.length).catch(() => []),
+      loadBookmarks(bookId).catch(() => []),
+    ]);
     settings = await loadReaderSettings();
     pager.setMode(settings.layout);
     void applyReaderNative(settings);
@@ -718,6 +1057,7 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
       return false;
     },
     destroy() {
+      stopAuto();
       void stopListening();
       window.clearInterval(clockTimer);
       resize.disconnect();

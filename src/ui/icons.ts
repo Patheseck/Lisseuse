@@ -19,6 +19,17 @@ const PATHS = {
   more: 'M12 6h.01M12 12h.01M12 18h.01',
   chevronLeft: 'M15 18l-6-6 6-6',
   chevronRight: 'M9 18l6-6-6-6',
+  bookmark: 'M7 3h10v18l-5-4-5 4z',
+  play: 'M8 5v14l11-7z',
+  pause: 'M8 5v14M16 5v14',
+  minus: 'M5 12h14',
+  plus: 'M12 5v14M5 12h14',
+  target: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM8 12l3 3 5-6',
+  circle: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z',
+  compass: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM15.5 8.5l-2 5-5 2 2-5z',
+  sort: 'M7 4v16M3 16l4 4 4-4M17 20V4M13 8l4-4 4 4',
+  grid: 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z',
+  list: 'M4 6h16M4 12h16M4 18h16',
 } as const;
 
 export type IconName = keyof typeof PATHS;
