@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Icône de notification : livre ouvert, blanc sur transparent (exigence Android). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,6.5C10.5,5.3 8.4,4.75 6,4.75c-1.2,0 -2.35,0.15 -3.5,0.45v13.3c1.15,-0.3 2.3,-0.45 3.5,-0.45 2.4,0 4.5,0.55 6,1.75 1.5,-1.2 3.6,-1.75 6,-1.75 1.2,0 2.35,0.15 3.5,0.45V5.2C20.35,4.9 19.2,4.75 18,4.75c-2.4,0 -4.5,0.55 -6,1.75zM11,17.6c-1.4,-0.7 -3.1,-1.1 -5,-1.1 -0.85,0 -1.65,0.08 -2.5,0.22V6.6C4.35,6.4 5.15,6.3 6,6.3c1.9,0 3.6,0.45 5,1.25z" />
+</vector>

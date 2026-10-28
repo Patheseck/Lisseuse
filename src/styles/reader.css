@@ -1,0 +1,219 @@
+/* ---------- Lecteur plein écran : le texte occupe tout, les menus se superposent ---------- */
+:root { --status-h: 1.9rem; }
+.screen.reader { display: block; position: relative; overflow: hidden; }
+.reader .reader-scroll { position: absolute; inset: 0; }
+.reader-chrome {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  transition: transform 0.22s ease, opacity 0.22s ease, visibility 0s;
+}
+header.reader-chrome { top: 0; box-shadow: 0 1px 0 var(--border); border-bottom: 0; }
+footer.reader-chrome { bottom: calc(var(--status-h) + var(--safe-bottom)); min-height: var(--bar-h); padding-bottom: 0; box-shadow: 0 -1px 0 var(--border); border-top: 0; }
+.reader.chrome-hidden .reader-chrome { opacity: 0; visibility: hidden; pointer-events: none; transition: transform 0.22s ease, opacity 0.22s ease, visibility 0s 0.22s; }
+.reader.chrome-hidden header.reader-chrome { transform: translateY(-100%); }
+.reader.chrome-hidden footer.reader-chrome { transform: translateY(100%); }
+
+.status-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 5;
+  height: calc(var(--status-h) + var(--safe-bottom));
+  padding: 0 max(1.1rem, env(safe-area-inset-right, 0px)) var(--safe-bottom) max(1.1rem, env(safe-area-inset-left, 0px));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+/* Luminosité propre à l'app (voile noir), et son indicateur pendant le geste. */
+.dim-layer { position: absolute; inset: 0; z-index: 30; background: #000; opacity: var(--dim, 0); pointer-events: none; }
+.brightness-badge {
+  position: absolute;
+  top: 40%;
+  left: 50%;
+  z-index: 31;
+  transform: translateX(-50%);
+  padding: 0.5rem 0.9rem;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--bg);
+  font-size: 0.85rem;
+  pointer-events: none;
+}
+.brightness-badge[hidden] { display: none; }
+
+/* Défilement continu */
+.reader-column {
+  max-width: var(--reader-measure);
+  margin: 0 auto;
+  padding: calc(var(--bar-h) + var(--safe-top) + 1rem) 1.25rem calc(var(--status-h) + var(--safe-bottom) + 3rem);
+}
+
+/* Pages : une colonne CSS = un écran ; la colonne glisse horizontalement. */
+.reader-scroll.layout-paged { overflow: hidden; touch-action: pan-y pinch-zoom; }
+.reader-scroll.layout-paged .reader-column {
+  max-width: none;
+  height: 100%;
+  margin: 0;
+  padding-top: calc(var(--safe-top) + 1.5rem);
+  padding-bottom: calc(var(--status-h) + var(--safe-bottom) + 0.75rem);
+  column-fill: auto;
+  /* Pas de transition CSS : le glissement est animé image par image (voir pager.ts). */
+  will-change: transform;
+}
+.layout-paged .reader-content img { width: auto; max-width: 100%; max-height: calc(100dvh - 8rem); object-fit: contain; }
+.layout-paged .reader-content img, .layout-paged .reader-content pre, .layout-paged .reader-content blockquote, .layout-paged .chapter-box { break-inside: avoid; }
+.layout-paged .reader-content h1, .layout-paged .reader-content h2, .layout-paged .reader-content h3 { break-after: avoid; }
+/* Premier encadré visible d'un chapitre : sous la barre du haut, affichée à l'ouverture du livre. */
+.layout-paged .reader-column > .chapter-box { margin-top: 0; }
+.layout-paged .reader-column > .chapter-box:not([hidden]):not(.chapter-box:not([hidden]) ~ .chapter-box) { margin-top: calc(var(--bar-h) - 1rem); }
+.reader-content {
+  font-family: var(--font-read);
+  font-size: var(--reader-size);
+  line-height: var(--reader-leading);
+  text-align: var(--reader-align, start);
+  overflow-wrap: break-word;
+  hyphens: auto;
+  -webkit-hyphens: auto;
+}
+.reader-content p { margin: 0 0 var(--para-space, 0.9em); text-indent: var(--para-indent, 0); }
+.reader-content h1 + p, .reader-content h2 + p, .reader-content h3 + p { text-indent: 0; }
+.reader-content h1, .reader-content h2, .reader-content h3 { line-height: 1.3; font-weight: 600; margin: 1.6em 0 0.7em; }
+.reader-content h1 { font-size: 1.5em; }
+.reader-content h2 { font-size: 1.25em; }
+.reader-content img { max-width: 100%; height: auto; display: block; margin: 1em auto; border-radius: 4px; }
+.reader-content a { color: var(--accent); }
+.reader-content a[data-chapter], .reader-content a[data-anchor] { cursor: pointer; text-decoration: underline; }
+.reader-content blockquote { margin: 1em 0; padding-left: 1em; border-left: 3px solid var(--border); color: var(--muted); }
+.reader-content pre { overflow-x: auto; padding: 0.8em; background: var(--panel); border-radius: 6px; font-size: 0.85em; }
+.reader-content table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; }
+
+.reader-heading { flex: 1; min-width: 0; display: grid; line-height: 1.25; }
+.reader-book, .reader-chapter { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.reader-book { font-weight: 600; font-size: 0.95rem; }
+.reader-chapter { font-size: 0.75rem; color: var(--muted); }
+.reader-tools { display: flex; }
+.reader-tools[hidden] { display: none; }
+.bottombar .btn { display: inline-flex; align-items: center; gap: 0.2rem; }
+
+.reader-content mark.hl { background: var(--hl); color: inherit; border-radius: 2px; cursor: pointer; }
+.reader-content mark.flash { background: var(--flash); color: inherit; border-radius: 2px; transition: background 0.6s; }
+
+.selection-bar, .mark-menu {
+  position: fixed;
+  z-index: 50;
+  display: flex;
+  gap: 0.4rem;
+  padding: 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: 0 8px 24px var(--shadow);
+}
+.selection-bar[hidden], .mark-menu[hidden] { display: none; }
+.selection-bar .btn, .mark-menu .btn { display: inline-flex; align-items: center; gap: 0.35rem; }
+
+
+
+/* Exercices de chapitre (hors du texte : n'affectent pas l'ancrage des surlignages) */
+.chapter-box { margin: 1.5rem 0; padding: 0.9rem 1rem; border: 1px solid var(--border); border-radius: 14px; background: var(--panel); display: grid; gap: 0.6rem; font-size: 0.92rem; }
+.chapter-box[hidden] { display: none; }
+.chapter-box p { margin: 0; }
+.chapter-box-actions { display: flex; gap: 0.5rem; justify-content: flex-end; flex-wrap: wrap; }
+.chapter-box .btn { display: inline-flex; align-items: center; gap: 0.35rem; }
+.chapter-end { margin-top: 2.5rem; border-color: var(--accent); }
+.reader-content .speaking { background: color-mix(in srgb, var(--accent) 12%, transparent); border-radius: 4px; box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 12%, transparent); }
+.icon-btn[hidden] { display: none; }
+.wide-btn { width: 100%; }
+
+/* Méthode : question directrice rappelée en haut, encadrés de chapitre */
+.question-bar {
+  position: absolute;
+  top: var(--safe-top);
+  left: 0;
+  right: 0;
+  z-index: 4;
+  padding: 0.3rem 2.6rem 0.2rem 1.1rem;
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-style: italic;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  transition: opacity 0.2s;
+}
+.question-bar::before { content: '? '; font-style: normal; font-weight: 700; color: var(--accent); }
+.question-bar[hidden] { display: none; }
+.reader:not(.chrome-hidden) .question-bar { opacity: 0; }
+.guide-box { border-style: dashed; }
+.guide-reminder { font-family: var(--font-read); }
+.deepen { display: grid; gap: 0.3rem; }
+.deepen ul { margin: 0; padding-left: 1.1rem; display: grid; gap: 0.3rem; }
+.deepen li span { font-family: var(--font-read); }
+.deepen .link-btn { margin-left: 0.4rem; }
+
+/* Signet : ruban dans le coin supérieur droit */
+.bookmark-ribbon {
+  position: absolute;
+  top: var(--safe-top);
+  right: 1rem;
+  z-index: 6;
+  width: 14px;
+  height: 26px;
+  background: var(--accent);
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 75%, 0 100%);
+  pointer-events: none;
+}
+.bookmark-ribbon[hidden] { display: none; }
+.reader-tools .icon-btn[aria-pressed='true'] { color: var(--accent); }
+
+/* Défilement automatique */
+.auto-bar {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--status-h) + var(--safe-bottom) + 0.6rem);
+  z-index: 25;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.2rem 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
+  box-shadow: 0 6px 20px var(--shadow);
+}
+.auto-bar[hidden] { display: none; }
+.auto-speed { min-width: 6.5rem; white-space: nowrap; text-align: center; font-size: 0.78rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.reader:not(.chrome-hidden) .auto-bar { bottom: calc(var(--status-h) + var(--safe-bottom) + var(--bar-h) + 0.6rem); }
+.footer-middle { display: flex; align-items: center; gap: 0.2rem; }
+.footer-middle .icon-btn[aria-pressed='true'] { color: var(--accent); }
+[data-testid='chapter-position'] { white-space: nowrap; font-variant-numeric: tabular-nums; }
+@media (max-width: 430px) {
+  .bottombar .btn-label { display: none; }
+  .bottombar .btn { min-width: 48px; justify-content: center; }
+}
+
+/* Sélection : seul le texte du livre se sélectionne, avec la couleur du thème */
+.reader { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.reader .reader-content { -webkit-user-select: text; user-select: text; }
+.reader-content ::selection { background: color-mix(in srgb, var(--accent) 32%, transparent); color: inherit; }
+.selection-bar { align-items: center; gap: 0.2rem; padding: 0.3rem; border-radius: 14px; max-width: calc(100vw - 16px); }
+.selection-main, .selection-more { display: flex; align-items: center; gap: 0.3rem; }
+.selection-more { padding-left: 0.25rem; margin-left: 0.15rem; border-left: 1px solid var(--border); }
+.selection-more .icon-btn { min-width: 40px; min-height: 40px; }
+.goal-box { border-color: var(--accent); }

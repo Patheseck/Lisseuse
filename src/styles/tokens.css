@@ -1,0 +1,83 @@
+/* Palette « papier chaud » héritée de la V5, contrastes vérifiés AA. */
+:root {
+  --bg: #f6f1e7;
+  --panel: #fbf8f1;
+  --ink: #2a241c;
+  --muted: #6b6153;
+  --border: #e0d6c2;
+  --accent: #a0581a;
+  --accent-ink: #ffffff;
+  --danger: #b3261e;
+  --danger-ink: #ffffff;
+  --shadow: rgba(42, 36, 28, 0.14);
+
+  --font-ui: 'IBM Plex Sans', system-ui, sans-serif;
+  --font-read: 'Literata', Georgia, serif;
+  --reader-size: 1.125rem;
+  --reader-leading: 1.75;
+  --reader-measure: 40rem;
+
+  --radius: 10px;
+  --bar-h: 52px;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --bg: #17161b;
+    --panel: #1f1e24;
+    --ink: #e9e3d3;
+    --muted: #a39a88;
+    --border: #34323a;
+    --accent: #d9954b;
+    --accent-ink: #1a1508;
+    --danger: #f2b8b5;
+    --danger-ink: #3a0907;
+    --shadow: rgba(0, 0, 0, 0.45);
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme='dark'] {
+  --bg: #17161b;
+  --panel: #1f1e24;
+  --ink: #e9e3d3;
+  --muted: #a39a88;
+  --border: #34323a;
+  --accent: #d9954b;
+  --accent-ink: #1a1508;
+  --danger: #f2b8b5;
+  --danger-ink: #3a0907;
+  --shadow: rgba(0, 0, 0, 0.45);
+  color-scheme: dark;
+}
+
+/* Couleur de surlignage : lisible en clair comme en sombre. */
+:root { --hl: rgba(232, 180, 60, 0.38); --flash: rgba(160, 88, 26, 0.35); }
+:root[data-theme='dark'] { --hl: rgba(217, 149, 75, 0.32); --flash: rgba(217, 149, 75, 0.5); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) { --hl: rgba(217, 149, 75, 0.32); --flash: rgba(217, 149, 75, 0.5); }
+}
+
+/* Thèmes de lecture supplémentaires (choisis dans « Aa ») ; contrastes AA vérifiés sur fond et panneaux. */
+:root[data-theme='sepia'] {
+  --bg: #f4ecd8; --panel: #f9f3e3; --ink: #4a3b2a; --muted: #7a6650; --border: #e0d2b4;
+  --accent: #9a5414; --accent-ink: #ffffff; --danger: #b3261e; --danger-ink: #ffffff;
+  --shadow: rgba(74, 59, 42, 0.18); --hl: rgba(214, 160, 60, 0.4); --flash: rgba(154, 84, 20, 0.35);
+  color-scheme: light;
+}
+:root[data-theme='gray'] {
+  --bg: #3b3d40; --panel: #45484c; --ink: #e4e2dc; --muted: #c0bdb5; --border: #56595e;
+  --accent: #e8b175; --accent-ink: #1f1a12; --danger: #f2b8b5; --danger-ink: #3a0907;
+  --shadow: rgba(0, 0, 0, 0.4); --hl: rgba(224, 164, 99, 0.32); --flash: rgba(224, 164, 99, 0.5);
+  color-scheme: dark;
+}
+/* Noir pur : économise la batterie des écrans OLED ; texte adouci pour limiter l'éblouissement. */
+:root[data-theme='black'] {
+  --bg: #000000; --panel: #0d0d0f; --ink: #c9c4b8; --muted: #8a857a; --border: #222226;
+  --accent: #d9954b; --accent-ink: #1a1508; --danger: #f2b8b5; --danger-ink: #3a0907;
+  --shadow: rgba(0, 0, 0, 0.6); --hl: rgba(217, 149, 75, 0.28); --flash: rgba(217, 149, 75, 0.45);
+  color-scheme: dark;
+}

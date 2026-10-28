@@ -1,0 +1,2592 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Liseuse — Prototype</title>
+<style>
+  :root {
+    box-sizing: border-box;
+    --bg: #F6F1E7;
+    --ink: #2A241C;
+    --muted: #6B6153;
+    --accent: #A8631D;
+    --accent-ink: #FFFFFF;
+    --border: #E0D6C2;
+    --panel: #FBF8F1;
+    --shadow: rgba(42, 36, 28, 0.14);
+    --reader-leading: 1.75;
+    --reader-margin: 1.4rem;
+    --reader-font: 'Literata', Georgia, serif;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #17161B;
+      --ink: #E9E3D3;
+      --muted: #948B79;
+      --accent: #D9954B;
+      --accent-ink: #1A1508;
+      --border: #2C2A2E;
+      --panel: #1E1D23;
+      --shadow: rgba(0, 0, 0, 0.4);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #17161B;
+    --ink: #E9E3D3;
+    --muted: #948B79;
+    --accent: #D9954B;
+    --accent-ink: #1A1508;
+    --border: #2C2A2E;
+    --panel: #1E1D23;
+    --shadow: rgba(0, 0, 0, 0.4);
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    height: 100%;
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'IBM Plex Sans', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  html { scroll-padding-top: env(safe-area-inset-top, 0px); }
+
+  #app { height: 100%; display: flex; flex-direction: column; }
+
+  /* --- Barre supérieure --- */
+  header {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: env(safe-area-inset-top, 0px) 0.9rem 0;
+    height: calc(48px + env(safe-area-inset-top, 0px));
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+    position: sticky;
+    top: 0;
+    z-index: 20;
+  }
+  .icon-btn {
+    position: relative;
+    background: none;
+    border: none;
+    color: var(--ink);
+    font-size: 1.15rem;
+    width: 34px;
+    height: 34px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex: 0 0 auto;
+  }
+  .badge {
+    position: absolute;
+    top: 1px;
+    right: 1px;
+    background: var(--accent);
+    color: var(--accent-ink);
+    font-size: 0.6rem;
+    line-height: 1;
+    padding: 2px 4px;
+    border-radius: 8px;
+    font-family: 'IBM Plex Sans', sans-serif;
+  }
+  .icon-btn:hover { background: var(--panel); }
+  .icon-btn:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  #book-title {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 0.85rem;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* --- Zone de lecture --- */
+  main {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    display: flex;
+    justify-content: center;
+  }
+  #reader-scroll {
+    width: 100%;
+    max-width: 42rem;
+    padding: 2.4rem var(--reader-margin) 6rem;
+  }
+  #content {
+    font-family: var(--reader-font);
+    font-size: var(--reader-size, 1.125rem);
+    line-height: var(--reader-leading);
+    letter-spacing: 0.1px;
+  }
+  #content h1, #content h2, #content h3 {
+    font-family: 'Literata', Georgia, serif;
+    font-weight: 600;
+    line-height: 1.3;
+    margin: 1.6em 0 0.7em;
+  }
+  #content h1 { font-size: 1.5em; }
+  #content h2 { font-size: 1.25em; }
+  #content p { margin: 0 0 1.1em; }
+  #content img { max-width: 100%; height: auto; border-radius: 4px; }
+  #content a { color: var(--accent); }
+  #content ::selection { background: color-mix(in srgb, var(--accent) 35%, transparent); }
+
+  /* --- V2 : recherche, bibliothèque enrichie, accessibilité --- */
+  #reader-tools { display:flex; gap:.4rem; margin-bottom:1rem; }
+  #reader-tools button { flex:1; border:1px solid var(--border); background:none; color:var(--ink); border-radius:8px; padding:.48rem .55rem; font-family:inherit; cursor:pointer; }
+  #reader-tools button:hover { border-color:var(--accent); color:var(--accent); }
+  #search-panel { position:fixed; inset:0; z-index:55; display:none; background:var(--bg); flex-direction:column; padding:calc(.8rem + env(safe-area-inset-top,0px)) 1rem 1rem; }
+  #search-panel.open { display:flex; }
+  #search-head { display:flex; gap:.5rem; align-items:center; }
+  #search-input { flex:1; font:inherit; background:var(--panel); color:var(--ink); border:1px solid var(--border); border-radius:9px; padding:.65rem .75rem; }
+  #search-close { border:1px solid var(--border); background:none; color:var(--ink); border-radius:9px; padding:.62rem .75rem; cursor:pointer; }
+  #search-results { overflow:auto; margin-top:.8rem; }
+  .search-result { display:block; width:100%; text-align:left; background:none; color:var(--ink); border:0; border-bottom:1px solid var(--border); padding:.75rem .2rem; cursor:pointer; font:inherit; }
+  .search-result small { display:block; color:var(--muted); margin-bottom:.25rem; }
+  .search-result mark { background:color-mix(in srgb,var(--accent) 25%,transparent); color:inherit; }
+  .lib-tools { display:flex; gap:.45rem; margin:.7rem 0; }
+  .lib-tools input { flex:1; min-width:0; background:var(--panel); color:var(--ink); border:1px solid var(--border); border-radius:8px; padding:.55rem .65rem; font:inherit; }
+  .lib-tools button { border:1px solid var(--border); background:none; color:var(--ink); border-radius:8px; padding:.5rem .65rem; cursor:pointer; }
+  .lib-progress { height:5px; background:var(--border); border-radius:4px; overflow:hidden; margin:.35rem 0; }
+  .lib-progress span { display:block; height:100%; background:var(--accent); width:0; }
+  .lib-meta { font-size:.7rem; color:var(--muted); }
+  .settings-action { width:100%; border:1px solid var(--border); background:none; color:var(--ink); border-radius:7px; padding:.45rem; cursor:pointer; font:inherit; }
+  .settings-action:hover { border-color:var(--accent); color:var(--accent); }
+
+  .mnemo-mark {
+    background: color-mix(in srgb, var(--accent) 22%, transparent);
+    border-bottom: 2px solid var(--accent);
+    cursor: pointer;
+    border-radius: 2px;
+  }
+
+  /* --- État vide --- */
+  #empty {
+    max-width: 30rem;
+    margin: 12vh auto 0;
+    padding: 0 1.4rem;
+    text-align: left;
+  }
+  #empty h1 {
+    font-family: 'Literata', serif;
+    font-weight: 500;
+    font-size: 1.6rem;
+    margin: 0 0 0.6rem;
+  }
+  #empty p { color: var(--muted); margin: 0 0 1.6rem; line-height: 1.6; }
+  .dropzone {
+    border: 1.5px dashed var(--border);
+    border-radius: 10px;
+    padding: 2.2rem 1.4rem;
+    text-align: center;
+    color: var(--muted);
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease;
+  }
+  .dropzone:hover, .dropzone.drag { border-color: var(--accent); background: var(--panel); }
+  .dropzone strong { color: var(--ink); }
+  .dropzone input { display: none; }
+
+  #library-list { margin: 0 0 1.8rem; }
+  .lib-heading {
+    font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--muted); font-weight: 500; margin: 0 0 0.5rem;
+  }
+  .lib-list { list-style: none; margin: 0 0 0.2rem; padding: 0; border-top: 1px solid var(--border); }
+  .lib-item { display: flex; align-items: center; border-bottom: 1px solid var(--border); }
+  .lib-open {
+    flex: 1 1 auto; display: flex; align-items: baseline; gap: 0.6rem;
+    background: none; border: none; text-align: left; padding: 0.7rem 0.2rem;
+    cursor: pointer; color: var(--ink); font-family: inherit;
+  }
+  .lib-open:hover { color: var(--accent); }
+  .lib-format {
+    font-size: 0.6rem; letter-spacing: 0.04em; color: var(--muted);
+    border: 1px solid var(--border); border-radius: 4px; padding: 0.1rem 0.32rem; flex: 0 0 auto;
+  }
+  .lib-title { font-family: 'Literata', serif; font-size: 0.95rem; }
+  .lib-delete { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 0.85rem; padding: 0.5rem; }
+
+  /* --- Bas de page : navigation chapitre --- */
+  footer {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.8rem;
+    padding: 0.6rem 1rem calc(0.6rem + env(safe-area-inset-bottom, 0px));
+    border-top: 1px solid var(--border);
+    background: var(--bg);
+  }
+  footer button {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--ink);
+    font-family: inherit;
+    font-size: 0.82rem;
+    padding: 0.45rem 0.9rem;
+    border-radius: 7px;
+    cursor: pointer;
+  }
+  footer button:disabled { opacity: 0.35; cursor: default; }
+  footer button:not(:disabled):hover { border-color: var(--accent); color: var(--accent); }
+  #progress-label { font-size: 0.78rem; color: var(--muted); flex: 0 0 auto; }
+
+  /* --- Tiroir table des matières --- */
+  #scrim {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.35);
+    opacity: 0; pointer-events: none; transition: opacity 0.2s ease; z-index: 30;
+  }
+  #scrim.open { opacity: 1; pointer-events: auto; }
+  #toc {
+    position: fixed;
+    top: 0; bottom: 0; left: 0;
+    width: min(320px, 84vw);
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    transform: translateX(-100%);
+    transition: transform 0.22s ease;
+    z-index: 31;
+    display: flex;
+    flex-direction: column;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  #toc.open { transform: translateX(0); }
+  #toc h2 {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    font-weight: 500;
+    margin: 1.1rem 1.1rem 0.6rem;
+  }
+  #toc-list { list-style: none; margin: 0; padding: 0 0.5rem 1rem; overflow-y: auto; }
+  #toc-list li button {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    color: var(--ink);
+    font-family: inherit;
+    font-size: 0.9rem;
+    padding: 0.55rem 0.6rem;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  #toc-list li button:hover { background: var(--bg); }
+  #toc-list li button.active { color: var(--accent); font-weight: 500; }
+
+  /* --- Panneau réglages --- */
+  #settings {
+    position: fixed;
+    top: calc(48px + env(safe-area-inset-top, 0px) + 6px);
+    right: 0.8rem;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0.9rem;
+    box-shadow: 0 8px 24px var(--shadow);
+    display: none;
+    flex-direction: column;
+    gap: 0.7rem;
+    z-index: 25;
+    min-width: 190px;
+  }
+  #settings.open { display: flex; }
+  #settings .row { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; }
+  #settings label { font-size: 0.78rem; color: var(--muted); }
+  #settings .stepper { display: flex; align-items: center; gap: 0.4rem; }
+  #settings .stepper button {
+    width: 26px; height: 26px; border-radius: 6px; border: 1px solid var(--border);
+    background: none; color: var(--ink); cursor: pointer; font-size: 0.9rem;
+  }
+  #settings .theme-options { display: flex; align-items: center; gap: 0.4rem; }
+  #theme-toggle-row button {
+    border: 1px solid var(--border); background: none; color: var(--ink);
+    border-radius: 6px; padding: 0.3rem 0.6rem; font-size: 0.78rem; cursor: pointer; font-family: inherit;
+  }
+  #theme-toggle-row button.active { border-color: var(--accent); color: var(--accent); }
+
+  #loading {
+    position: fixed; inset: 0; background: var(--bg);
+    display: none; align-items: center; justify-content: center;
+    color: var(--muted); font-size: 0.9rem; z-index: 40;
+  }
+  #loading.open { display: flex; }
+
+  .visually-hidden {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0);
+  }
+
+  /* --- Tiroir Fiches / Palais --- */
+  #cards {
+    position: fixed;
+    top: 0; bottom: 0; right: 0;
+    width: min(360px, 88vw);
+    background: var(--panel);
+    border-left: 1px solid var(--border);
+    transform: translateX(100%);
+    transition: transform 0.22s ease;
+    z-index: 31;
+    display: flex;
+    flex-direction: column;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  #cards.open { transform: translateX(0); }
+  #cards-head {
+    padding: 1.1rem 1.1rem 0.6rem;
+    border-bottom: 1px solid var(--border);
+  }
+  #cards-head .tabs { display: flex; gap: 0.4rem; margin-bottom: 0.7rem; }
+  #cards-head .tabs button {
+    flex: 1 1 0;
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-family: inherit;
+    font-size: 0.78rem;
+    padding: 0.4rem 0.5rem;
+    border-radius: 7px;
+    cursor: pointer;
+  }
+  #cards-head .tabs button.active { color: var(--accent); border-color: var(--accent); }
+  #btn-suggest {
+    width: 100%;
+    background: none;
+    border: 1px dashed var(--border);
+    color: var(--ink);
+    font-family: inherit;
+    font-size: 0.8rem;
+    padding: 0.5rem;
+    border-radius: 7px;
+    cursor: pointer;
+  }
+  #btn-suggest:hover { border-color: var(--accent); color: var(--accent); }
+  #suggest-list {
+    list-style: none; margin: 0.6rem 0 0; padding: 0;
+    display: none;
+    max-height: 34vh;
+    overflow-y: auto;
+  }
+  #suggest-list li {
+    display: flex; align-items: flex-start; gap: 0.5rem;
+    padding: 0.5rem 0.2rem; border-bottom: 1px solid var(--border);
+    font-size: 0.82rem; line-height: 1.4;
+  }
+  #suggest-list li span { flex: 1 1 auto; }
+  .suggest-add {
+    flex: 0 0 auto; width: 26px; height: 26px; border-radius: 6px;
+    border: 1px solid var(--accent); background: none; color: var(--accent);
+    cursor: pointer; font-size: 0.95rem; line-height: 1;
+  }
+  #cards-body { flex: 1 1 auto; overflow-y: auto; padding: 0.4rem 1.1rem 1.4rem; }
+  .cards-empty { color: var(--muted); font-size: 0.85rem; line-height: 1.6; }
+
+  .card-list { list-style: none; margin: 0; padding: 0; }
+  .card-item {
+    padding: 0.8rem 0; border-bottom: 1px solid var(--border);
+  }
+  .card-text { font-size: 0.88rem; line-height: 1.5; margin-bottom: 0.4rem; }
+  .card-meta { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+  .card-chapter { font-size: 0.72rem; color: var(--muted); flex: 1 1 auto; }
+  .card-encode, .card-badge {
+    font-family: inherit; font-size: 0.72rem; padding: 0.28rem 0.55rem;
+    border-radius: 6px; border: 1px solid var(--border); background: none;
+    color: var(--ink); cursor: pointer;
+  }
+  .card-badge { border-color: var(--accent); color: var(--accent); }
+  .card-delete {
+    background: none; border: none; color: var(--muted); cursor: pointer; font-size: 0.85rem;
+  }
+
+  .palais-lieu { margin-bottom: 1.4rem; }
+  .palais-lieu h3 {
+    font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em;
+    color: var(--accent); font-weight: 600; margin: 0 0 0.5rem;
+  }
+  .palais-cards { list-style: decimal; margin: 0; padding-left: 1.2rem; }
+  .palais-cards li { font-size: 0.85rem; margin-bottom: 0.6rem; line-height: 1.4; }
+  .palais-fact { color: var(--muted); font-size: 0.78rem; margin-top: 0.15rem; }
+
+  /* --- Barre de sélection flottante --- */
+  #sel-toolbar {
+    position: fixed;
+    display: none;
+    background: var(--ink);
+    color: var(--bg);
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-size: 0.78rem;
+    padding: 0.45rem 0.8rem;
+    border-radius: 20px;
+    box-shadow: 0 6px 18px var(--shadow);
+    cursor: pointer;
+    z-index: 26;
+    white-space: nowrap;
+  }
+  #sel-toolbar.show { display: block; }
+
+  /* --- Modale d'encodage mnémonique --- */
+  #assoc-modal {
+    position: fixed; inset: 0; z-index: 50;
+    display: none; align-items: flex-end; justify-content: center;
+    background: rgba(0,0,0,0.4);
+  }
+  #assoc-modal.open { display: flex; }
+  #assoc-panel {
+    background: var(--panel);
+    width: 100%; max-width: 30rem;
+    max-height: 88vh;
+    overflow-y: auto;
+    border-radius: 14px 14px 0 0;
+    padding: 1.2rem 1.2rem calc(1.2rem + env(safe-area-inset-bottom, 0px));
+  }
+  @media (min-width: 640px) {
+    #assoc-modal { align-items: center; }
+    #assoc-panel { border-radius: 14px; max-height: 80vh; }
+  }
+  #assoc-panel h2 { font-size: 1rem; margin: 0 0 0.3rem; font-family: 'Literata', serif; font-weight: 600; }
+  #assoc-fact {
+    font-size: 0.82rem; color: var(--muted); line-height: 1.5;
+    margin: 0 0 1rem; padding-bottom: 0.9rem; border-bottom: 1px solid var(--border);
+  }
+  .assoc-field { margin-bottom: 0.7rem; }
+  .assoc-field label {
+    display: block; font-size: 0.72rem; color: var(--muted); margin-bottom: 0.25rem;
+  }
+  .assoc-field input {
+    width: 100%; font-family: inherit; font-size: 0.88rem;
+    background: var(--bg); color: var(--ink); border: 1px solid var(--border);
+    border-radius: 7px; padding: 0.5rem 0.6rem;
+  }
+  .assoc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 0.7rem; }
+  #assoc-actions { display: flex; gap: 0.6rem; margin-top: 0.9rem; }
+  #assoc-actions button {
+    flex: 1 1 0; font-family: inherit; font-size: 0.85rem; padding: 0.6rem;
+    border-radius: 8px; cursor: pointer;
+  }
+  #assoc-cancel { background: none; border: 1px solid var(--border); color: var(--ink); }
+  #assoc-save { background: var(--accent); border: 1px solid var(--accent); color: var(--accent-ink); }
+  #mnemo-coach{display:block;line-height:1.45} #mnemo-coach span{display:block;margin-top:.25rem;color:var(--muted);font-size:.76rem}
+  #sequence-editor textarea{min-height:7rem}
+  .palais-test{margin:.7rem 0;padding:.75rem;border:1px solid var(--border);border-radius:10px;background:var(--bg)}
+
+
+  .mojor-row { padding-top: 0.5rem; border-top: 1px solid var(--border); }
+  .mojor-row button {
+    width: 100%; font-family: inherit; font-size: 0.76rem; padding: 0.4rem;
+    border-radius: 6px; border: 1px solid var(--border); background: none; color: var(--ink); cursor: pointer;
+  }
+  #mojor-status { display: block; font-size: 0.68rem; color: var(--muted); margin-top: 0.35rem; }
+
+  #btn-review {
+    width: 100%; margin-bottom: 0.6rem;
+    background: none; border: 1px solid var(--accent); color: var(--accent);
+    font-family: inherit; font-size: 0.82rem; padding: 0.55rem; border-radius: 8px; cursor: pointer;
+  }
+  #btn-review:disabled { opacity: 0.45; cursor: default; border-color: var(--border); color: var(--muted); }
+
+  #review-modal {
+    position: fixed; inset: 0; z-index: 60;
+    background: var(--bg);
+    display: none;
+    flex-direction: column;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  #review-modal.open { display: flex; }
+  #review-top {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0.8rem 1rem; border-bottom: 1px solid var(--border); flex: 0 0 auto;
+  }
+  #review-top button { background: none; border: none; color: var(--ink); font-size: 1.1rem; cursor: pointer; }
+  #review-progress { font-size: 0.78rem; color: var(--muted); }
+  #review-body {
+    flex: 1 1 auto; overflow-y: auto; max-width: 30rem; margin: 0 auto; width: 100%;
+    padding: 2rem 1.4rem 3rem; display: none;
+  }
+  #review-cue { font-family: 'Literata', serif; }
+  #review-cue .cue-number {
+    font-size: 0.75rem; color: var(--accent); text-transform: uppercase;
+    letter-spacing: 0.06em; margin-bottom: 0.5rem; font-family: 'IBM Plex Sans', sans-serif;
+  }
+  #review-cue h2 { font-size: 1.5rem; font-weight: 600; margin: 0 0 1.1rem; }
+  #review-cue dl { display: grid; grid-template-columns: auto 1fr; gap: 0.35rem 0.9rem; font-size: 0.88rem; margin: 0; font-family: 'IBM Plex Sans', sans-serif; }
+  #review-cue dt { color: var(--muted); }
+  #review-cue dd { margin: 0; }
+  #review-reveal {
+    width: 100%; margin-top: 1.6rem;
+    background: none; border: 1px dashed var(--border); color: var(--ink);
+    font-family: inherit; font-size: 0.9rem; padding: 0.8rem; border-radius: 10px; cursor: pointer;
+  }
+  #review-fact {
+    display: none; margin-top: 1.4rem; padding-top: 1.2rem; border-top: 1px solid var(--border);
+    font-family: 'Literata', serif; font-size: 1.05rem; line-height: 1.65;
+  }
+  #review-quality { display: none; grid-template-columns: 1fr 1fr; gap: 0.6rem; margin-top: 1.8rem; }
+  #review-quality button {
+    font-family: inherit; font-size: 0.85rem; padding: 0.75rem; border-radius: 9px; cursor: pointer;
+    border: 1px solid var(--border); background: none; color: var(--ink);
+  }
+  #review-quality button[data-q="0"] { color: var(--muted); }
+  #review-quality button[data-q="5"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  #review-done {
+    display: none; flex: 1 1 auto; flex-direction: column; align-items: center; justify-content: center;
+    gap: 1.1rem; text-align: center; padding: 2rem;
+  }
+  #review-done p { color: var(--muted); font-size: 0.92rem; max-width: 22rem; line-height: 1.5; margin: 0; }
+  #review-done button {
+    background: var(--accent); border: 1px solid var(--accent); color: var(--accent-ink);
+    font-family: inherit; font-size: 0.88rem; padding: 0.65rem 1.5rem; border-radius: 9px; cursor: pointer;
+  }
+
+
+  /* --- V3 : FSRS-6, rétention, modes de mémorisation --- */
+  #btn-dashboard { font-size:.82rem; }
+  #dashboard-modal { position:fixed; inset:0; z-index:65; display:none; background:var(--bg); overflow:auto; padding:calc(.8rem + env(safe-area-inset-top,0px)) 1rem 2rem; }
+  #dashboard-modal.open { display:block; }
+  #dashboard-head { display:flex; align-items:center; justify-content:space-between; gap:.6rem; max-width:46rem; margin:0 auto 1rem; }
+  #dashboard-head h2 { margin:0; font-family:'Literata',serif; font-weight:600; }
+  #dashboard-head button { border:1px solid var(--border); background:none; color:var(--ink); border-radius:8px; padding:.5rem .7rem; cursor:pointer; }
+  .dash-wrap { max-width:46rem; margin:auto; }
+  .dash-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:.65rem; }
+  .dash-card { background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:.85rem; }
+  .dash-card strong { display:block; font-size:1.35rem; margin:.15rem 0; }
+  .dash-card small,.dash-muted { color:var(--muted); font-size:.72rem; }
+  .dash-bar { height:8px; background:var(--border); border-radius:99px; overflow:hidden; margin:.55rem 0; }
+  .dash-bar span { display:block; height:100%; background:var(--accent); }
+  .dash-section { margin-top:1rem; }
+  .dash-section h3 { font-size:.78rem; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin:.2rem 0 .55rem; }
+  .dash-book { border-bottom:1px solid var(--border); padding:.65rem 0; }
+  .dash-book-row { display:flex; justify-content:space-between; gap:.5rem; }
+  .dash-pill { display:inline-block; border:1px solid var(--border); border-radius:99px; padding:.15rem .45rem; font-size:.68rem; }
+  .mode-note { font-size:.72rem; color:var(--muted); line-height:1.4; margin-top:.35rem; }
+  #assoc-mode, #assoc-reformulation { width:100%; box-sizing:border-box; background:var(--panel); color:var(--ink); border:1px solid var(--border); border-radius:8px; padding:.55rem; font:inherit; }
+  #assoc-reformulation { min-height:4.5rem; resize:vertical; }
+  .review-mode { display:inline-block; font-size:.68rem; color:var(--accent); border:1px solid var(--accent); border-radius:99px; padding:.15rem .45rem; margin-bottom:.6rem; }
+  #review-quality button[data-q="1"] { color:var(--muted); }
+  #review-quality button[data-q="4"] { background:var(--accent); border-color:var(--accent); color:var(--accent-ink); }
+
+
+
+  /* ================= V5 — Learning Experience ================= */
+  #learning-modal, #professor-modal {
+    position:fixed; inset:0; z-index:70; display:none; align-items:flex-end; justify-content:center;
+    background:rgba(0,0,0,.45);
+  }
+  #learning-modal.open, #professor-modal.open { display:flex; }
+  #learning-panel, #professor-panel {
+    width:100%; max-width:34rem; max-height:90vh; overflow:auto; background:var(--panel);
+    border-radius:16px 16px 0 0; padding:1rem 1rem calc(1rem + env(safe-area-inset-bottom,0px));
+  }
+  @media (min-width:640px) {
+    #learning-modal, #professor-modal { align-items:center; }
+    #learning-panel, #professor-panel { border-radius:16px; max-height:82vh; }
+  }
+  .learning-head, .professor-head { display:flex; justify-content:space-between; gap:.7rem; align-items:flex-start; }
+  .learning-head h2, .professor-head h2 { margin:.15rem 0 .8rem; font-family:'Literata',serif; font-size:1.05rem; }
+  .learning-head button, .professor-head button { border:1px solid var(--border); background:none; color:var(--ink); border-radius:8px; padding:.4rem .55rem; }
+  .learning-kicker { color:var(--accent); font-size:.65rem; letter-spacing:.09em; font-weight:700; }
+  #learning-selection { margin:0 0 1rem; padding:.75rem .85rem; border-left:3px solid var(--accent); background:var(--bg); color:var(--muted); font-family:'Literata',serif; line-height:1.5; max-height:9rem; overflow:auto; }
+  .learning-actions { display:grid; gap:.55rem; }
+  .learning-actions button { text-align:left; border:1px solid var(--border); background:var(--bg); color:var(--ink); border-radius:10px; padding:.7rem .75rem; cursor:pointer; }
+  .learning-actions button:hover { border-color:var(--accent); }
+  .learning-actions strong { display:block; font-size:.88rem; }
+  .learning-actions span { display:block; margin-top:.15rem; color:var(--muted); font-size:.72rem; }
+  #review-answer { width:100%; min-height:5.5rem; resize:vertical; box-sizing:border-box; margin:.5rem 0 .2rem; padding:.65rem; border:1px solid var(--border); border-radius:9px; background:var(--panel); color:var(--ink); font:inherit; }
+  #review-answer-label { display:block; font-size:.76rem; color:var(--muted); margin-top:1rem; }
+  .review-answer-hint { color:var(--muted); font-size:.68rem; margin-bottom:.65rem; }
+  #review-comparison { margin:.6rem 0; padding:.7rem; border:1px solid var(--border); border-radius:9px; display:none; font-size:.8rem; line-height:1.5; }
+  #review-comparison strong { display:block; margin-bottom:.25rem; }
+  #review-quality { margin-top:.7rem; }
+  #professor-panel textarea { width:100%; min-height:6rem; box-sizing:border-box; padding:.65rem; border:1px solid var(--border); border-radius:9px; background:var(--bg); color:var(--ink); font:inherit; }
+  #professor-answer-wrap { margin-top:1rem; }
+  #professor-answer-wrap label { display:block; font-size:.75rem; color:var(--muted); margin-bottom:.3rem; }
+  #professor-check, #professor-next { margin-top:.6rem; width:100%; border:1px solid var(--accent); background:var(--accent); color:var(--accent-ink); border-radius:9px; padding:.65rem; font:inherit; cursor:pointer; }
+  #professor-next { background:none; color:var(--ink); border-color:var(--border); }
+  #professor-feedback { margin-top:.7rem; padding:.7rem; border-radius:9px; background:var(--bg); font-size:.78rem; line-height:1.5; display:none; }
+  .professor-progress { color:var(--muted); font-size:.7rem; margin:.2rem 0 .6rem; }
+  .professor-q { font-family:'Literata',serif; font-size:1.05rem; line-height:1.45; }
+  .mastery-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:.55rem; margin-top:.6rem; }
+  .mastery-item { border:1px solid var(--border); border-radius:9px; padding:.6rem; background:var(--panel); }
+  .mastery-item strong { display:block; margin:.15rem 0; }
+
+  @media (prefers-reduced-motion: reduce) {
+    #toc, #scrim, #cards { transition: none; }
+  }
+  body.focus-mode header, body.focus-mode footer, body.focus-mode #reader-tools { display:none !important; }
+  body.focus-mode main { max-width: 100%; }
+
+  .settings-select, .settings-range { width:100%; font:inherit; color:var(--ink); background:var(--panel); border:1px solid var(--border); border-radius:7px; padding:.45rem; }
+  .settings-range { padding:0; }
+  .lib-cover { width:52px; height:72px; object-fit:cover; border-radius:5px; background:var(--border); flex:0 0 auto; }
+  .lib-cover-placeholder { width:52px; height:72px; display:flex; align-items:center; justify-content:center; border-radius:5px; background:var(--panel); border:1px solid var(--border); font-size:1.3rem; flex:0 0 auto; }
+  .lib-open { display:flex !important; align-items:center; gap:.65rem; text-align:left; }
+  .lib-info { min-width:0; flex:1; }
+  .pagination-mode #content { min-height:70vh; }
+  .pagination-mode #content > * { max-width:100%; }
+  .pagination-controls { display:none; gap:.5rem; justify-content:center; align-items:center; margin-top:1rem; }
+  .pagination-mode .pagination-controls { display:flex; }
+  .error-log { max-height:12rem; overflow:auto; font-size:.72rem; white-space:pre-wrap; background:var(--panel); padding:.5rem; border-radius:6px; }
+
+
+  /* ================= V5 — Learning Experience ================= */
+  #learning-modal, #professor-modal {
+    position:fixed; inset:0; z-index:70; display:none; align-items:flex-end; justify-content:center;
+    background:rgba(0,0,0,.45);
+  }
+  #learning-modal.open, #professor-modal.open { display:flex; }
+  #learning-panel, #professor-panel {
+    width:100%; max-width:34rem; max-height:90vh; overflow:auto; background:var(--panel);
+    border-radius:16px 16px 0 0; padding:1rem 1rem calc(1rem + env(safe-area-inset-bottom,0px));
+  }
+  @media (min-width:640px) {
+    #learning-modal, #professor-modal { align-items:center; }
+    #learning-panel, #professor-panel { border-radius:16px; max-height:82vh; }
+  }
+  .learning-head, .professor-head { display:flex; justify-content:space-between; gap:.7rem; align-items:flex-start; }
+  .learning-head h2, .professor-head h2 { margin:.15rem 0 .8rem; font-family:'Literata',serif; font-size:1.05rem; }
+  .learning-head button, .professor-head button { border:1px solid var(--border); background:none; color:var(--ink); border-radius:8px; padding:.4rem .55rem; }
+  .learning-kicker { color:var(--accent); font-size:.65rem; letter-spacing:.09em; font-weight:700; }
+  #learning-selection { margin:0 0 1rem; padding:.75rem .85rem; border-left:3px solid var(--accent); background:var(--bg); color:var(--muted); font-family:'Literata',serif; line-height:1.5; max-height:9rem; overflow:auto; }
+  .learning-actions { display:grid; gap:.55rem; }
+  .learning-actions button { text-align:left; border:1px solid var(--border); background:var(--bg); color:var(--ink); border-radius:10px; padding:.7rem .75rem; cursor:pointer; }
+  .learning-actions button:hover { border-color:var(--accent); }
+  .learning-actions strong { display:block; font-size:.88rem; }
+  .learning-actions span { display:block; margin-top:.15rem; color:var(--muted); font-size:.72rem; }
+  #review-answer { width:100%; min-height:5.5rem; resize:vertical; box-sizing:border-box; margin:.5rem 0 .2rem; padding:.65rem; border:1px solid var(--border); border-radius:9px; background:var(--panel); color:var(--ink); font:inherit; }
+  #review-answer-label { display:block; font-size:.76rem; color:var(--muted); margin-top:1rem; }
+  .review-answer-hint { color:var(--muted); font-size:.68rem; margin-bottom:.65rem; }
+  #review-comparison { margin:.6rem 0; padding:.7rem; border:1px solid var(--border); border-radius:9px; display:none; font-size:.8rem; line-height:1.5; }
+  #review-comparison strong { display:block; margin-bottom:.25rem; }
+  #review-quality { margin-top:.7rem; }
+  #professor-panel textarea { width:100%; min-height:6rem; box-sizing:border-box; padding:.65rem; border:1px solid var(--border); border-radius:9px; background:var(--bg); color:var(--ink); font:inherit; }
+  #professor-answer-wrap { margin-top:1rem; }
+  #professor-answer-wrap label { display:block; font-size:.75rem; color:var(--muted); margin-bottom:.3rem; }
+  #professor-check, #professor-next { margin-top:.6rem; width:100%; border:1px solid var(--accent); background:var(--accent); color:var(--accent-ink); border-radius:9px; padding:.65rem; font:inherit; cursor:pointer; }
+  #professor-next { background:none; color:var(--ink); border-color:var(--border); }
+  #professor-feedback { margin-top:.7rem; padding:.7rem; border-radius:9px; background:var(--bg); font-size:.78rem; line-height:1.5; display:none; }
+  .professor-progress { color:var(--muted); font-size:.7rem; margin:.2rem 0 .6rem; }
+  .professor-q { font-family:'Literata',serif; font-size:1.05rem; line-height:1.45; }
+  .mastery-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:.55rem; margin-top:.6rem; }
+  .mastery-item { border:1px solid var(--border); border-radius:9px; padding:.6rem; background:var(--panel); }
+  .mastery-item strong { display:block; margin:.15rem 0; }
+
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration:.01ms !important; animation-iteration-count:1 !important; transition-duration:.01ms !important; scroll-behavior:auto !important; } }
+
+  .learning-feedback{margin:.65rem 0;padding:.65rem;border:1px solid var(--border);border-radius:9px;background:var(--panel);font-size:.82rem}.learning-feedback strong{display:block;margin-bottom:.25rem}.review-why{margin:.45rem 0;padding:.5rem .65rem;border-left:3px solid var(--border);color:var(--muted);font-size:.72rem}.professor-qtype{display:inline-block;margin-bottom:.5rem;font-size:.68rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}.learning-analysis-type{display:inline-block;margin-right:.35rem;padding:.15rem .4rem;border:1px solid var(--border);border-radius:999px;font-size:.68rem}.learning-value{font-weight:700}.learning-analysis-question{padding:.55rem .65rem;border-radius:8px;background:var(--bg);font-family:'Literata',serif;line-height:1.4}.professor-score{display:grid;grid-template-columns:repeat(3,1fr);gap:.4rem;margin-top:.65rem}.professor-score button{padding:.55rem;border:1px solid var(--border);border-radius:8px;background:var(--panel);color:var(--ink)}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <header>
+    <button class="icon-btn" id="btn-toc" title="Table des matières" aria-label="Table des matières">☰</button>
+    <div id="book-title">Bibliothèque</div>
+    <button class="icon-btn" id="btn-settings" title="Réglages" aria-label="Réglages">Aa</button>
+    <button class="icon-btn" id="btn-cards" title="Fiches et palais mental" aria-label="Fiches et palais mental">🗂<span id="cards-badge" class="badge" style="display:none;"></span></button>
+    <button class="icon-btn" id="btn-dashboard" title="Progression et rétention" aria-label="Progression et rétention">📊</button>
+    <button class="icon-btn" id="btn-open" title="Bibliothèque" aria-label="Bibliothèque">📚</button>
+    <input type="file" id="file-input" accept=".epub,.md,.markdown,text/markdown,application/epub+zip" class="visually-hidden">
+  </header>
+
+  <main>
+    <div id="reader-scroll">
+      <div id="empty">
+        <h1>Ta liseuse mnémotechnique</h1>
+        <p>Retrouve un livre déjà importé ci-dessous, ou ouvre un nouveau fichier EPUB / Markdown (.md).</p>
+        <div id="library-list"></div>
+        <label class="dropzone" id="dropzone">
+          <input type="file" id="file-input-2" accept=".epub,.md,.markdown,text/markdown,application/epub+zip" class="visually-hidden">
+          <strong>Choisis un fichier</strong> ou dépose-le ici<br>(.epub ou .md)
+        </label>
+      </div>
+      <div id="reader-tools" style="display:none;">
+        <button id="btn-search" type="button">🔎 Rechercher</button>
+        <button id="btn-speak" type="button">🔊 Lire</button>
+        <button id="btn-focus" type="button">🧘 Concentration</button>
+      </div>
+      <article id="content" style="display:none;"></article>
+    </div>
+  </main>
+
+  <footer id="footer" style="display:none;">
+    <button id="btn-prev">← Précédent</button>
+    <span id="progress-label"></span>
+    <button id="btn-next">Suivant →</button>
+  </footer>
+
+</div>
+
+<div id="scrim"></div>
+<nav id="toc" aria-label="Table des matières">
+  <h2>Chapitres</h2>
+  <ul id="toc-list"></ul>
+</nav>
+
+<aside id="cards" aria-label="Fiches et palais mental">
+  <div id="cards-head">
+    <div class="tabs">
+      <button id="tab-fiches" class="active">Fiches</button>
+      <button id="tab-palais">Palais</button>
+    </div>
+    <button id="btn-review">Réviser maintenant</button>
+    <button id="btn-professor">🎓 Mode professeur</button>
+    <button id="btn-suggest">Suggestions automatiques pour ce chapitre</button>
+    <ul id="suggest-list"></ul>
+  </div>
+  <div id="cards-body"></div>
+</aside>
+
+<button id="sel-toolbar" aria-label="Transformer cette sélection en activité d’apprentissage">🧠 Apprendre</button>
+
+<div id="learning-modal" role="dialog" aria-modal="true" aria-labelledby="learning-title">
+  <div id="learning-panel">
+    <div class="learning-head">
+      <div><span class="learning-kicker">LECTURE ACTIVE</span><h2 id="learning-title">Que veux-tu faire de ce passage ?</h2></div>
+      <button id="learning-close" aria-label="Fermer">✕</button>
+    </div>
+    <blockquote id="learning-selection"></blockquote>
+    <div id="learning-analysis" class="learning-feedback" style="display:none">
+      <strong id="learning-analysis-title">🧭 Analyse pédagogique</strong>
+      <span id="learning-analysis-text"></span>
+      <div id="learning-analysis-question" style="margin-top:.45rem"></div>
+      <button id="learning-recommended" type="button" style="margin-top:.6rem;width:100%;border:1px solid var(--accent);background:var(--accent);color:var(--accent-ink);border-radius:9px;padding:.65rem;font:inherit;cursor:pointer">Créer l’exercice recommandé →</button>
+    </div>
+    <div class="learning-actions">
+      <button data-learning="understand"><strong>💡 Comprendre</strong><span>Expliquer l’idée avec tes mots</span></button>
+      <button data-learning="remember"><strong>📌 Retenir</strong><span>Créer une question de rappel</span></button>
+      <button data-learning="associate"><strong>🗺️ Associer</strong><span>Créer une image ou un lieu mental</span></button>
+      <button data-learning="rephrase"><strong>✍️ Reformuler</strong><span>Vérifier ta compréhension</span></button>
+      <button data-learning="sequence"><strong>🔢 Séquencer</strong><span>Préparer un rappel dans l’ordre</span></button>
+    </div>
+  </div>
+</div>
+
+<div id="assoc-modal">
+  <div id="assoc-panel">
+    <h2>Encoder ce passage</h2>
+    <p id="assoc-fact"></p>
+    <div class="assoc-field">
+      <label>Numéro Mojor (0–100)</label>
+      <input type="number" id="assoc-number" min="0" max="100">
+    </div>
+    <div class="assoc-field">
+      <label>Mode de mémorisation</label>
+      <select id="assoc-mode">
+        <option value="concept">Concept — retenir l’idée</option>
+        <option value="sequence">Séquence — retenir l’ordre</option>
+        <option value="verbatim">Verbatim — retenir le texte</option>
+      </select>
+      <div class="mode-note">Pour un contenu dense, le mode Concept privilégie une reformulation personnelle plutôt que la récitation mécanique.</div>
+    </div>
+    <div class="assoc-field">
+      <label>Reformulation personnelle (recommandée)</label>
+      <textarea id="assoc-reformulation" placeholder="Explique cette idée avec tes propres mots…"></textarea>
+    </div>
+    <div class="assoc-field">
+      <label>Mot-image</label>
+      <input type="text" id="assoc-word">
+    </div>
+    <div class="assoc-grid">
+      <div class="assoc-field"><label>Verbe</label><input type="text" id="assoc-verb"></div>
+      <div class="assoc-field"><label>Personne</label><input type="text" id="assoc-person"></div>
+      <div class="assoc-field"><label>Lieu</label><input type="text" id="assoc-place"></div>
+      <div class="assoc-field"><label>Objet</label><input type="text" id="assoc-object"></div>
+      <div class="assoc-field"><label>Couleur</label><input type="text" id="assoc-color"></div>
+      <div class="assoc-field"><label>Son</label><input type="text" id="assoc-sound"></div>
+    </div>
+    <div id="mnemo-coach" class="learning-feedback" style="margin-top:.8rem">
+      <strong>🧠 Encodage actif</strong>
+      <span id="mnemo-coach-text">Une bonne image doit être concrète, inhabituelle et liée à l'information.</span>
+    </div>
+    <div id="sequence-editor" class="assoc-field" style="display:none">
+      <label>Étapes de la séquence — une par ligne</label>
+      <textarea id="assoc-sequence" placeholder="Étape 1
+Étape 2
+Étape 3"></textarea>
+      <div class="mode-note">Tu apprendras ensuite à reconstruire l'ordre sans regarder cette liste.</div>
+    </div>
+    <div id="assoc-actions">
+      <button id="assoc-cancel">Annuler</button>
+      <button id="assoc-save">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<div id="review-modal">
+  <div id="review-top">
+    <button id="review-close" aria-label="Fermer la révision">✕</button>
+    <span id="review-progress"></span>
+  </div>
+  <div id="review-body">
+    <div id="review-cue"></div>
+    <label id="review-answer-label" for="review-answer">🧠 Que te rappelles-tu ?</label>
+    <textarea id="review-answer" placeholder="Écris ou dicte ce dont tu te souviens avant de révéler la réponse…"></textarea>
+    <div class="review-answer-hint">Le but est de rappeler, pas de reconnaître.</div>
+    <button id="review-reveal">Vérifier ma réponse</button>
+    <div id="review-fact"></div>
+    <div id="review-comparison"></div>
+    <div id="review-quality">
+      <button data-q="1">Encore</button>
+      <button data-q="2">Difficile</button>
+      <button data-q="3">Bien</button>
+      <button data-q="4">Facile</button>
+    </div>
+  </div>
+  <div id="review-done">
+    <p id="review-done-msg">Révision terminée pour aujourd'hui.</p>
+    <button id="review-done-close">Fermer</button>
+  </div>
+</div>
+
+<div id="settings">
+  <div class="row">
+    <label>Taille du texte</label>
+    <div class="stepper">
+      <button id="font-minus" aria-label="Réduire">–</button>
+      <span id="font-size-value">18</span>
+      <button id="font-plus" aria-label="Agrandir">+</button>
+    </div>
+  </div>
+  <div class="row">
+    <label for="reader-font">Police</label>
+    <select id="reader-font" class="settings-select">
+      <option value="serif">Serif — lecture longue</option>
+      <option value="sans">Sans-serif — écran</option>
+    </select>
+  </div>
+  <div class="row">
+    <label for="reader-leading">Interligne</label>
+    <input id="reader-leading" class="settings-range" type="range" min="1.3" max="2.1" step="0.1" value="1.7">
+  </div>
+  <div class="row">
+    <label for="reader-margin">Marges</label>
+    <input id="reader-margin" class="settings-range" type="range" min="0.8" max="2.6" step="0.1" value="1.4">
+  </div>
+  <div class="row"><label>Mode de lecture</label><div class="theme-options"><button id="mode-scroll" class="active">Continu</button><button id="mode-page">Pages</button></div></div>
+  <div class="row" id="theme-toggle-row">
+    <label>Thème</label>
+    <div class="theme-options">
+      <button id="theme-auto" class="active">Auto</button>
+      <button id="theme-light">Clair</button>
+      <button id="theme-dark">Sombre</button>
+    </div>
+  </div>
+  <div class="mojor-row">
+    <button id="btn-export" class="settings-action">💾 Exporter mes données</button>
+    <button id="btn-import" class="settings-action" style="margin-top:.45rem;">📥 Restaurer une sauvegarde</button>
+    <button id="btn-export-secure" class="settings-action" style="margin-top:.45rem;">🔐 Exporter chiffré</button>
+    <button id="btn-diagnostics" class="settings-action" style="margin-top:.45rem;">🛠️ Diagnostics</button>
+    <input type="file" id="backup-import" accept="application/json,.json" class="visually-hidden">
+  </div>
+  <div class="mojor-row">
+    <button id="mojor-import-btn">Importer ma table Mojor (JSON)</button>
+    <input type="file" id="mojor-import" accept="application/json,.json" class="visually-hidden">
+    <span id="mojor-status">Aucune table chargée — encodage manuel</span>
+  </div>
+</div>
+
+<div id="search-panel" role="dialog" aria-modal="true" aria-labelledby="search-title" aria-label="Recherche dans le livre">
+  <div id="search-head">
+    <label id="search-title" class="visually-hidden" for="search-input">Rechercher dans le livre</label><input id="search-input" type="search" placeholder="Rechercher dans ce livre…" autocomplete="off">
+    <button id="search-close" type="button">Fermer</button>
+  </div>
+  <div id="search-results" aria-live="polite"></div>
+</div>
+
+
+<div id="professor-modal" role="dialog" aria-modal="true" aria-labelledby="professor-title">
+  <div id="professor-panel">
+    <div class="professor-head"><div><span class="learning-kicker">APRÈS LE CHAPITRE</span><h2 id="professor-title">🎓 Mode professeur</h2></div><button id="professor-close">Fermer</button></div>
+    <p id="professor-intro" class="mode-note"></p>
+    <div id="professor-progress" class="professor-progress"></div>
+    <div id="professor-question"></div>
+    <div id="professor-answer-wrap">
+      <label for="professor-answer">Ta réponse</label>
+      <textarea id="professor-answer" placeholder="Explique, compare, donne un exemple…"></textarea>
+      <button id="professor-check">Vérifier</button>
+    </div>
+    <div id="professor-feedback"></div>
+    <button id="professor-next" style="display:none;">Question suivante →</button>
+  </div>
+</div>
+
+<div id="dashboard-modal" role="dialog" aria-modal="true" aria-labelledby="dashboard-title" aria-label="Tableau de bord de rétention">
+  <div id="dashboard-head"><h2 id="dashboard-title">Ma mémoire</h2><button id="dashboard-close">Fermer</button></div>
+  <div class="dash-wrap">
+    <div id="dashboard-summary" class="dash-grid"></div>
+    <div class="dash-section"><h3>Rétention par livre</h3><div id="dashboard-books"></div></div>
+    <div class="dash-section"><h3>Lu ≠ compris ≠ mémorisé ≠ maîtrisé</h3><p class="dash-muted">Une preuve n’apparaît qu’après un rappel actif évalué. Une fiche non testée n’est pas comptée comme une compréhension ratée.</p><div id="dashboard-mastery" class="mastery-grid"></div></div>
+    <div class="dash-section"><h3>État des fiches</h3><div id="dashboard-state" class="dash-grid"></div></div>
+    <div class="dash-section"><h3>Activité</h3><div id="dashboard-activity"></div></div>
+  </div>
+</div>
+
+<div id="loading">Chargement du livre…</div>
+
+<script>
+(function () {
+  'use strict';
+
+  // ---------- État ----------
+  const state = {
+    bookId: null,      // identifiant SHA-256 du fichier (fallback si crypto indisponible)
+    title: '',
+    chapters: [],       // [{ label, html }]
+    current: 0,
+    cards: [],          // [{ id, chapter, text, source, mojorNumber, association }]
+    cardsView: 'fiches',
+    mojorTable: null,   // { [numero]: { word, verb, person, place, object, color, sound } }
+    editingCardId: null,
+    reviewQueue: [],
+    reviewIndex: 0,
+    dashboardOpen: false,
+    pendingSelection: null,
+    professorQueue: [], professorIndex: 0, reviewStartedAt: 0, professorStartedAt: 0, palaceQueue: [], palaceIndex: 0, palaceStartedAt: 0, learningAnalysis: null, learningSession: null,
+  };
+
+  // ---------- Éléments ----------
+  const els = {
+    fileInput: document.getElementById('file-input'),
+    fileInput2: document.getElementById('file-input-2'),
+    dropzone: document.getElementById('dropzone'),
+    empty: document.getElementById('empty'),
+    content: document.getElementById('content'),
+    bookTitle: document.getElementById('book-title'),
+    footer: document.getElementById('footer'),
+    btnPrev: document.getElementById('btn-prev'),
+    btnNext: document.getElementById('btn-next'),
+    progressLabel: document.getElementById('progress-label'),
+    btnToc: document.getElementById('btn-toc'),
+    toc: document.getElementById('toc'),
+    tocList: document.getElementById('toc-list'),
+    scrim: document.getElementById('scrim'),
+    btnSettings: document.getElementById('btn-settings'),
+    settings: document.getElementById('settings'),
+    fontMinus: document.getElementById('font-minus'),
+    fontPlus: document.getElementById('font-plus'),
+    fontSizeValue: document.getElementById('font-size-value'),
+    themeAuto: document.getElementById('theme-auto'),
+    themeLight: document.getElementById('theme-light'),
+    themeDark: document.getElementById('theme-dark'),
+    loading: document.getElementById('loading'),
+    main: document.querySelector('main'),
+    reader: document.querySelector('main'),
+    cards: document.getElementById('cards'),
+    cardsBody: document.getElementById('cards-body'),
+    cardsBadge: document.getElementById('cards-badge'),
+    selToolbar: document.getElementById('sel-toolbar'),
+    assocModal: document.getElementById('assoc-modal'),
+  };
+
+  // ---------- Persistance locale (par appareil) ----------
+  function loadPrefs() {
+    try {
+      const raw = localStorage.getItem('liseuse:prefs');
+      return raw ? JSON.parse(raw) : {};
+    } catch (e) { return {}; }
+  }
+  function savePrefs(p) {
+    try { localStorage.setItem('liseuse:prefs', JSON.stringify(p)); } catch (e) {}
+  }
+  function loadProgressMap() {
+    try { return JSON.parse(localStorage.getItem('liseuse:progress') || '{}'); } catch (e) { return {}; }
+  }
+  function saveProgress(bookId, chapterIndex, scrollTop = 0) {
+    if (!bookId) return;
+    try {
+      const map = loadProgressMap();
+      map[bookId] = { chapter: chapterIndex, scrollTop: Number(scrollTop) || 0, updatedAt: Date.now() };
+      localStorage.setItem('liseuse:progress', JSON.stringify(map));
+    } catch (e) {}
+  }
+  function loadProgress(bookId) {
+    try {
+      const value = loadProgressMap()[bookId];
+      if (typeof value === 'number') return { chapter: value, scrollTop: 0 };
+      return value || { chapter: 0, scrollTop: 0 };
+    } catch (e) { return { chapter: 0, scrollTop: 0 }; }
+  }
+
+  async function makeBookId(file) {
+    try {
+      if (crypto && crypto.subtle) {
+        const buffer = await file.arrayBuffer();
+        const hash = await crypto.subtle.digest('SHA-256', buffer);
+        return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
+      }
+    } catch (e) {}
+    return file.name + ':' + file.size + ':' + file.lastModified;
+  }
+
+  // Sanitizer défensif local. En build de production, remplacer par DOMPurify bundlé localement.
+  // Cette version refuse scripts, handlers, styles actifs et schémas URL dangereux.
+  function sanitizeBookHtml(html) {
+    const template = document.createElement('template');
+    template.innerHTML = String(html || '');
+    const forbidden = new Set(['script','iframe','object','embed','form','input','button','textarea','select','option','style','link','meta','base']);
+    template.content.querySelectorAll('*').forEach(el => {
+      if (forbidden.has(el.tagName.toLowerCase())) { el.remove(); return; }
+      [...el.attributes].forEach(attr => {
+        const name = attr.name.toLowerCase();
+        const value = attr.value.trim();
+        if (name.startsWith('on') || name === 'srcdoc' || name === 'style') el.removeAttribute(attr.name);
+        if ((name === 'href' || name === 'src' || name === 'xlink:href') && /^(javascript:|vbscript:|data:text\/html)/i.test(value)) el.removeAttribute(attr.name);
+        if (name === 'target') el.setAttribute('rel', 'noopener');
+      });
+      if (el.tagName.toLowerCase() === 'a' && el.hasAttribute('href')) el.setAttribute('rel', 'noopener noreferrer');
+    });
+    return template.innerHTML;
+  }
+
+  // ---------- Thème & taille de police ----------
+  const prefs = loadPrefs();
+  let fontSize = prefs.fontSize || 18;
+  document.documentElement.style.setProperty('--reader-size', fontSize + 'px');
+  els.fontSizeValue.textContent = fontSize;
+
+  function applyTheme(mode) {
+    if (mode === 'light') document.documentElement.setAttribute('data-theme', 'light');
+    else if (mode === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+    else document.documentElement.removeAttribute('data-theme');
+    [els.themeAuto, els.themeLight, els.themeDark].forEach(b => b.classList.remove('active'));
+    ({ auto: els.themeAuto, light: els.themeLight, dark: els.themeDark })[mode || 'auto'].classList.add('active');
+    savePrefs({ ...loadPrefs(), theme: mode });
+  }
+  applyTheme(prefs.theme || 'auto');
+  els.themeAuto.onclick = () => applyTheme('auto');
+  els.themeLight.onclick = () => applyTheme('light');
+  els.themeDark.onclick = () => applyTheme('dark');
+
+  els.fontMinus.onclick = () => setFontSize(fontSize - 1);
+  els.fontPlus.onclick = () => setFontSize(fontSize + 1);
+  function setFontSize(v) {
+    fontSize = Math.max(14, Math.min(28, v));
+    document.documentElement.style.setProperty('--reader-size', fontSize + 'px');
+    els.fontSizeValue.textContent = fontSize;
+    savePrefs({ ...loadPrefs(), fontSize });
+  }
+  const fontSelect = document.getElementById('reader-font');
+  const leadingInput = document.getElementById('reader-leading');
+  const marginInput = document.getElementById('reader-margin');
+  function applyReaderPrefs() {
+    const p = loadPrefs();
+    document.documentElement.style.setProperty('--reader-font', p.readerFont === 'sans' ? "'IBM Plex Sans', system-ui, sans-serif" : "'Literata', Georgia, serif");
+    document.documentElement.style.setProperty('--reader-leading', p.readerLeading || 1.75);
+    document.documentElement.style.setProperty('--reader-margin', (p.readerMargin || 1.4) + 'rem');
+    if (fontSelect) fontSelect.value = p.readerFont || 'serif';
+    if (leadingInput) leadingInput.value = p.readerLeading || 1.75;
+    if (marginInput) marginInput.value = p.readerMargin || 1.4;
+  }
+  fontSelect?.addEventListener('change', e => { savePrefs({...loadPrefs(), readerFont:e.target.value}); applyReaderPrefs(); });
+  leadingInput?.addEventListener('input', e => { savePrefs({...loadPrefs(), readerLeading:Number(e.target.value)}); applyReaderPrefs(); });
+  marginInput?.addEventListener('input', e => { savePrefs({...loadPrefs(), readerMargin:Number(e.target.value)}); applyReaderPrefs(); });
+  applyReaderPrefs();
+  const modeScroll=document.getElementById('mode-scroll'), modePage=document.getElementById('mode-page');
+  function setReadingMode(mode){ document.body.classList.toggle('pagination-mode', mode==='page'); modeScroll?.classList.toggle('active',mode!=='page'); modePage?.classList.toggle('active',mode==='page'); savePrefs({...loadPrefs(),readingMode:mode}); }
+  modeScroll?.addEventListener('click',()=>setReadingMode('scroll')); modePage?.addEventListener('click',()=>setReadingMode('page')); setReadingMode(loadPrefs().readingMode||'scroll');
+
+  // ---------- Tiroir TOC & panneau réglages ----------
+  function openToc() { els.toc.classList.add('open'); els.scrim.classList.add('open'); }
+  function closeToc() { els.toc.classList.remove('open'); els.scrim.classList.remove('open'); }
+  els.btnToc.onclick = () => els.toc.classList.contains('open') ? closeToc() : openToc();
+  function openCards() { els.cards.classList.add('open'); els.scrim.classList.add('open'); }
+  function closeCards() { els.cards.classList.remove('open'); els.scrim.classList.remove('open'); }
+  els.scrim.onclick = () => { closeToc(); closeCards(); els.settings.classList.remove('open'); };
+  els.btnSettings.onclick = () => els.settings.classList.toggle('open');
+  document.getElementById('btn-cards').onclick = () => els.cards.classList.contains('open') ? closeCards() : openCards();
+  document.addEventListener('click', (e) => {
+    if (!els.settings.contains(e.target) && e.target !== els.btnSettings) {
+      els.settings.classList.remove('open');
+    }
+  });
+
+  // ---------- Robustesse / chargement différé ----------
+  let jsZipPromise = null;
+  function ensureJSZip() {
+    if (window.JSZip) return Promise.resolve(window.JSZip);
+    if (jsZipPromise) return jsZipPromise;
+    jsZipPromise = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = './jszip.min.js'; script.async = true;
+      script.onload = () => window.JSZip ? resolve(window.JSZip) : reject(new Error('JSZip chargé mais indisponible'));
+      script.onerror = () => reject(new Error('Impossible de charger le moteur EPUB'));
+      document.head.appendChild(script);
+    });
+    return jsZipPromise;
+  }
+  const ERROR_LOG_KEY = 'liseuse:error-log';
+  function logAppError(context, error, userMessage) {
+    const entry = { at: new Date().toISOString(), context, message: String(error?.message || error || 'Erreur inconnue') };
+    try {
+      const logs = JSON.parse(localStorage.getItem(ERROR_LOG_KEY) || '[]');
+      logs.push(entry); localStorage.setItem(ERROR_LOG_KEY, JSON.stringify(logs.slice(-50)));
+    } catch (_) {}
+    console.error('[Liseuse]', context, error);
+    if (userMessage) alert(userMessage);
+  }
+  function loadErrorLog() { try { return JSON.parse(localStorage.getItem(ERROR_LOG_KEY) || '[]'); } catch (_) { return []; } }
+
+  // ---------- Chargement de fichier ----------
+  function triggerPicker() { els.fileInput.click(); }
+  document.getElementById('btn-open').onclick = goToLibrary;
+  els.fileInput.onchange = (e) => e.target.files[0] && handleFile(e.target.files[0]);
+  els.fileInput2.onchange = (e) => e.target.files[0] && handleFile(e.target.files[0]);
+
+  ['dragover', 'dragenter'].forEach(evt =>
+    els.dropzone.addEventListener(evt, (e) => { e.preventDefault(); els.dropzone.classList.add('drag'); }));
+  ['dragleave', 'drop'].forEach(evt =>
+    els.dropzone.addEventListener(evt, (e) => { e.preventDefault(); els.dropzone.classList.remove('drag'); }));
+  els.dropzone.addEventListener('drop', (e) => {
+    const f = e.dataTransfer.files[0];
+    if (f) handleFile(f);
+  });
+
+  // V3.1 — compatibilité avec les bibliothèques créées avant le passage au SHA-256.
+  // Les anciennes versions utilisaient file.name + ':' + file.size (et une V2 intermédiaire
+  // pouvait ajouter lastModified). Lors d'une réimportation, on rattache donc les données
+  // existantes au nouvel ID SHA-256 au lieu de créer un livre vierge.
+  async function migrateLegacyBookIds(file, newBookId) {
+    const legacyIds = [
+      file.name + ':' + file.size,
+      file.name + ':' + file.size + ':' + file.lastModified
+    ].filter((id, i, a) => id && id !== newBookId && a.indexOf(id) === i);
+    if (!legacyIds.length) return;
+
+    try {
+      const progress = loadProgressMap();
+      let progressChanged = false;
+      const current = await getBookFromLibrary(newBookId);
+      const legacyBooks = [];
+      for (const legacyId of legacyIds) legacyBooks.push({ id: legacyId, book: await getBookFromLibrary(legacyId) });
+
+      let newRecord = current;
+      const recordsToDelete = [];
+      for (const item of legacyBooks) {
+        const legacyId = item.id;
+        const oldBook = item.book;
+        const oldCardsRaw = localStorage.getItem(cardsKey(legacyId));
+        const oldProgress = progress[legacyId];
+
+        if (!newRecord && oldBook) {
+          newRecord = { ...oldBook, id: newBookId, sourceName: file.name, sourceSize: file.size,
+            migratedFrom: legacyId, migratedAt: Date.now() };
+        }
+
+        if (oldCardsRaw) {
+          try {
+            const oldCards = JSON.parse(oldCardsRaw) || [];
+            const newKey = cardsKey(newBookId);
+            const newCards = JSON.parse(localStorage.getItem(newKey) || '[]');
+            const seen = new Set(newCards.map(c => c.id));
+            oldCards.forEach(c => {
+              if (c && c.id && !seen.has(c.id)) { newCards.push(c); seen.add(c.id); }
+            });
+            localStorage.setItem(newKey, JSON.stringify(newCards));
+          } catch (_) {}
+          localStorage.removeItem(cardsKey(legacyId));
+        }
+
+        if (oldProgress && !progress[newBookId]) progress[newBookId] = oldProgress;
+        if (Object.prototype.hasOwnProperty.call(progress, legacyId)) {
+          delete progress[legacyId];
+          progressChanged = true;
+        }
+        if (oldBook) recordsToDelete.push(legacyId);
+      }
+
+      // Une seule transaction d'écriture, après les lectures, pour éviter qu'une transaction
+      // IndexedDB ne devienne inactive pendant des await successifs.
+      if (newRecord || recordsToDelete.length) {
+        const db = await openLibDB();
+        const tx = db.transaction(LIB_STORE, 'readwrite');
+        const store = tx.objectStore(LIB_STORE);
+        if (newRecord && !current) store.put(newRecord);
+        recordsToDelete.forEach(id => store.delete(id));
+        await new Promise((resolve) => { tx.oncomplete = resolve; tx.onerror = resolve; tx.onabort = resolve; });
+      }
+
+      if (progressChanged) localStorage.setItem('liseuse:progress', JSON.stringify(progress));
+
+      const log = loadReviewLog();
+      let logChanged = false;
+      const migratedLog = log.map(entry => {
+        if (legacyIds.includes(entry.bookId)) { logChanged = true; return { ...entry, bookId: newBookId }; }
+        return entry;
+      });
+      if (logChanged) saveReviewLog(migratedLog);
+    } catch (e) {
+      console.warn('Migration ID de livre impossible :', e);
+    }
+  }
+
+  async function handleFile(file) {
+    els.loading.classList.add('open');
+    try {
+      const bookId = await makeBookId(file);
+      await migrateLegacyBookIds(file, bookId);
+      if (/\.epub$/i.test(file.name) || file.type === 'application/epub+zip') {
+        await loadEpub(file, bookId);
+      } else {
+        await loadMarkdown(file, bookId);
+      }
+    } catch (err) {
+      logAppError('import', err, 'Impossible de lire ce fichier : ' + err.message);
+    } finally {
+      els.loading.classList.remove('open');
+    }
+  }
+
+  // ---------- Rendu commun ----------
+  function renderBook(bookId, title, chapters) {
+    state.bookId = bookId;
+    state.title = title;
+    state.chapters = chapters;
+    els.bookTitle.textContent = title;
+    els.empty.style.display = 'none';
+    els.content.style.display = 'block';
+    document.getElementById('reader-tools').style.display = 'flex';
+    els.footer.style.display = 'flex';
+
+    els.tocList.innerHTML = '';
+    chapters.forEach((ch, i) => {
+      const li = document.createElement('li');
+      const btn = document.createElement('button');
+      btn.textContent = ch.label || ('Chapitre ' + (i + 1));
+      btn.onclick = () => { goTo(i); closeToc(); };
+      li.appendChild(btn);
+      els.tocList.appendChild(li);
+    });
+
+    loadCards(bookId);
+    ensureReviewData();
+    state.chapters.forEach((ch, i) => reapplyHighlights(i));
+    document.getElementById('tab-fiches').classList.add('active');
+    document.getElementById('tab-palais').classList.remove('active');
+    state.cardsView = 'fiches';
+    renderCardsList();
+
+    const progress = loadProgress(bookId);
+    const start = Math.min(Math.max(0, progress.chapter || 0), chapters.length - 1);
+    goTo(start, progress.scrollTop || 0);
+  }
+
+  function updatePageLabel() { const el=document.getElementById('page-label'); if(el) el.textContent=(state.current+1)+' / '+state.chapters.length; }
+  function goPage(delta) { const h=els.main.clientHeight; if(!h) return; els.main.scrollTop += delta*h*.9; updatePageLabel(); }
+  document.getElementById('page-prev').onclick=()=>goPage(-1); document.getElementById('page-next').onclick=()=>goPage(1);
+  function goTo(index, restoreScrollTop = 0) {
+    if (index < 0 || index >= state.chapters.length) return;
+    state.current = index;
+    els.content.innerHTML = sanitizeBookHtml(state.chapters[index].html);
+    state.chapters[index].html = els.content.innerHTML;
+    els.main.scrollTop = 0;
+    els.btnPrev.disabled = index === 0;
+    els.btnNext.disabled = index === state.chapters.length - 1;
+    els.progressLabel.textContent = (index + 1) + ' / ' + state.chapters.length;
+    [...els.tocList.querySelectorAll('button')].forEach((b, i) => b.classList.toggle('active', i === index));
+    requestAnimationFrame(() => { els.main.scrollTop = Math.max(0, Number(restoreScrollTop) || 0); updatePageLabel(); });
+    saveProgress(state.bookId, index, restoreScrollTop);
+    const suggestList = document.getElementById('suggest-list');
+    suggestList.style.display = 'none';
+    suggestList.innerHTML = '';
+  }
+  els.btnPrev.onclick = () => goTo(state.current - 1);
+  els.btnNext.onclick = () => goTo(state.current + 1);
+
+  // ---------- Markdown (parseur minimal maison) ----------
+  function mdToHtml(md) {
+    const lines = md.replace(/\r\n/g, '\n').split('\n');
+    let html = '';
+    let inList = false;
+    let inCode = false;
+    for (let raw of lines) {
+      if (/^```/.test(raw)) { inCode = !inCode; html += inCode ? '<pre><code>' : '</code></pre>'; continue; }
+      if (inCode) { html += escapeHtml(raw) + '\n'; continue; }
+      const line = raw;
+      if (/^\s*$/.test(line)) { if (inList) { html += '</ul>'; inList = false; } continue; }
+      let m;
+      if ((m = /^(#{1,3})\s+(.*)$/.exec(line))) {
+        if (inList) { html += '</ul>'; inList = false; }
+        const level = m[1].length;
+        html += `<h${level}>${inline(m[2])}</h${level}>`;
+        continue;
+      }
+      if ((m = /^[-*]\s+(.*)$/.exec(line))) {
+        if (!inList) { html += '<ul>'; inList = true; }
+        html += `<li>${inline(m[1])}</li>`;
+        continue;
+      }
+      if (inList) { html += '</ul>'; inList = false; }
+      html += `<p>${inline(line)}</p>`;
+    }
+    if (inList) html += '</ul>';
+    return html;
+  }
+  function inline(s) {
+    s = escapeHtml(s);
+    s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    s = s.replace(/\*(.+?)\*/g, '<em>$1</em>');
+    s = s.replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    return s;
+  }
+  function escapeHtml(s) {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  async function loadMarkdown(file, bookId) {
+    const text = await file.text();
+    // Découpage en "chapitres" sur les titres de niveau 1 (#)
+    const parts = text.split(/\n(?=#\s+)/);
+    const chapters = parts.filter(p => p.trim()).map(p => {
+      const m = /^#\s+(.*)$/m.exec(p);
+      return { label: m ? m[1].trim() : 'Document', html: mdToHtml(p) };
+    });
+    if (chapters.length === 0) chapters.push({ label: 'Document', html: mdToHtml(text) });
+    const title = chapters[0].label !== 'Document' ? file.name.replace(/\.(md|markdown)$/i, '') : file.name;
+    openBook(bookId, title, chapters, 'md', { textContent: text, fileBlob: file });
+  }
+
+  // ---------- EPUB (JSZip + parsing manuel OPF/NCX/NAV) ----------
+  const epubObjectUrls = new Set();
+  function revokeEpubObjectUrls() { epubObjectUrls.forEach(u => URL.revokeObjectURL(u)); epubObjectUrls.clear(); }
+
+  async function loadEpub(file, bookId) {
+    const JSZipCtor = await ensureJSZip();
+    const zip = await JSZipCtor.loadAsync(file);
+
+    // 1. container.xml -> chemin du fichier OPF
+    const containerXml = await zip.file('META-INF/container.xml').async('string');
+    const containerDoc = new DOMParser().parseFromString(containerXml, 'application/xml');
+    const opfPath = containerDoc.querySelector('rootfile').getAttribute('full-path');
+    const opfDir = opfPath.includes('/') ? opfPath.slice(0, opfPath.lastIndexOf('/') + 1) : '';
+
+    // 2. OPF -> manifest, spine, métadonnées
+    const opfXml = await zip.file(opfPath).async('string');
+    const opfDoc = new DOMParser().parseFromString(opfXml, 'application/xml');
+    const manifest = {};
+    opfDoc.querySelectorAll('manifest > item').forEach(item => {
+      manifest[item.getAttribute('id')] = {
+        href: opfDir + item.getAttribute('href'),
+        mediaType: item.getAttribute('media-type'),
+        properties: item.getAttribute('properties') || ''
+      };
+    });
+    const spineIds = [...opfDoc.querySelectorAll('spine > itemref')].map(el => el.getAttribute('idref'));
+    const titleEl = opfDoc.querySelector('metadata > *|title, metadata > title');
+    const bookTitle = (titleEl && titleEl.textContent.trim()) || file.name.replace(/\.epub$/i, '');
+    let coverBlob = null;
+    const coverIdMeta = opfDoc.querySelector('metadata meta[name=cover]')?.getAttribute('content');
+    const coverItem = (coverIdMeta && manifest[coverIdMeta]) || Object.values(manifest).find(m => /(^|\s)cover(\s|$)/i.test(m.properties));
+    if (coverItem) { const cf = zip.file(coverItem.href); if (cf) coverBlob = await cf.async('blob'); }
+
+    // 3. Table des matières : nav.xhtml (EPUB3) ou toc.ncx (EPUB2)
+    let tocLabels = {}; // href (sans ancre) -> label
+    const navItem = Object.values(manifest).find(m => m.properties.includes('nav'));
+    if (navItem) {
+      const navXml = await zip.file(navItem.href).async('string');
+      const navDoc = new DOMParser().parseFromString(navXml, 'text/html');
+      const nav = navDoc.querySelector('nav[*|type="toc"], nav') || navDoc.querySelector('nav');
+      if (nav) {
+        nav.querySelectorAll('a[href]').forEach(a => {
+          const href = resolvePath(navItem.href, a.getAttribute('href')).split('#')[0];
+          if (!tocLabels[href]) tocLabels[href] = a.textContent.trim();
+        });
+      }
+    } else {
+      const ncxId = opfDoc.querySelector('spine')?.getAttribute('toc');
+      const ncxItem = ncxId ? manifest[ncxId] : Object.values(manifest).find(m => m.mediaType === 'application/x-dtbncx+xml');
+      if (ncxItem) {
+        const ncxXml = await zip.file(ncxItem.href).async('string');
+        const ncxDoc = new DOMParser().parseFromString(ncxXml, 'application/xml');
+        ncxDoc.querySelectorAll('navPoint').forEach(np => {
+          const label = np.querySelector('navLabel > text')?.textContent.trim();
+          const src = np.querySelector('content')?.getAttribute('src');
+          if (label && src) {
+            const href = resolvePath(ncxItem.href, src).split('#')[0];
+            if (!tocLabels[href]) tocLabels[href] = label;
+          }
+        });
+      }
+    }
+
+    // 4. Charger chaque document du spine, extraire le texte, inliner les images
+    const chapters = [];
+    for (const id of spineIds) {
+      const item = manifest[id];
+      if (!item) continue;
+      const raw = await zip.file(item.href).async('string');
+      const doc = new DOMParser().parseFromString(raw, 'application/xhtml+xml');
+      const body = doc.querySelector('body');
+      if (!body) continue;
+
+      // images relatives -> data URL
+      const imgs = body.querySelectorAll('img, image');
+      for (const img of imgs) {
+        const attr = img.hasAttribute('src') ? 'src' : (img.hasAttribute('xlink:href') ? 'xlink:href' : null);
+        if (!attr) continue;
+        const relSrc = img.getAttribute(attr);
+        const imgPath = resolvePath(item.href, relSrc);
+        const imgFile = zip.file(imgPath);
+        if (imgFile) {
+          const blob = await imgFile.async('blob');
+          const url = URL.createObjectURL(blob); epubObjectUrls.add(url);
+          img.setAttribute(attr, url);
+        }
+      }
+
+      const label = tocLabels[item.href] || null;
+      chapters.push({ label, html: sanitizeBookHtml(body.innerHTML) });
+    }
+
+    // Attribuer un libellé par défaut aux chapitres sans entrée TOC
+    let autoIndex = 1;
+    chapters.forEach(ch => { if (!ch.label) ch.label = 'Section ' + (autoIndex++); });
+
+    openBook(bookId, bookTitle, chapters, 'epub', { fileBlob: file, coverBlob });
+  }
+
+  function resolvePath(basePath, relative) {
+    if (/^https?:/.test(relative)) return relative;
+    const baseDir = basePath.includes('/') ? basePath.slice(0, basePath.lastIndexOf('/') + 1) : '';
+    const parts = (baseDir + relative).split('/');
+    const stack = [];
+    for (const p of parts) {
+      if (p === '..') stack.pop();
+      else if (p !== '.' && p !== '') stack.push(p);
+    }
+    return stack.join('/');
+  }
+
+  // =====================================================================
+  // PHASE 2 — Fiches (sélection manuelle + suggestions), palais mental,
+  // encodage mnémonique via la table Mojor
+  // =====================================================================
+
+  // ---------- Persistance des fiches (par livre) ----------
+  function cardsKey(bookId) { return 'liseuse:cards:' + bookId; }
+  function loadCards(bookId) {
+    try {
+      const raw = localStorage.getItem(cardsKey(bookId));
+      state.cards = raw ? JSON.parse(raw) : [];
+      state.cards.forEach(c => { if (!c.mode) c.mode='concept'; if (typeof c.reformulation !== 'string') c.reformulation=''; });
+    } catch (e) { state.cards = []; }
+  }
+  function saveCards() {
+    if (!state.bookId) return;
+    try { localStorage.setItem(cardsKey(state.bookId), JSON.stringify(state.cards)); } catch (e) {}
+  }
+  function updateCardsBadge() {
+    const n = state.cards.length;
+    els.cardsBadge.style.display = n ? 'block' : 'none';
+    els.cardsBadge.textContent = n > 99 ? '99+' : String(n);
+  }
+
+  function chapterLabel(i) {
+    return (state.chapters[i] && state.chapters[i].label) || ('Chapitre ' + (i + 1));
+  }
+
+  // ---------- Recherche & surlignage d'un texte dans le DOM ----------
+  function findAndWrapText(root, text, cardId) {
+    if (root.querySelector('.mnemo-mark[data-card-id="' + cardId + '"]')) return true;
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    let node, visited = 0;
+    const MAX_TEXT_NODES = 10000;
+    while ((node = walker.nextNode()) && visited++ < MAX_TEXT_NODES) {
+      const idx = node.nodeValue.indexOf(text);
+      if (idx !== -1) {
+        const range = document.createRange();
+        range.setStart(node, idx);
+        range.setEnd(node, idx + text.length);
+        const mark = document.createElement('mark');
+        mark.className = 'mnemo-mark';
+        mark.dataset.cardId = cardId;
+        try { range.surroundContents(mark); return true; } catch (e) { return false; }
+      }
+    }
+    return false;
+  }
+  function reapplyHighlights(chapterIndex) {
+    const chapterCards = state.cards.filter(c => c.chapter === chapterIndex && c.text);
+    if (!chapterCards.length) return;
+    const container = document.createElement('div');
+    container.innerHTML = state.chapters[chapterIndex].html;
+    chapterCards.slice(0, 200).forEach(card => findAndWrapText(container, card.text, card.id));
+    state.chapters[chapterIndex].html = container.innerHTML;
+  }
+
+  // ---------- Création d'une fiche ----------
+  function addCard(text, source, range) {
+    const id = 'c' + Date.now() + Math.floor(Math.random() * 1000);
+    const card = { id, chapter: state.current, text, source, createdAt: Date.now(), mojorNumber: null, association: null, mode: 'concept', reformulation: '', review: null, proof: null, concepts: null };
+    state.cards.push(card);
+    saveCards();
+    let wrapped = false;
+    if (range) {
+      try {
+        const mark = document.createElement('mark');
+        mark.className = 'mnemo-mark';
+        mark.dataset.cardId = id;
+        range.surroundContents(mark);
+        wrapped = true;
+      } catch (e) { /* sélection à cheval sur plusieurs éléments : fiche gardée sans surlignage visuel */ }
+    } else {
+      wrapped = findAndWrapText(els.content, text, id);
+    }
+    if (wrapped) state.chapters[state.current].html = els.content.innerHTML;
+    renderCardsList();
+    return card;
+  }
+  function deleteCard(id) {
+    state.cards = state.cards.filter(c => c.id !== id);
+    saveCards();
+    const mark = els.content.querySelector('.mnemo-mark[data-card-id="' + id + '"]');
+    if (mark) {
+      const parent = mark.parentNode;
+      while (mark.firstChild) parent.insertBefore(mark.firstChild, mark);
+      parent.removeChild(mark);
+      state.chapters[state.current].html = els.content.innerHTML;
+    }
+    renderCardsList();
+  }
+
+  // ---------- Barre de sélection flottante ----------
+  // ---------- V5.5 — Sélection pédagogique locale + concepts ----------
+  function normalizeLearningText(text) {
+    return String(text || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9àâçéèêëîïôûùüÿñœæ\s-]/gi,' ');
+  }
+  function learningTokens(text) {
+    const stop = new Set('le la les un une des de du au aux en et ou à a est sont pour par avec sur dans que qui ce cette ces se son sa ses leur leurs il elle ils elles on nous vous ne pas plus très comme mais donc car dont où ainsi entre sous sans'.split(/\s+/));
+    return [...new Set(normalizeLearningText(text).split(/\s+/).filter(w=>w.length>=4 && !stop.has(w)))];
+  }
+  function analyzeLearningPassage(text) {
+    const raw=String(text||'').trim(), n=normalizeLearningText(raw), tokens=learningTokens(raw);
+    const scores={definition:0,cause:0,comparison:0,sequence:0,example:0,datum:0,relation:0,concept:0,verbatim:0};
+    if(/\b(est|sont|designe|signifie|correspond|se definit|on appelle|consiste en)\b/.test(n)) scores.definition+=5;
+    if(/\b(c est|c'est|:)/.test(raw.toLowerCase())) scores.definition+=1;
+    if(/\b(parce que|car|puisque|en raison de|du fait de|provoque|entraine|cause|permet de|afin de|donc)\b/.test(n)) scores.cause+=5;
+    if(/\b(contrairement|alors que|tandis que|en revanche|difference|differe|oppose|plus que|moins que|versus)\b/.test(n)) scores.comparison+=5;
+    const lines=raw.split(/\n+/).map(x=>x.trim()).filter(Boolean);
+    if(/(?:^|\n)\s*(?:\d+[.)]|[-•–—]|premierement|deuxiemement|troisiemement|ensuite|enfin)\b/i.test(raw) || lines.length>=3) scores.sequence+=4;
+    if(/\b(par exemple|exemple|notamment|comme illustration|illustration)\b/.test(n)) scores.example+=5;
+    if(/\b(19|20)\d{2}\b/.test(raw) || /\b\d+(?:[.,]\d+)?\s*(%|kg|km|fcfa|€|dollars?|ans?|jours?|millions?|milliards?)\b/i.test(raw) || /\b\d+\b/.test(raw)) scores.datum+=4;
+    if(/\b(de|entre|avec|appartient|lie|relie|depend|associe|compose|comprend)\b/.test(n) && tokens.length>=5) scores.relation+=1;
+    if(tokens.length>=5) scores.concept+=2;
+    if(raw.length>140 && /[«"]/.test(raw)) scores.verbatim+=2;
+    const existing=state.cards.filter(c=>c.chapter===state.current);
+    let novelty=1;
+    if(existing.length){
+      const set=new Set(tokens); const overlaps=existing.map(c=>{const ct=new Set(learningTokens(c.text)); let common=0; set.forEach(x=>ct.has(x)&&common++); return common/Math.max(1,set.size)}); novelty=Math.max(0,1-Math.max(...overlaps));
+    }
+    const ordered=Object.entries(scores).sort((a,b)=>b[1]-a[1]);
+    let type=ordered[0][0]; if(ordered[0][1]<=1) type='concept';
+    const factors={length:Math.min(1,raw.length/220),density:Math.min(1,tokens.length/28),specific:Math.min(1,(scores.definition+scores.cause+scores.comparison+scores.sequence+scores.datum)/12),novelty};
+    const value=Math.round(Math.min(100,100*(.25*factors.length+.30*factors.density+.25*factors.specific+.20*factors.novelty)));
+    const labels={definition:'Définition',cause:'Cause / conséquence',comparison:'Comparaison',sequence:'Séquence / procédure',example:'Exemple / application',datum:'Date / chiffre / nom',relation:'Relation',concept:'Concept',verbatim:'Formulation exacte'};
+    const reasons=[];
+    if(scores.definition>=4) reasons.push('le passage contient une formulation définitoire');
+    if(scores.cause>=4) reasons.push('il relie une cause à un effet');
+    if(scores.comparison>=4) reasons.push('il oppose ou distingue des éléments');
+    if(scores.sequence>=4) reasons.push('il présente une suite d’étapes');
+    if(scores.datum>=4) reasons.push('il contient des données précises');
+    if(!reasons.length) reasons.push('il contient plusieurs idées porteuses de sens');
+    const question=buildLearningQuestion(type,raw,tokens);
+    return {type,label:labels[type]||'Concept',value,reasons,question,novelty,features:factors,tokens};
+  }
+  // ---------- V5.5 — Concepts & relations : léger, local, sans modèle externe ----------
+  // Objectif : comparer les idées essentielles plutôt que seulement les mots exacts.
+  // Aucun dictionnaire distant ni modèle ML n'est chargé.
+  function conceptStems(text) {
+    const toks=learningTokens(text);
+    return [...new Set(toks.map(w=>w.replace(/(issements|issement|ations|ation|ements|ement|iques|ique|eurs|euses|euse|eur|ances|ance|ences|ence|ments|ment|es|s)$/,'')).filter(w=>w.length>=4))];
+  }
+  function extractLearningAnchors(text) {
+    const raw=String(text||'').trim();
+    const n=normalizeLearningText(raw);
+    const anchors=[];
+    const add=(kind,value,weight=1)=>{ const v=String(value||'').trim(); if(v.length>=3 && !anchors.some(a=>a.kind===kind&&a.value.toLowerCase()===v.toLowerCase())) anchors.push({kind,value:v,weight}); };
+    const years=raw.match(/\b(?:1[5-9]\d{2}|20\d{2})\b/g)||[]; years.forEach(y=>add('date',y,1.4));
+    const nums=raw.match(/\b\d+(?:[.,]\d+)?\s*(?:%|kg|km|fcfa|€|ans?|jours?|millions?|milliards?)(?=\s|$|[.,;:])/gi)||[]; nums.forEach(x=>add('datum',x,1.3));
+    const quoted=raw.match(/[«“\"]([^»”\"]{4,100})[»”\"]/g)||[]; quoted.slice(0,3).forEach(x=>add('verbatim',x.replace(/^[«“\"]|[»”\"]$/g,''),1));
+    const defs=raw.match(/(?:^|[.!?]\s+)([^.!?]{3,90})\s+(?:est|sont|signifie|désigne|correspond à|consiste en)\s+([^.!?]{3,140})/gi)||[];
+    defs.slice(0,3).forEach(x=>add('definition',x,1.6));
+    const relPatterns=[
+      /\b([A-Za-zÀ-ÿ][\wÀ-ÿ-]{3,})\s+(?:provoque|entraîne|permet|dépend de|appartient à|relie|associe|comprend|implique)\s+(?:(?:un|une|des|le|la|les|une|du|de la|des)\s+)?([A-Za-zÀ-ÿ][\wÀ-ÿ-]{3,})/gi,
+      /\b([A-Za-zÀ-ÿ][\wÀ-ÿ-]{3,})\s+(?:est|sont)\s+(?:lié|liée|lies|liées|associé|associée|composé|composée)\s+à\s+([A-Za-zÀ-ÿ][\wÀ-ÿ-]{3,})/gi
+    ];
+    relPatterns.forEach(re=>{let m; while((m=re.exec(raw))!==null) add('relation',`${m[1]} ↔ ${m[2]}`,1.5);});
+    const stems=conceptStems(raw);
+    stems.slice(0,10).forEach(w=>add('concept',w,1));
+    return anchors;
+  }
+  function conceptRecallMetrics(answer, expectedText) {
+    const a=conceptStems(answer), b=conceptStems(expectedText);
+    const A=new Set(a), B=new Set(b); if(!A.size||!B.size) return {coverage:0,precision:0,similarity:0,common:0,anchors:0};
+    let common=0; A.forEach(w=>B.has(w)&&common++);
+    // Tolérance aux variantes morphologiques : les racines portent l'évaluation.
+    const coverage=common/B.size, precision=common/A.size;
+    const similarity=2*coverage*precision/Math.max(.0001,coverage+precision);
+    return {coverage,precision,similarity,common,anchors:B.size};
+  }
+  function buildConceptExpected(card, analysis) {
+    const anchors=extractLearningAnchors(card.text||'');
+    const important=anchors.filter(a=>a.weight>=1.3).map(a=>a.value);
+    const fallback=analysis?.tokens?.slice(0,8)||conceptStems(card.reformulation||card.text||'').slice(0,8);
+    return important.concat(fallback).slice(0,12).join(' · ');
+  }
+  function buildLearningQuestion(type,text,tokens) {
+    const short=tokens.slice(0,2).join(' ');
+    if(type==='definition') return `Qu’est-ce que ${short || 'ce concept'} ? Explique-le avec tes propres mots.`;
+    if(type==='cause') return 'Pourquoi ce phénomène se produit-il et quelle conséquence principale entraîne-t-il ?';
+    if(type==='comparison') return 'Quelle est la différence essentielle entre les éléments comparés ?';
+    if(type==='sequence') return 'Quelles sont les étapes et dans quel ordre faut-il les rappeler ?';
+    if(type==='example') return 'Quel exemple concret peux-tu donner pour montrer que tu as compris ?';
+    if(type==='datum') return 'Quel fait précis faut-il retenir : nom, date, chiffre ou donnée ?';
+    if(type==='relation') return 'Quels éléments sont reliés ici et quelle est la nature de leur relation ?';
+    if(type==='verbatim') return 'Quelle formulation exacte dois-tu pouvoir restituer ?';
+    return 'Quelle est l’idée essentielle de ce passage, et comment l’expliquerais-tu à quelqu’un ?';
+  }
+  function recommendedAction(analysis) {
+    return ({definition:'understand',cause:'understand',comparison:'understand',sequence:'sequence',example:'understand',datum:'remember',relation:'understand',concept:'understand',verbatim:'remember'})[analysis.type] || 'understand';
+  }
+  function showLearningAnalysis(text) {
+    const a=analyzeLearningPassage(text); state.learningAnalysis=a;
+    const box=document.getElementById('learning-analysis');
+    document.getElementById('learning-analysis-title').innerHTML=`🧭 <span class="learning-analysis-type">${escapeHtml(a.label)}</span> Valeur d’apprentissage <span class="learning-value">${a.value}/100</span>`;
+    document.getElementById('learning-analysis-text').textContent=` Ce passage semble utile à travailler parce que ${a.reasons.join(' et ')}. ${a.novelty<.25?'Il ressemble toutefois à une fiche déjà présente : évite le doublon.':''}`;
+    document.getElementById('learning-analysis-question').innerHTML=`<strong>Exercice proposé :</strong> ${escapeHtml(a.question)}`;
+    document.getElementById('learning-recommended').textContent=`Créer l’exercice recommandé · ${({understand:'Comprendre',remember:'Retenir',sequence:'Séquencer'})[recommendedAction(a)]||'Comprendre'} →`;
+    box.style.display='block';
+  }
+  function launchLearningAction(action) {
+    const p=state.pendingSelection; if(!p) return;
+    const card=addCard(p.text,'active-reading',p.range); card.learningAction=action;
+    if(action==='sequence') card.mode='sequence'; else card.mode='concept';
+    closeLearningModal();
+    if(action==='understand' || action==='rephrase'){
+      state.editingCardId=card.id; document.getElementById('assoc-fact').textContent=card.text; document.getElementById('assoc-mode').value='concept'; document.getElementById('assoc-reformulation').value=''; document.getElementById('assoc-word').value=''; document.getElementById('assoc-number').value=nextFreeMojorNumber(); fillAssocFromMojor(parseInt(document.getElementById('assoc-number').value,10),null); els.assocModal.classList.add('open');
+    } else openAssocModal(card.id);
+  }
+
+  function initSelectionHandling() {
+    function updateToolbar() {
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed || sel.rangeCount === 0) { hideToolbar(); return; }
+      const range = sel.getRangeAt(0);
+      if (!els.content.contains(range.commonAncestorContainer)) { hideToolbar(); return; }
+      const text = sel.toString().trim();
+      if (!text || text.length < 3) { hideToolbar(); return; }
+      const rect = range.getBoundingClientRect();
+      if (!rect || (rect.width === 0 && rect.height === 0)) { hideToolbar(); return; }
+      els.selToolbar.style.top = Math.max(8, rect.top - 42) + 'px';
+      els.selToolbar.style.left = Math.min(window.innerWidth - 150, Math.max(8, rect.left)) + 'px';
+      els.selToolbar.classList.add('show');
+    }
+    function hideToolbar() { els.selToolbar.classList.remove('show'); }
+
+    document.addEventListener('selectionchange', () => {
+      clearTimeout(window.__selTimer);
+      window.__selTimer = setTimeout(updateToolbar, 80);
+    });
+    els.selToolbar.addEventListener('mousedown', (e) => e.preventDefault());
+    els.selToolbar.addEventListener('click', () => {
+      const sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0) return;
+      const range = sel.getRangeAt(0);
+      const text = sel.toString().trim();
+      if (!text) return;
+      state.pendingSelection = { text, range: range.cloneRange() };
+      document.getElementById('learning-selection').textContent = text;
+      showLearningAnalysis(text);
+      document.getElementById('learning-modal').classList.add('open');
+      sel.removeAllRanges();
+      hideToolbar();
+    });
+
+    function closeLearningModal() {
+      document.getElementById('learning-modal').classList.remove('open');
+      state.pendingSelection = null; state.learningAnalysis = null;
+      document.getElementById('learning-analysis').style.display='none';
+    }
+    document.getElementById('learning-close').onclick = closeLearningModal;
+    document.getElementById('learning-modal').addEventListener('click', e => {
+      if (e.target.id === 'learning-modal') closeLearningModal();
+    });
+    document.querySelectorAll('[data-learning]').forEach(btn => btn.onclick = () => launchLearningAction(btn.dataset.learning));
+    document.getElementById('learning-recommended').onclick = () => launchLearningAction(recommendedAction(state.learningAnalysis || analyzeLearningPassage(state.pendingSelection?.text || '')));
+    els.main.addEventListener('scroll', () => {
+      hideToolbar();
+      if (state.bookId && state.chapters.length) saveProgress(state.bookId, state.current, els.main.scrollTop);
+    });
+  }
+  initSelectionHandling();
+
+  els.content.addEventListener('click', (e) => {
+    const mark = e.target.closest('.mnemo-mark');
+    if (mark && mark.dataset.cardId) {
+      openCards();
+      document.getElementById('tab-fiches').click();
+      setTimeout(() => {
+        document.querySelector('.card-item[data-id="' + mark.dataset.cardId + '"]')?.scrollIntoView({ block: 'center' });
+      }, 60);
+    }
+  });
+
+  // ---------- Suggestions automatiques : TextRank hybride, 100% local ----------
+  function currentChapterPlainText() { const tmp=document.createElement('div'); tmp.innerHTML=state.chapters[state.current]?.html||''; return tmp.textContent||''; }
+  function splitSentences(text) { const m=text.replace(/\s+/g,' ').match(/[^.!?]+[.!?]+|[^.!?]+$/g)||[]; return m.map(s=>s.trim()).filter(Boolean); }
+  const STOP_WORDS=new Set('a au aux avec ce ceci cela ces cet cette de des du elle en et eu il ils je la le les leur lui ma mais me mes mon même ne nos notre nous on ou par pas pour que quel quelle quelles quels qui se ses son sont sur ta te tes ton tu un une vos votre vous y dans est être été'.split(' '));
+  function tokenize(s){return (s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').match(/[a-z0-9]{3,}/g)||[]).filter(w=>!STOP_WORDS.has(w));}
+  function textRank(sentences){
+    const n=sentences.length, toks=sentences.map(tokenize), scores=Array(n).fill(1), next=Array(n).fill(1);
+    const sets=toks.map(a=>new Set(a));
+    for(let iter=0;iter<20;iter++){
+      for(let i=0;i<n;i++){
+        let sum=0;
+        for(let j=0;j<n;j++) if(i!==j){ let overlap=0; sets[i].forEach(w=>{if(sets[j].has(w)) overlap++;}); if(overlap) sum+=(overlap/Math.max(1,Math.log(sets[i].size+2)+Math.log(sets[j].size+2)))*scores[j]; }
+        next[i]=0.15+0.85*sum;
+      }
+      for(let i=0;i<n;i++)scores[i]=next[i];
+    }
+    return scores;
+  }
+  function computeSuggestions(){
+    const sentences=splitSentences(currentChapterPlainText()).filter(s=>s.length>35&&s.length<300); const existing=new Set(state.cards.map(c=>c.text)); const base=textRank(sentences); const max=Math.max(1,...base);
+    return sentences.map((s,i)=>{let score=base[i]/max; const numbers=s.match(/\b\d{2,4}\b/g); if(numbers)score+=.22*Math.min(3,numbers.length); if(/\b(définit|signifie|désigne|cause|conséquence|principe|étape|étapes|important|essentiel|selon)\b/i.test(s))score+=.18; if(/[«"]/.test(s))score+=.08; if(s.length>220)score-=.08; return {text:s,score};}).filter(x=>!existing.has(x.text)).sort((a,b)=>b.score-a.score).slice(0,6);
+  }
+  document.getElementById('btn-suggest').onclick=()=>{if(!state.chapters.length)return; const suggestions=computeSuggestions(),box=document.getElementById('suggest-list'); box.innerHTML=suggestions.length?suggestions.map((s,i)=>`<li><span>${escapeHtml(s.text)}</span><button class="suggest-add" data-i="${i}" aria-label="Ajouter">+</button></li>`).join(''):'<li class="cards-empty" style="border:none;">Rien à suggérer sur ce chapitre.</li>'; box.querySelectorAll('.suggest-add').forEach(btn=>btn.onclick=()=>{addCard(suggestions[+btn.dataset.i].text,'auto',null);btn.closest('li').remove();}); box.style.display='block';};
+
+  // ---------- Rendu du tiroir Fiches / Palais ----------
+  document.getElementById('tab-fiches').onclick = () => { state.cardsView = 'fiches'; setTab(); renderCardsList(); };
+  document.getElementById('tab-palais').onclick = () => { state.cardsView = 'palais'; setTab(); renderCardsList(); };
+  function setTab() {
+    document.getElementById('tab-fiches').classList.toggle('active', state.cardsView === 'fiches');
+    document.getElementById('tab-palais').classList.toggle('active', state.cardsView === 'palais');
+  }
+
+  function renderCardsList() {
+    updateCardsBadge();
+    updateReviewButton();
+    if (!state.cards.length) {
+      els.cardsBody.innerHTML = '<p class="cards-empty">Aucune fiche pour l’instant. Sélectionne un passage dans le texte (une bulle « + Mémoriser » apparaît), ou lance les suggestions automatiques ci-dessus.</p>';
+      return;
+    }
+    els.cardsBody.innerHTML = state.cardsView === 'palais' ? renderPalaisHtml() : renderFichesHtml();
+    attachCardListEvents();
+  }
+  function renderFichesHtml() {
+    return '<ul class="card-list">' + state.cards.map(c => `
+      <li class="card-item" data-id="${c.id}">
+        <div class="card-text">${escapeHtml(c.text.slice(0, 140))}${c.text.length > 140 ? '…' : ''}</div>
+        <div class="card-meta">
+          <span class="card-chapter">${escapeHtml(chapterLabel(c.chapter))}</span>
+          <span class="dash-pill">${escapeHtml(modeLabel(c.mode))}</span>
+          ${c.review?.fsrs ? `<span class="dash-pill">S ${Number(c.review.fsrs.stability).toFixed(1)}j</span>` : ''}
+          ${c.mojorNumber !== null
+            ? `<button class="card-badge" data-id="${c.id}">n°${c.mojorNumber} · ${escapeHtml(c.association?.word || '')}</button>`
+            : `<button class="card-encode" data-id="${c.id}">Encoder</button>`}
+          <button class="card-delete" data-id="${c.id}" aria-label="Supprimer">🗑</button>
+        </div>
+      </li>`).join('') + '</ul>';
+  }
+  function renderPalaisHtml() {
+    const byChapter = {};
+    state.cards.forEach(c => { (byChapter[c.chapter] = byChapter[c.chapter] || []).push(c); });
+    const indices = Object.keys(byChapter).map(Number).sort((a, b) => a - b);
+    if (!indices.length) return '<p class="cards-empty">Rien à afficher.</p>';
+    return indices.map(ci => `
+      <div class="palais-lieu">
+        <h3>Lieu — ${escapeHtml(chapterLabel(ci))}</h3>
+        <ol class="palais-cards">
+          ${byChapter[ci]
+            .slice()
+            .sort((a, b) => (a.mojorNumber ?? 999) - (b.mojorNumber ?? 999))
+            .map(c => `
+              <li>
+                ${c.mojorNumber !== null
+                  ? `<strong>n°${c.mojorNumber}</strong> — ${escapeHtml(c.association?.word || '(sans mot-image)')}${c.association?.place ? ' · ' + escapeHtml(c.association.place) : ''}`
+                  : `<em>non encodé</em>`}
+                <div class="palais-fact">${escapeHtml(c.text.slice(0, 120))}${c.text.length > 120 ? '…' : ''}</div>
+              </li>`).join('')}
+        </ol>
+        <button class="palais-test" data-palais-chapter="${ci}">🧠 Tester ce palais</button>
+      </div>`).join('');
+  }
+  function attachCardListEvents() {
+    els.cardsBody.querySelectorAll('.card-encode, .card-badge').forEach(b => b.onclick = () => openAssocModal(b.dataset.id));
+    els.cardsBody.querySelectorAll('.card-delete').forEach(b => b.onclick = () => deleteCard(b.dataset.id));
+    els.cardsBody.querySelectorAll('.palais-test').forEach(b => b.onclick = () => openPalaceTest(parseInt(b.dataset.palaisChapter,10)));
+  }
+
+  // ---------- Encodage mnémonique (table Mojor) ----------
+  function nextFreeMojorNumber() {
+    const used = new Set(state.cards.map(c => c.mojorNumber).filter(n => n !== null && n !== undefined));
+    for (let n = 0; n <= 100; n++) if (!used.has(n)) return n;
+    return 0;
+  }
+  function fillAssocFromMojor(number, existing) {
+    const entry = state.mojorTable && state.mojorTable[number];
+    ['word', 'verb', 'person', 'place', 'object', 'color', 'sound'].forEach(f => {
+      document.getElementById('assoc-' + f).value = (existing && existing[f]) || (entry && entry[f]) || '';
+    });
+  }
+  function openAssocModal(id) {
+    const card = state.cards.find(c => c.id === id);
+    if (!card) return;
+    state.editingCardId = id;
+    const number = card.mojorNumber !== null ? card.mojorNumber : nextFreeMojorNumber();
+    document.getElementById('assoc-fact').textContent = card.text;
+    document.getElementById('assoc-number').value = number;
+    document.getElementById('assoc-mode').value = card.mode || 'concept';
+    document.getElementById('assoc-reformulation').value = card.reformulation || '';
+    document.getElementById('assoc-sequence').value = (card.sequenceItems || []).join('\n');
+    document.getElementById('sequence-editor').style.display = (card.mode === 'sequence') ? 'block' : 'none';
+    updateMnemoCoach(card.mode, card.association || {});
+    fillAssocFromMojor(number, card.association);
+    els.assocModal.classList.add('open');
+  }
+  function updateMnemoCoach(mode, a) {
+    const box=document.getElementById('mnemo-coach-text');
+    const tips={concept:'Commence par une idée simple : si tu ne peux pas l’expliquer en une phrase, ne cherche pas encore à la mémoriser.',sequence:'Chaque étape doit devenir une scène distincte. Donne-lui un lieu, une action et une image qui se suivent.',verbatim:'Pour une formulation exacte, crée une image qui représente le sens avant de chercher les mots précis.'};
+    let tip=tips[mode]||tips.concept;
+    if(a.word && a.verb) tip += ` Ton lien actuel : « ${a.word} ${a.verb} ».`;
+    if(!a.word) tip += ' Ajoute un mot-image concret.';
+    if(!a.verb) tip += ' Ajoute une action forte : elle rend l’image plus mémorable.';
+    box.textContent=tip;
+  }
+  document.getElementById('assoc-mode').addEventListener('change', e => {
+    document.getElementById('sequence-editor').style.display = e.target.value==='sequence' ? 'block' : 'none';
+    updateMnemoCoach(e.target.value, {});
+  });
+  function closeAssocModal() { els.assocModal.classList.remove('open'); state.editingCardId = null; }
+  document.getElementById('assoc-number').addEventListener('input', (e) => {
+    const n = parseInt(e.target.value, 10);
+    if (!isNaN(n) && n >= 0 && n <= 100) fillAssocFromMojor(n, null);
+  });
+  document.getElementById('assoc-cancel').onclick = closeAssocModal;
+  els.assocModal.addEventListener('click', (e) => { if (e.target === els.assocModal) closeAssocModal(); });
+  document.getElementById('assoc-save').onclick = () => {
+    const card = state.cards.find(c => c.id === state.editingCardId);
+    if (!card) return;
+    const n = parseInt(document.getElementById('assoc-number').value, 10);
+    card.mojorNumber = isNaN(n) ? null : Math.max(0, Math.min(100, n));
+    card.mode = document.getElementById('assoc-mode').value || 'concept';
+    card.reformulation = document.getElementById('assoc-reformulation').value.trim();
+    card.association = {
+      word: document.getElementById('assoc-word').value.trim(),
+      verb: document.getElementById('assoc-verb').value.trim(),
+      person: document.getElementById('assoc-person').value.trim(),
+      place: document.getElementById('assoc-place').value.trim(),
+      object: document.getElementById('assoc-object').value.trim(),
+      color: document.getElementById('assoc-color').value.trim(),
+      sound: document.getElementById('assoc-sound').value.trim(),
+    };
+    card.sequenceItems = document.getElementById('assoc-sequence').value.split(/\n+/).map(x=>x.trim()).filter(Boolean);
+    card.encoding = { version: 1, quality: Number((card.association.word?1:0)+(card.association.verb?1:0)+(card.association.place?1:0)+(card.association.object?1:0))/4, encodedAt: Date.now() };
+    updateMnemoCoach(card.mode, card.association);
+    if (!card.review) card.review = { fsrs: null, due: Date.now() };
+    saveCards();
+    closeAssocModal();
+    renderCardsList();
+  };
+
+  // ---------- Import de la table Mojor (JSON, 101 entrées) ----------
+  document.getElementById('mojor-import-btn').onclick = () => document.getElementById('mojor-import').click();
+  document.getElementById('mojor-import').addEventListener('change', (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const data = JSON.parse(reader.result);
+        if (!Array.isArray(data)) throw new Error('le fichier doit être un tableau JSON.');
+        const table = {};
+        data.forEach(row => {
+          const n = typeof row.number === 'number' ? row.number : parseInt(row.number, 10);
+          if (!isNaN(n)) table[n] = row;
+        });
+        state.mojorTable = table;
+        try { localStorage.setItem('liseuse:mojor', JSON.stringify(table)); } catch (err) {}
+        document.getElementById('mojor-status').textContent = Object.keys(table).length + ' entrées chargées';
+      } catch (err) {
+        alert('Fichier Mojor invalide : ' + err.message);
+      }
+    };
+    reader.readAsText(f);
+  });
+  (function loadMojorFromStorage() {
+    try {
+      const raw = localStorage.getItem('liseuse:mojor');
+      if (raw) {
+        state.mojorTable = JSON.parse(raw);
+        document.getElementById('mojor-status').textContent = Object.keys(state.mojorTable).length + ' entrées chargées';
+      }
+    } catch (e) {}
+  })();
+
+  // =====================================================================
+  // PHASE 4 — Répétition espacée (FSRS-6) + historique + mode révision
+  // =====================================================================
+
+  const FSRS6_W = [0.212, 1.2931, 2.3065, 8.2956, 6.4133, 0.8334, 3.0194, 0.001, 1.8722, 0.1666, 0.796, 1.4835, 0.0614, 0.2629, 1.6483, 0.6014, 1.8729, 0.5425, 0.0912, 0.0658, 0.1542];
+  const FSRS_REQUEST_RETENTION = 0.90;
+  const FSRS_MAX_INTERVAL = 36500;
+  const DAY_MS = 86400000;
+
+  function clamp(n, min, max) { return Math.min(max, Math.max(min, n)); }
+  function fsrsFactor() { return Math.pow(0.9, -1 / FSRS6_W[20]) - 1; }
+  function fsrsRetrievability(elapsedDays, stability) {
+    if (!stability || stability <= 0) return 1;
+    return Math.pow(1 + fsrsFactor() * Math.max(0, elapsedDays) / stability, -FSRS6_W[20]);
+  }
+  function fsrsInterval(stability, retention = FSRS_REQUEST_RETENTION) {
+    if (!stability || stability <= 0) return 1;
+    const i = stability / fsrsFactor() * (Math.pow(retention, -1 / FSRS6_W[20]) - 1);
+    return clamp(i, 1, FSRS_MAX_INTERVAL);
+  }
+  function fsrsInitialStability(g) { return FSRS6_W[g - 1]; }
+  function fsrsInitialDifficulty(g) {
+    // FSRS-5/6 initial difficulty curve; clamp to the documented [1,10] range.
+    return clamp(FSRS6_W[4] - Math.exp(FSRS6_W[5] * (g - 1)) + 1, 1, 10);
+  }
+  function fsrsNextDifficulty(d, g) {
+    const delta = -FSRS6_W[6] * (g - 3);
+    const damped = d + delta * (10 - d) / 9;
+    const target = fsrsInitialDifficulty(4);
+    return clamp(FSRS6_W[7] * target + (1 - FSRS6_W[7]) * damped, 1, 10);
+  }
+  function fsrsSuccessStability(d, s, r, g) {
+    let inc = Math.exp(FSRS6_W[8]) * (11 - d) * Math.pow(s, -FSRS6_W[9]) * (Math.exp(FSRS6_W[10] * (1 - r)) - 1);
+    if (g === 2) inc *= FSRS6_W[15];
+    if (g === 4) inc *= FSRS6_W[16];
+    return Math.max(s * (1 + inc), s);
+  }
+  function fsrsFailureStability(d, s, r) {
+    const raw = FSRS6_W[11] * Math.pow(d, -FSRS6_W[12]) * (Math.pow(s + 1, FSRS6_W[13]) - 1) * Math.exp(FSRS6_W[14] * (1 - r));
+    // FSRS-6 caps post-lapse stability by the short-term same-day stability bound.
+    const cap = s / Math.exp(FSRS6_W[17] * FSRS6_W[18]);
+    return Math.max(0.1, Math.min(raw, cap));
+  }
+  function fsrsSameDayStability(s, g) {
+    const inc = Math.exp(FSRS6_W[17] * (g - 3 + FSRS6_W[18])) * Math.pow(Math.max(s, 0.1), -FSRS6_W[19]);
+    return Math.max(s, s * inc);
+  }
+
+  function migrateReviewToFSRS(card) {
+    if (!card.review) card.review = { fsrs: null, due: Date.now() };
+    if (card.review.fsrs) return false;
+    const old = card.review;
+    // Preserve an existing due date and approximate legacy SM-2 memory state.
+    const ef = Number(old.ef) || 2.5;
+    const interval = Math.max(0.2, Number(old.interval) || 0.2);
+    const difficulty = clamp(7 - (ef - 2.5) * 2, 1, 10);
+    const stability = Math.max(0.2, interval);
+    card.review.fsrs = { version: 6, difficulty, stability, reps: Number(old.n) || 0, lapses: 0, lastReviewed: Number(old.lastReviewed) || null, lastRating: null };
+    card.review.due = Number(old.due) || Date.now();
+    return true;
+  }
+
+  function ensureReviewData() {
+    let changed = false;
+    state.cards.forEach(c => {
+      if (c.mojorNumber !== null) {
+        if (!c.review) { c.review = { fsrs: null, due: Date.now() }; changed = true; }
+        if (migrateReviewToFSRS(c)) changed = true;
+        if (!c.mode) { c.mode = 'concept'; changed = true; }
+        if (typeof c.reformulation !== 'string') { c.reformulation = ''; changed = true; }
+      }
+    });
+    if (changed) saveCards();
+  }
+
+  function dueCards() {
+    const now = Date.now();
+    return state.cards.filter(c => c.mojorNumber !== null && c.review && Number(c.review.due || 0) <= now);
+  }
+
+  function reviewLogKey() { return 'liseuse:review-log'; }
+  function loadReviewLog() { try { return JSON.parse(localStorage.getItem(reviewLogKey()) || '[]'); } catch (e) { return []; } }
+  function saveReviewLog(log) { try { localStorage.setItem(reviewLogKey(), JSON.stringify(log.slice(-5000))); } catch (e) {} }
+  function recordReview(card, rating, before, after) {
+    const log = loadReviewLog();
+    log.push({
+      cardId: card.id, bookId: state.bookId, bookTitle: state.title, chapter: card.chapter,
+      timestamp: Date.now(), rating, retrievability: before.retrievability,
+      stabilityBefore: before.stability, stabilityAfter: after.stability,
+      difficulty: after.difficulty, intervalDays: after.intervalDays, recallSeconds: card.lastRecall?.seconds || null, recallSimilarity: card.lastRecall?.similarity || null, recallCoverage: card.lastRecall?.coverage || null
+    });
+    saveReviewLog(log);
+  }
+
+  function applyFSRS(card, rating) {
+    const now = Date.now();
+    let r = card.review || { fsrs: null, due: now };
+    let fs = r.fsrs;
+    const firstReview = !fs || !fs.reps;
+    let stability, difficulty, retrievability, elapsedDays;
+    if (firstReview) {
+      stability = fsrsInitialStability(rating);
+      difficulty = fsrsInitialDifficulty(rating);
+      retrievability = 1;
+      elapsedDays = 0;
+    } else {
+      const last = Number(fs.lastReviewed || now);
+      elapsedDays = Math.max(0, (now - last) / DAY_MS);
+      stability = Math.max(0.1, Number(fs.stability) || 0.1);
+      difficulty = clamp(Number(fs.difficulty) || 5, 1, 10);
+      retrievability = fsrsRetrievability(elapsedDays, stability);
+      difficulty = fsrsNextDifficulty(difficulty, rating);
+      if (elapsedDays < 1) {
+        stability = fsrsSameDayStability(stability, rating);
+      } else if (rating === 1) {
+        stability = fsrsFailureStability(difficulty, stability, retrievability);
+      } else {
+        stability = fsrsSuccessStability(difficulty, stability, retrievability, rating);
+      }
+    }
+    const intervalDays = fsrsInterval(stability);
+    const newFs = {
+      version: 6, difficulty: clamp(difficulty, 1, 10), stability: Math.max(0.1, stability),
+      reps: (fs?.reps || 0) + 1, lapses: (fs?.lapses || 0) + (rating === 1 ? 1 : 0),
+      lastReviewed: now, lastRating: rating, elapsedDays
+    };
+    r.fsrs = newFs;
+    r.due = now + intervalDays * DAY_MS;
+    r.lastReviewed = now;
+    r.interval = intervalDays;
+    card.review = r;
+    recordReview(card, rating, { retrievability, stability: fs?.stability || 0 }, { stability: newFs.stability, difficulty: newFs.difficulty, intervalDays });
+    saveCards();
+  }
+
+  function updateReviewButton() {
+    const btn = document.getElementById('btn-review');
+    const n = dueCards().length;
+    btn.textContent = n ? `Réviser maintenant · ${n}` : 'Rien à réviser aujourd’hui';
+    btn.disabled = n === 0;
+  }
+
+  function modeLabel(mode) { return ({ concept:'Concept', sequence:'Séquence', verbatim:'Verbatim' })[mode] || 'Concept'; }
+  function reviewPrompt(card) {
+    if (card.mode === 'sequence') return 'Visualise le parcours, puis reconstruis les étapes dans le bon ordre.';
+    if (card.mode === 'verbatim') return 'Récite le passage aussi fidèlement que possible.';
+    return 'Quelle est l’idée principale, avec tes propres mots ?';
+  }
+
+  function speakReviewPath(card) {
+    if (!('speechSynthesis' in window)) return;
+    const a = card.association || {};
+    const parts = [a.word, a.place, a.person, a.verb, a.object, a.color, a.sound].filter(Boolean);
+    const text = parts.length ? parts.join('. ') : (card.reformulation || card.text);
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text); u.lang='fr-FR'; u.rate=.92;
+    speechSynthesis.speak(u);
+  }
+
+  function renderReviewCard() {
+    const card = state.cards.find(c => c.id === state.reviewQueue[state.reviewIndex]);
+    if (!card) { showReviewDone(); return; }
+    document.getElementById('review-progress').textContent = (state.reviewIndex + 1) + ' / ' + state.reviewQueue.length;
+    const a = card.association || {};
+    const rows = [['Lieu (chapitre)', chapterLabel(card.chapter)], ['Verbe', a.verb], ['Personne', a.person], ['Lieu Mojor', a.place], ['Objet', a.object], ['Couleur', a.color], ['Son', a.sound]].filter(([,v]) => v);
+    const audio = '<button type="button" class="review-audio" id="review-audio">🔊 Parcours mémoire</button>';
+    const interval = Number(card.review?.interval || 0); const why = !card.review?.fsrs ? 'Première révision : on établit un premier niveau de difficulté.' : interval <= 1 ? 'Cette fiche revient rapidement car son rappel précédent était encore fragile.' : `Cette fiche revient maintenant parce que son intervalle FSRS est arrivé à échéance (${Math.round(interval)} j).`; document.getElementById('review-cue').innerHTML = `<span class="review-mode">${escapeHtml(modeLabel(card.mode))}</span><div class="cue-number">Numéro Mojor n°${card.mojorNumber}</div><h2>${escapeHtml(a.word || '(sans mot-image)')}</h2><p class="mode-note">${escapeHtml(reviewPrompt(card))}</p><div class="review-why">⏱️ ${escapeHtml(why)}</div><dl>${rows.map(([k,v])=>`<dt>${escapeHtml(k)}</dt><dd>${escapeHtml(v)}</dd>`).join('')}</dl>${audio}`;
+    document.getElementById('review-audio').onclick = () => speakReviewPath(card);
+    const factEl = document.getElementById('review-fact');
+    const answer = card.mode === 'sequence' && card.sequenceItems?.length ? card.sequenceItems.join(' → ') : (card.mode === 'concept' && card.reformulation ? card.reformulation : card.text);
+    factEl.textContent = answer;
+    factEl.style.display = 'none';
+    document.getElementById('review-answer').value = '';
+    document.getElementById('review-comparison').style.display = 'none';
+    document.getElementById('review-quality').style.display = 'none';
+    document.getElementById('review-reveal').style.display = 'block';
+    state.reviewStartedAt = performance.now(); document.getElementById('review-answer').focus();
+  }
+
+  function openReview() {
+    ensureReviewData();
+    state.reviewQueue = dueCards().map(c => c.id).sort((a,b)=>{
+      const ca=state.cards.find(c=>c.id===a), cb=state.cards.find(c=>c.id===b);
+      return (ca?.review?.due||0)-(cb?.review?.due||0);
+    });
+    state.reviewIndex = 0;
+    document.getElementById('review-modal').classList.add('open');
+    if (!state.reviewQueue.length) { showReviewDone(); return; }
+    document.getElementById('review-done').style.display='none'; document.getElementById('review-body').style.display='block'; renderReviewCard();
+  }
+  function showReviewDone() {
+    document.getElementById('review-body').style.display='none'; document.getElementById('review-done').style.display='flex';
+    const upcoming=state.cards.map(c=>c.review&&c.review.due).filter(d=>d>Date.now()).sort((a,b)=>a-b)[0];
+    document.getElementById('review-done-msg').textContent=state.reviewQueue.length ? 'Révision terminée. '+(upcoming?'Prochaine échéance : '+new Date(upcoming).toLocaleDateString('fr-FR'):'') : 'Rien à réviser pour l’instant — encode d’abord des fiches.';
+  }
+  function closeReview() { document.getElementById('review-modal').classList.remove('open'); if ('speechSynthesis' in window) window.speechSynthesis.cancel(); updateReviewButton(); renderCardsList(); }
+  document.getElementById('btn-review').onclick=openReview;
+  document.getElementById('review-close').onclick=closeReview;
+  document.getElementById('review-done-close').onclick=closeReview;
+  function recallMetrics(a, b) {
+    const stem = w => { let x=String(w||'').toLowerCase(); x=x.replace(/(issements|issement|ations|ation|ements|ement|iques|ique|eurs|euses|euse|eur|ances|ance|ences|ence|ments|ment|es|s)$/,''); return x.length>=4?x:x; };
+    const aa = tokenize(a || '').map(stem), bb = tokenize(b || '').map(stem);
+    const A = new Set(aa), B = new Set(bb);
+    if (!A.size || !B.size) return {similarity:0, coverage:0, precision:0, common:0};
+    let common=0; A.forEach(w=>{if(B.has(w)) common++;});
+    const coverage=common/Math.max(1,B.size), precision=common/Math.max(1,A.size);
+    return {similarity:2*coverage*precision/Math.max(.0001,coverage+precision),coverage,precision,common};
+  }
+  function recallSimilarity(a,b){ return recallMetrics(a,b).similarity; }
+  function pedagogicalLevel(sim, seconds){
+    if(sim>=.72 && seconds<15) return ['Rappel solide','Les éléments essentiels sont revenus rapidement.'];
+    if(sim>=.5) return ['Rappel correct','Tu retrouves une partie importante ; consolide les éléments manquants.'];
+    if(sim>=.25) return ['Rappel partiel','La trace existe, mais certains éléments doivent être réactivés.'];
+    return ['Rappel fragile','La réponse était difficile à récupérer : cette fiche mérite une révision rapprochée.'];
+  }
+
+  document.getElementById('review-reveal').onclick=()=>{
+    const card = state.cards.find(c=>c.id===state.reviewQueue[state.reviewIndex]); if(!card) return;
+    const userAnswer=document.getElementById('review-answer').value.trim();
+    const expected=card.mode==='concept'&&card.reformulation?card.reformulation:card.text;
+    const metrics=recallMetrics(userAnswer,expected); const seconds=Math.max(.1,(performance.now()-state.reviewStartedAt)/1000);
+    const [level,detail]=pedagogicalLevel(metrics.similarity,seconds);
+    const cmp=document.getElementById('review-comparison');
+    cmp.innerHTML=`<strong>${level}</strong><span>${escapeHtml(detail)} · ${Math.round(metrics.coverage*100)} % des éléments de référence retrouvés · ${Math.round(seconds)} s</span><span>Réponse attendue : ${escapeHtml(expected)}</span>`;
+    cmp.style.display='block'; document.getElementById('review-fact').style.display='block'; document.getElementById('review-quality').style.display='grid'; document.getElementById('review-reveal').style.display='none';
+    card.lastRecall={timestamp:Date.now(),seconds,similarity:metrics.similarity,coverage:metrics.coverage}; saveCards();
+  };
+  document.querySelectorAll('#review-quality button').forEach(b=>b.onclick=()=>{
+    const rating=parseInt(b.dataset.q,10); const card=state.cards.find(c=>c.id===state.reviewQueue[state.reviewIndex]);
+    if (card) applyFSRS(card,rating); state.reviewIndex++; if(state.reviewIndex<state.reviewQueue.length) renderReviewCard(); else showReviewDone();
+  });
+
+
+  // ---------- V5.6 — Consolidation pédagogique : pas de nouvelle dépendance ----------
+  // Une preuve de compréhension n'est comptée que sur les fiches effectivement testées.
+  // Cela évite de transformer une absence de test en faux 0 % de compréhension.
+  function getUnderstandingStats(cards){
+    const tested=cards.filter(c=>Number(c.proof?.attempts||0)>0);
+    const successful=tested.filter(c=>c.proof?.verified);
+    const attempts=tested.reduce((n,c)=>n+Number(c.proof?.attempts||0),0);
+    const successes=tested.reduce((n,c)=>n+Number(c.proof?.successes||0),0);
+    const rate=tested.length?Math.round(successful.length/tested.length*100):0;
+    return {tested:tested.length,successful:successful.length,attempts,successes,rate};
+  }
+
+  // ---------- V5.3 — Moteur pédagogique + mode professeur ----------
+  function professorQuestions() {
+    const cards=state.cards.filter(c=>c.chapter===state.current); const qs=[];
+    cards.forEach(c=>{
+      const analysis=analyzeLearningPassage(c.text||'');
+      if(c.mode==='sequence' || analysis.type==='sequence'){
+        const items=c.sequenceItems&&c.sequenceItems.length ? c.sequenceItems : (((c.text||'').match(/(?:^|\n)\s*(?:\d+[.)]|[-•])\s*([^\n]+)/g)||[]).map(x=>x.replace(/^\s*(?:\d+[.)]|[-•])\s*/,'').trim()).filter(Boolean));
+        qs.push({type:'sequence',prompt:items.length>=3?'Remets ces éléments dans le bon ordre : '+items.map((x,i)=>`${String.fromCharCode(65+i)}) ${x}`).join(' · '):'Reconstruis les étapes principales de ce passage.',expected:items.length>=3?items.join(' → '):(c.reformulation||c.text),cardId:c.id});
+      } else if(analysis.type==='definition' || c.reformulation){
+        qs.push({type:'understand',prompt:analysis.question||'Explique cette idée à quelqu’un qui ne connaît pas le sujet.',expected:buildConceptExpected(c,analysis),cardId:c.id});
+        // Un exercice de transfert n'est ajouté que si le passage contient réellement
+        // un exemple/application détectable. On évite ainsi une fausse preuve fondée
+        // sur des mots-clés qui ne constituent pas un exemple.
+        if(analysis.type==='example'){
+          qs.push({type:'example',prompt:'Quel exemple du passage montre concrètement cette idée, et pourquoi ?',expected:buildConceptExpected(c,analysis),cardId:c.id});
+        }
+      } else if(analysis.type==='comparison' || analysis.type==='cause' || analysis.type==='relation'){
+        qs.push({type:'understand',prompt:analysis.question,expected:buildConceptExpected(c,analysis),cardId:c.id});
+      } else {
+        qs.push({type:'remember',prompt:analysis.question||'Qu’est-ce que ce passage affirme, définit ou explique ? Réponds sans regarder le texte.',expected:buildConceptExpected(c,analysis),cardId:c.id});
+      }
+    });
+    return qs.sort(()=>Math.random()-.5).slice(0,6);
+  }
+  function professorSetNormalTitle(){ document.getElementById('professor-title').textContent='🎓 Mode professeur'; }
+  function professorFinish(){
+    document.getElementById('professor-question').innerHTML='<strong>🎓 Séance terminée.</strong><p class="mode-note">Tu viens de vérifier ton rappel sans relire immédiatement la réponse.</p>';
+    document.getElementById('professor-answer-wrap').style.display='none';
+    document.getElementById('professor-next').textContent='Fermer'; document.getElementById('professor-next').style.display='block';
+  }
+  function closeProfessor(){ state.palaceQueue=[]; state.professorQueue=[]; document.getElementById('professor-modal').classList.remove('open'); document.getElementById('professor-answer-wrap').style.display='block'; document.getElementById('professor-next').textContent='Question suivante →'; professorSetNormalTitle(); }
+  function openProfessor(){
+    const qs=professorQuestions(); if(!qs.length){alert('Crée au moins une fiche dans ce chapitre pour lancer le mode professeur.');return;}
+    state.palaceQueue=[]; state.professorQueue=qs; state.professorIndex=0; professorSetNormalTitle();
+    document.getElementById('professor-modal').classList.add('open'); document.getElementById('professor-intro').textContent='Je choisis des questions adaptées au type pédagogique de tes fiches. Réponds avant de vérifier.'; document.getElementById('professor-answer-wrap').style.display='block'; renderProfessorQuestion();
+  }
+  function renderProfessorQuestion(){
+    const q=state.professorQueue[state.professorIndex]; if(!q)return;
+    document.getElementById('professor-progress').textContent=`Question ${state.professorIndex+1} / ${state.professorQueue.length}`;
+    document.getElementById('professor-question').innerHTML=`<span class="professor-qtype">${escapeHtml(({understand:'Comprendre',remember:'Rappeler',sequence:'Séquencer',example:'Transférer'})[q.type]||'Rappeler')}</span><div class="professor-q">${escapeHtml(q.prompt)}</div>`;
+    document.getElementById('professor-answer').value=''; document.getElementById('professor-feedback').style.display='none'; document.getElementById('professor-next').style.display='none'; document.getElementById('professor-check').style.display='block'; state.professorStartedAt=performance.now(); document.getElementById('professor-answer').focus();
+  }
+  function evaluateProfessor(){
+    const q=state.professorQueue[state.professorIndex]; if(!q)return;
+    const answer=document.getElementById('professor-answer').value.trim();
+    const lexical=recallMetrics(answer,q.expected);
+    const semantic=conceptRecallMetrics(answer,q.expected);
+    const metrics={...lexical,semanticSimilarity:semantic.similarity,semanticCoverage:semantic.coverage,similarity:Math.max(lexical.similarity,semantic.similarity*.92),coverage:Math.max(lexical.coverage,semantic.coverage)};
+    const seconds=Math.max(.1,(performance.now()-state.professorStartedAt)/1000);
+    const [level,detail]=pedagogicalLevel(metrics.similarity,seconds);
+    // Une reformulation écrite n'est plus considérée comme une preuve de compréhension.
+    // La preuve apparaît seulement après une tentative active évaluée.
+    const proofTypes=new Set(['understand','example','sequence']);
+    const proofSuccess=proofTypes.has(q.type) && metrics.coverage>=.50 && metrics.similarity>=.50;
+    const card=q.cardId ? state.cards.find(c=>c.id===q.cardId) : null;
+    if(card && proofTypes.has(q.type)){
+      card.proof=card.proof||{attempts:0,successes:0,lastScore:0,lastCoverage:0,lastSeconds:0,lastType:null,lastAt:0};
+      card.proof.attempts++;
+      card.proof.lastScore=metrics.similarity; card.proof.lastCoverage=metrics.coverage; card.proof.lastSeconds=seconds; card.proof.lastType=q.type; card.proof.lastAt=Date.now();
+      if(proofSuccess) card.proof.successes++;
+      card.proof.verified=card.proof.successes>0;
+      saveCards();
+    }
+    const proofLine=proofTypes.has(q.type)
+      ? `<br><small>${proofSuccess?'✓ Preuve de compréhension enregistrée.':'△ Preuve insuffisante : reformule avec les éléments essentiels et retente plus tard.'}</small>`
+      : '';
+    document.getElementById('professor-feedback').innerHTML=`<strong>${level}</strong><br>${escapeHtml(detail)}<br><small>${Math.round(seconds)} s · ${Math.round(metrics.coverage*100)} % des éléments retrouvés · ${Math.round(metrics.semanticSimilarity*100)} % couverture conceptuelle</small>${proofLine}<br><br>Référence : ${escapeHtml(q.expected)}`;
+    document.getElementById('professor-feedback').style.display='block'; document.getElementById('professor-check').style.display='none'; document.getElementById('professor-next').style.display='block';
+    try{const logs=JSON.parse(localStorage.getItem('liseuse:teacher-log')||'[]');logs.push({bookId:state.bookId,chapter:state.current,timestamp:Date.now(),score:metrics.similarity,coverage:metrics.coverage,seconds,type:q.type,cardId:q.cardId,proofSuccess});localStorage.setItem('liseuse:teacher-log',JSON.stringify(logs.slice(-1000)));}catch(e){}
+  }
+  function nextProfessor(){
+    if(state.palaceQueue.length){ nextPalaceTest(); return; }
+    state.professorIndex++; if(state.professorIndex<state.professorQueue.length) renderProfessorQuestion(); else professorFinish();
+  }
+
+  // ---------- V5.3 — Palais : coach d’encodage et test dédié ----------
+  function palaceExpected(c){const a=c.association||{};return [a.word,a.verb,a.object].filter(Boolean).join(' ');}
+  function palaceCoachText(c){const a=c.association||{};const missing=[];if(!a.word)missing.push('une image/mot concret');if(!a.verb)missing.push('une action forte');if(!a.place)missing.push('un lieu précis');if(!a.object)missing.push('un objet avec lequel interagir');return missing.length?`Pour renforcer cette scène, ajoute ${missing.join(', ')}.`:'Scène complète : lieu + image + action + interaction. Ferme les yeux et exagère la scène avant de tester ton rappel.';}
+  function openPalaceTest(chapter){
+    const cards=state.cards.filter(c=>c.chapter===chapter && c.mojorNumber!==null && (c.association?.word||c.association?.place)); if(!cards.length){alert('Encode d’abord au moins un élément dans le palais de ce chapitre.');return;}
+    state.professorQueue=[]; state.palaceQueue=cards.sort(()=>Math.random()-.5).slice(0,8); state.palaceIndex=0; document.getElementById('professor-modal').classList.add('open'); document.getElementById('professor-title').textContent='🗺️ Parcours du palais'; document.getElementById('professor-intro').textContent='Rappelle d’abord la scène depuis le lieu. Ensuite seulement, la référence sera révélée.'; document.getElementById('professor-answer-wrap').style.display='block'; renderPalaceTest();
+  }
+  function renderPalaceTest(){
+    const c=state.palaceQueue[state.palaceIndex]; if(!c)return; const a=c.association||{};
+    document.getElementById('professor-progress').textContent=`Lieu ${state.palaceIndex+1} / ${state.palaceQueue.length}`;
+    document.getElementById('professor-question').innerHTML=`<span class="professor-qtype">Rappel spatial</span><div class="professor-q">📍 ${escapeHtml(a.place||chapterLabel(c.chapter))}<br><small>Quel élément avais-tu placé ici ? Quelle action ou interaction faisait-il ?</small></div><div class="learning-feedback"><strong>🧠 Coach</strong><span>${escapeHtml(palaceCoachText(c))}</span></div>`;
+    document.getElementById('professor-answer').value=''; document.getElementById('professor-feedback').style.display='none'; document.getElementById('professor-check').style.display='block'; document.getElementById('professor-next').style.display='none'; state.palaceStartedAt=performance.now(); document.getElementById('professor-answer').focus();
+  }
+  function evaluatePalace(){
+    const c=state.palaceQueue[state.palaceIndex]; if(!c)return; const a=c.association||{}, answer=document.getElementById('professor-answer').value.trim(), expected=palaceExpected(c)||c.text, metrics=recallMetrics(answer,expected), sec=Math.max(.1,(performance.now()-state.palaceStartedAt)/1000), [level,detail]=pedagogicalLevel(metrics.similarity,sec);
+    document.getElementById('professor-feedback').innerHTML=`<strong>${level}</strong><br>${escapeHtml(detail)}<br><small>${Math.round(sec)} s · ${Math.round(metrics.coverage*100)} % des éléments retrouvés</small><br><br>Référence : ${escapeHtml(expected)}<br>Lieu : ${escapeHtml(a.place||chapterLabel(c.chapter))}`;
+    document.getElementById('professor-feedback').style.display='block'; document.getElementById('professor-check').style.display='none'; document.getElementById('professor-next').style.display='block';
+  }
+  function nextPalaceTest(){state.palaceIndex++;if(state.palaceIndex<state.palaceQueue.length)renderPalaceTest();else{state.palaceQueue=[];document.getElementById('professor-question').innerHTML='<strong>🗺️ Parcours terminé.</strong><p class="mode-note">Tu as rappelé les associations depuis leurs lieux, sans les regarder.</p>';document.getElementById('professor-next').textContent='Fermer';}}
+  document.getElementById('btn-professor').onclick=openProfessor;
+  document.getElementById('professor-close').onclick=closeProfessor;
+  document.getElementById('professor-modal').addEventListener('click',e=>{if(e.target.id==='professor-modal')closeProfessor();});
+  document.getElementById('professor-check').onclick=()=>{if(state.palaceQueue.length)evaluatePalace();else evaluateProfessor();};
+  document.getElementById('professor-next').onclick=nextProfessor;
+
+  // ---------- Tableau de bord de rétention ----------
+  async function renderDashboard() {
+    const books=await listLibraryBooks(); const log=loadReviewLog(); const allCards=[];
+    books.forEach(b=>{ try { const cs=JSON.parse(localStorage.getItem(cardsKey(b.id))||'[]'); cs.forEach(c=>allCards.push({...c,bookId:b.id,bookTitle:b.title})); } catch(e){} });
+    const reviewed=log.length; const remembered=log.filter(x=>x.rating>=3).length; const retention=reviewed?Math.round(remembered/reviewed*100):0;
+    const due=allCards.filter(c=>c.review&&Number(c.review.due||0)<=Date.now()&&c.mojorNumber!==null).length;
+    const mastered=allCards.filter(c=>c.review?.fsrs?.stability>=30).length;
+    const fragile=allCards.filter(c=>c.review?.fsrs&&c.review.fsrs.stability<3).length;
+    const streakDays=new Set(log.map(x=>new Date(x.timestamp).toISOString().slice(0,10)));
+    let streak=0, d=new Date(); while(streakDays.has(d.toISOString().slice(0,10))){streak++; d.setDate(d.getDate()-1);} 
+    document.getElementById('dashboard-summary').innerHTML=`<div class="dash-card"><small>Fiches</small><strong>${allCards.length}</strong><span class="dash-muted">${mastered} maîtrisées</span></div><div class="dash-card"><small>Taux de rappel</small><strong>${retention}%</strong><div class="dash-bar"><span style="width:${retention}%"></span></div><span class="dash-muted">${remembered}/${reviewed} réponses réussies</span></div><div class="dash-card"><small>À réviser</small><strong>${due}</strong><span class="dash-muted">aujourd’hui</span></div><div class="dash-card"><small>Série</small><strong>🔥 ${streak}</strong><span class="dash-muted">jour${streak>1?'s':''} consécutif${streak>1?'s':''}</span></div>`;
+    const byBook={}; allCards.forEach(c=>{(byBook[c.bookId]??=[]).push(c);});
+    document.getElementById('dashboard-books').innerHTML=Object.keys(byBook).length?Object.values(byBook).map(cs=>{
+      const logs=log.filter(x=>x.bookId===cs[0].bookId); const r=logs.length?Math.round(logs.filter(x=>x.rating>=3).length/logs.length*100):0; const stable=cs.filter(c=>c.review?.fsrs).length; return `<div class="dash-book"><div class="dash-book-row"><strong>${escapeHtml(cs[0].bookTitle)}</strong><span class="dash-pill">${r}% rappel</span></div><div class="dash-bar"><span style="width:${r}%"></span></div><span class="dash-muted">${cs.length} fiches · ${stable} avec historique · ${logs.length} révisions</span></div>`;
+    }).join(''):'<p class="dash-muted">Aucune fiche révisée pour le moment.</p>';
+    const total = allCards.length || 1;
+    const understanding = getUnderstandingStats(allCards);
+    const encoded = allCards.filter(c => c.mojorNumber !== null && c.mojorNumber !== undefined).length;
+    const reviewedCards = allCards.filter(c => c.review?.fsrs?.lastReviewed);
+    const recalled = reviewedCards.filter(c => c.review.fsrs.lastRating >= 3).length;
+    const mastery = Math.round((mastered / total) * 100);
+    const comprehension = understanding.rate;
+    const comprehensionAttempts = Math.round((understanding.tested / total) * 100);
+    const encodingBase = Math.round((encoded / total) * 100); const richEncoded = allCards.filter(c=>c.encoding?.quality>=0.75).length; const encoding = Math.round((0.65*encodingBase + 0.35*(richEncoded/total*100)));
+    const recallRate = reviewedCards.length ? Math.round((recalled / reviewedCards.length) * 100) : 0;
+    const recallWithTiming=allCards.filter(c=>c.lastRecall&&c.review?.fsrs).length; const fastRecall=allCards.filter(c=>c.lastRecall&&c.lastRecall.seconds<20&&c.lastRecall.similarity>=.5).length; const retrievalQuality=recallWithTiming?Math.round(fastRecall/recallWithTiming*100):0;
+    document.getElementById('dashboard-mastery').innerHTML = [
+      ['Compréhension prouvée', comprehension, understanding.tested ? `${understanding.successful}/${understanding.tested} fiches testées avec succès` : 'Aucune preuve enregistrée'],
+      ['Fiches testées', comprehensionAttempts, `${understanding.tested}/${allCards.length} fiches ont une tentative active`],
+      ['Encodage', encoding, 'éléments transformés en rappel'],
+      ['Rappel', recallRate, reviewedCards.length ? `${recalled}/${reviewedCards.length} fiches avec dernière réponse ≥ Bien` : 'Aucune révision enregistrée'],
+      ['Maîtrise', mastery, 'stabilité ≥ 30 jours'],
+      ['Rappel fluide', retrievalQuality, 'réponses ≥ 50 % en moins de 20 s']
+    ].map(([label,val,note])=>`<div class="mastery-item"><small>${label}</small><strong>${val}%</strong><div class="dash-bar"><span style="width:${val}%"></span></div><span class="dash-muted">${note}</span></div>`).join('');
+    document.getElementById('dashboard-state').innerHTML=`<div class="dash-card"><small>🟢 Maîtrisées</small><strong>${mastered}</strong><span class="dash-muted">stabilité ≥ 30 jours</span></div><div class="dash-card"><small>🟡 Fragiles</small><strong>${fragile}</strong><span class="dash-muted">stabilité &lt; 3 jours</span></div>`;
+    const recent=log.slice(-10).reverse(); document.getElementById('dashboard-activity').innerHTML=recent.length?recent.map(x=>`<div class="dash-book"><div class="dash-book-row"><span>${escapeHtml(x.bookTitle||'Livre')}</span><span class="dash-pill">${x.rating===1?'Encore':x.rating===2?'Difficile':x.rating===3?'Bien':'Facile'}</span></div><span class="dash-muted">${new Date(x.timestamp).toLocaleString('fr-FR')} · stabilité ${Number(x.stabilityAfter||0).toFixed(1)} j · prochaine échéance ${Math.round(x.intervalDays||0)} j</span></div>`).join(''):'<p class="dash-muted">Les révisions apparaîtront ici.</p>';
+  }
+  document.getElementById('btn-dashboard').onclick=()=>{ state.dashboardOpen=true; document.getElementById('dashboard-modal').classList.add('open'); renderDashboard(); scheduleReviewReminder(state.reviewQueue?.length || 0); };
+  document.getElementById('dashboard-close').onclick=()=>{ state.dashboardOpen=false; document.getElementById('dashboard-modal').classList.remove('open'); };
+
+  // =====================================================================
+  // BIBLIOTHÈQUE — persistance des livres importés (IndexedDB, natif,
+  // sans dépendance) pour ne pas avoir à réimporter le fichier à chaque fois
+  // =====================================================================
+
+  const LIB_DB_NAME = 'liseuse-db';
+  const LIB_STORE = 'books';
+  const LIB_DB_VERSION = 2;
+
+  function openLibDB() {
+    return new Promise((resolve, reject) => {
+      if (!('indexedDB' in window)) { reject(new Error('IndexedDB indisponible')); return; }
+      const req = indexedDB.open(LIB_DB_NAME, LIB_DB_VERSION);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(LIB_STORE)) db.createObjectStore(LIB_STORE, { keyPath: 'id' });
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  function saveBookToLibrary(id, title, format, chapters, meta = {}) {
+    openLibDB().then(db => {
+      const tx = db.transaction(LIB_STORE, 'readwrite'); const store = tx.objectStore(LIB_STORE);
+      const getReq = store.get(id);
+      getReq.onsuccess = () => {
+        const existing = getReq.result || {};
+        store.put({ id, title, format,
+          // Le fichier original est la source de vérité : les chapitres HTML ne sont plus stockés pour les gros EPUB.
+          fileBlob: meta.fileBlob || existing.fileBlob || null,
+          textContent: meta.textContent || existing.textContent || null,
+          coverBlob: meta.coverBlob || existing.coverBlob || null,
+          // Compatibilité : conserver les chapitres des anciennes versions tant qu'un fichier brut n'est pas disponible.
+          chapters: meta.fileBlob ? undefined : (chapters || existing.chapters || []),
+          addedAt: existing.addedAt || Date.now(), lastOpenedAt: Date.now()
+        });
+      };
+    }).catch(err => logAppError('bibliothèque', err));
+  }
+
+  function touchBookLastOpened(id) {
+    openLibDB().then(db => {
+      const tx = db.transaction(LIB_STORE, 'readwrite');
+      const store = tx.objectStore(LIB_STORE);
+      const getReq = store.get(id);
+      getReq.onsuccess = () => {
+        if (getReq.result) {
+          getReq.result.lastOpenedAt = Date.now();
+          store.put(getReq.result);
+        }
+      };
+    }).catch(() => {});
+  }
+
+  function getBookFromLibrary(id) {
+    return openLibDB().then(db => new Promise((resolve) => {
+      const tx = db.transaction(LIB_STORE, 'readonly');
+      const req = tx.objectStore(LIB_STORE).get(id);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => resolve(null);
+    })).catch(() => null);
+  }
+
+  function listLibraryBooks() {
+    return openLibDB().then(db => new Promise((resolve) => {
+      const tx = db.transaction(LIB_STORE, 'readonly');
+      const req = tx.objectStore(LIB_STORE).getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => resolve([]);
+    })).catch(() => []);
+  }
+
+  function deleteBookFromLibrary(id) {
+    openLibDB().then(db => {
+      db.transaction(LIB_STORE, 'readwrite').objectStore(LIB_STORE).delete(id);
+    }).catch(() => {});
+    try { localStorage.removeItem(cardsKey(id)); } catch (e) {}
+    try {
+      const raw = localStorage.getItem('liseuse:progress');
+      if (raw) {
+        const map = JSON.parse(raw);
+        delete map[id];
+        localStorage.setItem('liseuse:progress', JSON.stringify(map));
+      }
+    } catch (e) {}
+  }
+
+  // Point d'entrée commun : après un import réussi (EPUB ou MD), on affiche
+  // le livre ET on le range en bibliothèque pour la prochaine fois
+  function openBook(bookId, title, chapters, format, meta = {}) {
+    chapters = chapters.map(ch => ({ ...ch, html: sanitizeBookHtml(ch.html) }));
+    renderBook(bookId, title, chapters);
+    saveBookToLibrary(bookId, title, format, state.chapters, meta);
+  }
+
+  function goToLibrary() {
+    document.getElementById('suggest-list').style.display = 'none';
+    els.content.style.display = 'none';
+    document.getElementById('reader-tools').style.display = 'none';
+    els.footer.style.display = 'none';
+    els.empty.style.display = 'block';
+    els.bookTitle.textContent = 'Bibliothèque';
+    renderLibrary();
+  }
+
+  // ---------- Recherche, lecture audio et sauvegarde ----------
+  function openSearch() {
+    if (!state.chapters.length) return;
+    document.getElementById('search-panel').classList.add('open');
+    const input = document.getElementById('search-input'); input.value = ''; document.getElementById('search-results').innerHTML = '';
+    setTimeout(() => input.focus(), 50);
+  }
+  function closeSearch() { document.getElementById('search-panel').classList.remove('open'); }
+  function searchBook(query) {
+    const q = query.trim().toLowerCase(); const box = document.getElementById('search-results');
+    if (!q) { box.innerHTML = '<p class="cards-empty">Saisis un mot ou une expression.</p>'; return; }
+    const results = [];
+    state.chapters.forEach((ch, ci) => {
+      const text = new DOMParser().parseFromString(ch.html, 'text/html').body.textContent.replace(/\s+/g,' ').trim();
+      let pos = 0; while ((pos = text.toLowerCase().indexOf(q, pos)) !== -1 && results.length < 60) {
+        const start = Math.max(0, pos - 70), end = Math.min(text.length, pos + q.length + 100);
+        const snippet = escapeHtml(text.slice(start,end));
+        const highlighted = snippet.replace(new RegExp('(' + q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&') + ')','ig'), '<mark>$1</mark>');
+        results.push({ ci, snippet: highlighted }); pos += q.length;
+      }
+    });
+    box.innerHTML = results.length ? results.map((r,i) => `<button class="search-result" data-index="${i}" data-chapter="${r.ci}"><small>${escapeHtml(chapterLabel(r.ci))}</small>${r.snippet}</button>`).join('') : '<p class="cards-empty">Aucun résultat.</p>';
+    box.querySelectorAll('.search-result').forEach(btn => btn.onclick = () => { closeSearch(); goTo(Number(btn.dataset.chapter)); });
+  }
+  document.getElementById('btn-search').onclick = openSearch;
+  document.getElementById('search-close').onclick = closeSearch;
+  let searchTimer = null;
+  document.getElementById('search-input').addEventListener('input', e => { clearTimeout(searchTimer); searchTimer = setTimeout(() => searchBook(e.target.value), 180); });
+  document.getElementById('btn-speak').onclick = () => {
+    if (!('speechSynthesis' in window)) { alert('La lecture audio n’est pas disponible sur cet appareil.'); return; }
+    if (speechSynthesis.speaking) { speechSynthesis.cancel(); document.getElementById('btn-speak').textContent = '🔊 Lire'; return; }
+    const text = els.content.innerText.trim(); if (!text) return;
+    const utter = new SpeechSynthesisUtterance(text); utter.lang = 'fr-FR'; utter.rate = 0.95;
+    utter.onend = () => document.getElementById('btn-speak').textContent = '🔊 Lire';
+    document.getElementById('btn-speak').textContent = '⏹ Arrêter'; speechSynthesis.speak(utter);
+  };
+  document.getElementById('btn-focus').onclick = () => { document.body.classList.toggle('focus-mode'); };
+
+  function collectBackup() {
+    return Promise.all([listLibraryBooks()]).then(([books]) => ({
+      formatVersion: 4, appVersion: '4.0.0', reviewEngine: 'FSRS-6-compatible', exportedAt: new Date().toISOString(),
+      prefs: loadPrefs(), progress: loadProgressMap(), reviewLog: loadReviewLog(), cards: Object.fromEntries(books.map(b => [b.id, JSON.parse(localStorage.getItem(cardsKey(b.id)) || '[]')])),
+      mojor: JSON.parse(localStorage.getItem('liseuse:mojor') || 'null'), books
+    }));
+  }
+  async function exportData() {
+    try {
+      const data = await collectBackup(); data.books = data.books.map(({fileBlob, coverBlob, ...meta}) => meta); const blob = new Blob([JSON.stringify(data)], {type:'application/json'});
+      const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href=url; a.download='liseuse-sauvegarde-'+new Date().toISOString().slice(0,10)+'.json'; a.click(); URL.revokeObjectURL(url);
+    } catch(e) { alert('Export impossible : ' + e.message); }
+  }
+  async function deriveBackupKey(password, salt) {
+    const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey']);
+    return crypto.subtle.deriveKey({name:'PBKDF2', salt, iterations:150000, hash:'SHA-256'}, base, {name:'AES-GCM', length:256}, false, ['encrypt','decrypt']);
+  }
+  async function exportEncryptedData() {
+    try {
+      const password = prompt('Mot de passe de chiffrement (à conserver précieusement) :'); if (!password) return;
+      const data = await collectBackup(); data.books = data.books.map(({fileBlob, coverBlob, ...meta}) => meta);
+      const salt=crypto.getRandomValues(new Uint8Array(16)), iv=crypto.getRandomValues(new Uint8Array(12));
+      const key=await deriveBackupKey(password,salt); const plain=new TextEncoder().encode(JSON.stringify(data));
+      const cipher=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},key,plain));
+      const payload={formatVersion:4, encrypted:true, kdf:'PBKDF2-SHA256', iterations:150000, salt:Array.from(salt), iv:Array.from(iv), data:Array.from(cipher)};
+      const blob=new Blob([JSON.stringify(payload)],{type:'application/json'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='liseuse-sauvegarde-chiffree-'+new Date().toISOString().slice(0,10)+'.json'; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000);
+    } catch(e) { logAppError('export chiffré',e,'Export chiffré impossible : '+e.message); }
+  }
+  async function decryptBackupPayload(payload) {
+    const password=prompt('Mot de passe de la sauvegarde chiffrée :'); if(!password) throw new Error('Mot de passe annulé');
+    const salt=new Uint8Array(payload.salt), iv=new Uint8Array(payload.iv), cipher=new Uint8Array(payload.data);
+    const key=await deriveBackupKey(password,salt); const plain=await crypto.subtle.decrypt({name:'AES-GCM',iv},key,cipher); return JSON.parse(new TextDecoder().decode(plain));
+  }
+  async function importData(file) {
+    try {
+      let data = JSON.parse(await file.text());
+      if (data?.encrypted) data = await decryptBackupPayload(data);
+      const incomingVersion = Number(data?.formatVersion || data?.version || 1);
+      if (!data || !Array.isArray(data.books) || incomingVersion > 4) throw new Error('Sauvegarde invalide ou version trop récente');
+      savePrefs(data.prefs || {});
+      data.formatVersion = 4; localStorage.setItem('liseuse:progress', JSON.stringify(data.progress || {}));
+      if (data.mojor) localStorage.setItem('liseuse:mojor', JSON.stringify(data.mojor));
+      if (Array.isArray(data.reviewLog)) localStorage.setItem(reviewLogKey(), JSON.stringify(data.reviewLog));
+      const db = await openLibDB(); const tx = db.transaction(LIB_STORE,'readwrite'); const store = tx.objectStore(LIB_STORE);
+      data.books.forEach(b => store.put(b)); await new Promise((res,rej)=>{tx.oncomplete=res;tx.onerror=()=>rej(tx.error);});
+      Object.entries(data.cards || {}).forEach(([id,cards]) => localStorage.setItem(cardsKey(id), JSON.stringify(cards)));
+      alert('Sauvegarde restaurée.'); renderLibrary();
+    } catch(e) { alert('Restauration impossible : ' + e.message); }
+  }
+  document.getElementById('btn-export').onclick = exportData;
+  document.getElementById('btn-export-secure').onclick = exportEncryptedData;
+  document.getElementById('btn-diagnostics').onclick = () => { const logs=loadErrorLog(); alert(logs.length ? logs.map(x=>`${x.at} — ${x.context} — ${x.message}`).join('\n') : 'Aucune erreur enregistrée.'); };
+  document.getElementById('btn-import').onclick = () => document.getElementById('backup-import').click();
+  async function scheduleReviewReminder(count) {
+    if (!count) return;
+    try {
+      const native = window.Capacitor?.Plugins?.LocalNotifications;
+      if (native?.schedule) {
+        await native.schedule({ notifications: [{ id: 1001, title: 'Liseuse Mnémotechnique', body: `${count} fiche${count>1?'s':''} à réviser.`, schedule: { at: new Date(Date.now()+60000) } }] });
+      }
+    } catch(e) { logAppError('notification locale', e); }
+  }
+
+  document.getElementById('backup-import').onchange = e => e.target.files[0] && importData(e.target.files[0]);
+
+  async function renderLibrary() {
+    const box = document.getElementById('library-list');
+    const books = await listLibraryBooks();
+    books.sort((a, b) => (b.lastOpenedAt || 0) - (a.lastOpenedAt || 0));
+    if (!books.length) { box.innerHTML = ''; return; }
+    const q = (document.getElementById('library-search')?.value || '').trim().toLowerCase();
+    const filtered = books.filter(b => !q || b.title.toLowerCase().includes(q));
+    box.innerHTML = '<h2 class="lib-heading">Ma bibliothèque</h2>' +
+      '<div class="lib-tools"><input id="library-search" type="search" placeholder="Rechercher un livre…" value="' + escapeHtml(q) + '"><button id="library-export">💾</button></div>' +
+      (filtered.length ? '<ul class="lib-list">' + filtered.map(b => {
+        const pr = loadProgress(b.id); const pct = Math.round(((pr.chapter || 0) + 1) / Math.max(1, b.chapters?.length || 1) * 100);
+        const coverUrl = b.coverBlob ? URL.createObjectURL(b.coverBlob) : '';
+        if (coverUrl) setTimeout(() => URL.revokeObjectURL(coverUrl), 60000);
+        return `<li class="lib-item">
+          <button class="lib-open" data-id="${escapeHtml(b.id)}">
+            ${coverUrl ? `<img class="lib-cover" src="${coverUrl}" alt="Couverture de ${escapeHtml(b.title)}">` : '<span class="lib-cover-placeholder" aria-hidden="true">📖</span>'}
+            <span class="lib-info"><span class="lib-format">${b.format === 'epub' ? 'EPUB' : 'MD'}</span>
+            <span class="lib-title">${escapeHtml(b.title)}</span>
+            <span class="lib-progress"><span style="width:${Math.min(100,pct)}%"></span></span>
+            <span class="lib-meta">${pct}% · ${b.chapters?.length || '—'} sections</span></span>
+          </button>
+          <button class="lib-delete" data-id="${escapeHtml(b.id)}" aria-label="Supprimer de la bibliothèque">🗑</button>
+        </li>`;
+      }).join('') + '</ul>' : '<p class="cards-empty">Aucun livre trouvé.</p>');
+    const search = document.getElementById('library-search');
+    if (search) { search.oninput = () => renderLibrary(); search.focus(); search.setSelectionRange(search.value.length, search.value.length); }
+    document.getElementById('library-export')?.addEventListener('click', exportData);
+    box.querySelectorAll('.lib-open').forEach(btn => btn.onclick = () => openBookFromLibrary(btn.dataset.id));
+    box.querySelectorAll('.lib-delete').forEach(btn => btn.onclick = async (e) => {
+      e.stopPropagation();
+      if (confirm('Supprimer ce livre de la bibliothèque (fiches associées incluses) ?')) {
+        await deleteBookFromLibrary(btn.dataset.id);
+        renderLibrary();
+      }
+    });
+  }
+
+  async function openBookFromLibrary(bookId) {
+    els.loading.classList.add('open');
+    try {
+      const rec = await getBookFromLibrary(bookId);
+      if (!rec) { alert('Ce livre est introuvable dans la bibliothèque.'); return; }
+      if (rec.fileBlob) {
+        if (rec.format === 'epub') await loadEpub(rec.fileBlob, bookId);
+        else await loadMarkdown(rec.fileBlob, bookId);
+      } else {
+        renderBook(bookId, rec.title, rec.chapters || []);
+      }
+      touchBookLastOpened(bookId);
+    } finally {
+      els.loading.classList.remove('open');
+    }
+  }
+
+  renderLibrary();
+
+})();
+</script>
+</body>
+</html>
