@@ -154,24 +154,29 @@ export function libraryScreen(navigate: Navigate): Screen {
     return [...books].sort(by[shelf.sort]);
   }
 
+  /** Enregistre le choix d'affichage, puis l'applique : ce qui est à l'écran est toujours sauvegardé. */
+  async function changeShelf(next: ShelfPrefs, apply: () => void): Promise<void> {
+    shelf = next;
+    try {
+      await saveShelf(shelf);
+    } catch (err) {
+      logError('bibliothèque', err);
+    }
+    apply();
+  }
+
   function shelfBar(onChange: () => void): HTMLElement {
     const sort = h('select', { className: 'input shelf-sort', 'aria-label': 'Trier les livres', 'data-testid': 'shelf-sort' },
       ...([['recent', 'Récents'], ['title', 'Titre'], ['author', 'Auteur'], ['progress', 'Progression']] as const).map(([v, label]) => h('option', { value: v, selected: v === shelf.sort }, label)));
-    sort.addEventListener('change', () => {
-      shelf = { ...shelf, sort: sort.value as ShelfSort };
-      void saveShelf(shelf).catch((err: unknown) => logError('bibliothèque', err));
-      onChange();
-    });
+    sort.addEventListener('change', () => void changeShelf({ ...shelf, sort: sort.value as ShelfSort }, onChange));
     const view = h('button', {
       type: 'button', className: 'icon-btn', 'data-testid': 'shelf-view',
       'aria-label': shelf.view === 'grid' ? 'Afficher en liste' : 'Afficher en grille',
-      onclick: () => {
-        shelf = { ...shelf, view: shelf.view === 'grid' ? 'list' : 'grid' };
-        void saveShelf(shelf).catch((err: unknown) => logError('bibliothèque', err));
+      onclick: () => void changeShelf({ ...shelf, view: shelf.view === 'grid' ? 'list' : 'grid' }, () => {
         view.replaceChildren(icon(shelf.view === 'grid' ? 'list' : 'grid'));
         view.setAttribute('aria-label', shelf.view === 'grid' ? 'Afficher en liste' : 'Afficher en grille');
         onChange();
-      },
+      }),
     }, icon(shelf.view === 'grid' ? 'list' : 'grid'));
     return h('div', { className: 'shelf-bar' }, h('h2', { className: 'shelf-title' }, 'Mes livres'), sort, view);
   }
