@@ -50,7 +50,7 @@ export function statsScreen(navigate: Navigate): Screen {
     const known = new Set(books.map((b) => b.id));
     const cards = allCards.filter((c) => known.has(c.bookId));
     const reviewable = cards.filter((c) => c.kind !== 'highlight');
-    const days = forecast(reviewable, now);
+    const days = forecast(reviewable.filter((c) => !c.suspended), now);
     const newCount = reviewable.filter((c) => c.srs?.state === 0).length;
     const ret = retention(reviews, now);
     const cal = calibration(reviews);

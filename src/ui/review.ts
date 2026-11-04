@@ -3,7 +3,7 @@ import { hasMnemonic, hintText } from '../core/mnemonic';
 import { passageStart } from '../core/question';
 import { formatInterval, GRADE_LABELS, GRADES, preview, rate, type Grade4 } from '../core/scheduler';
 import { planSession, shouldRequeue } from '../core/session';
-import { listAllCards, listReviews, recordReview, type CardRecord, type Confidence, type ReviewRecord } from '../storage/cards';
+import { isReviewable, listAllCards, listReviews, recordReview, type CardRecord, type Confidence, type ReviewRecord } from '../storage/cards';
 import { listBooks } from '../storage/library';
 import { loadReviewSettings } from '../storage/settings';
 import { add, clear, h } from './dom';
@@ -36,7 +36,12 @@ export function formatDue(due: number, now = Date.now()): string {
   return `le ${new Date(due).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })}`;
 }
 
-export function reviewScreen(navigate: Navigate): Screen {
+/**
+ * Séance de révision. Avec `only`, révise ces fiches-là (choisies dans « Mes fiches »), même si
+ * elles ne sont pas encore à revoir : la note compte comme une révision normale.
+ */
+export function reviewScreen(navigate: Navigate, only?: string[], back?: 'cards'): Screen {
+  const leave = () => navigate(back === 'cards' ? { name: 'cards' } : { name: 'library' });
   let cards = new Map<string, CardRecord>();
   let titles = new Map<string, string>();
   let labels = new Map<string, string[]>();
@@ -52,7 +57,7 @@ export function reviewScreen(navigate: Navigate): Screen {
   const body = h('div', { className: 'review-column' });
   const el = h('div', { className: 'screen review' },
     h('header', { className: 'topbar' },
-      h('button', { type: 'button', className: 'icon-btn', 'aria-label': 'Quitter la révision', 'data-testid': 'review-close', onclick: () => navigate({ name: 'library' }) }, icon('close')),
+      h('button', { type: 'button', className: 'icon-btn', 'aria-label': 'Quitter la révision', 'data-testid': 'review-close', onclick: leave }, icon('close')),
       h('h1', { className: 'topbar-title' }, 'Révision'),
       progress,
     ),
@@ -220,7 +225,7 @@ export function reviewScreen(navigate: Navigate): Screen {
       body.append(h('section', { className: 'review-end', 'data-testid': 'review-empty' },
         h('h2', {}, 'Rien à réviser pour l’instant'),
         h('p', { className: 'muted' }, nextDue ? `Prochaine révision ${formatDue(nextDue, now)}.` : 'Crée des fiches pendant ta lecture : sélectionne un passage puis « Créer une fiche ».'),
-        h('button', { type: 'button', className: 'btn btn-primary', onclick: () => navigate({ name: 'library' }) }, 'Retour à la bibliothèque'),
+        h('button', { type: 'button', className: 'btn btn-primary', onclick: leave }, back === 'cards' ? 'Retour à mes fiches' : 'Retour à la bibliothèque'),
       ));
       return;
     }
@@ -235,19 +240,23 @@ export function reviewScreen(navigate: Navigate): Screen {
         sure.length ? h('div', { className: 'stat' }, h('strong', {}, `${Math.round((sureOk / sure.length) * 100)} %`), h('span', {}, 'justes quand tu disais « je sais »')) : null,
       ),
       h('p', { className: 'muted' }, nextDue ? `Prochaine révision ${formatDue(nextDue, now)}. Revenir au bon moment compte plus que réviser longtemps.` : ''),
-      h('button', { type: 'button', className: 'btn btn-primary', onclick: () => navigate({ name: 'library' }) }, 'Retour à la bibliothèque'),
+      h('button', { type: 'button', className: 'btn btn-primary', onclick: leave }, back === 'cards' ? 'Retour à mes fiches' : 'Retour à la bibliothèque'),
     ));
   }
 
   (async () => {
     const [all, reviews, settings, books] = await Promise.all([listAllCards(), listReviews(), loadReviewSettings(), listBooks()]);
     const known = new Set(books.map((b) => b.id));
-    const reviewable = all.filter((c) => c.kind !== 'highlight' && c.srs && known.has(c.bookId));
+    const reviewable = all.filter((c) => isReviewable(c) && known.has(c.bookId));
     cards = new Map(reviewable.map((c) => [c.id, c]));
     titles = new Map(books.map((b) => [b.id, b.title]));
     labels = new Map(books.map((b) => [b.id, b.chapterLabels ?? []]));
-    const plan = planSession(reviewable, reviews, { now: Date.now(), newPerDay: settings.newPerDay });
-    queue = plan.queue;
+    if (only) {
+      queue = only.filter((id) => cards.has(id));
+    } else {
+      const plan = planSession(reviewable, reviews, { now: Date.now(), newPerDay: settings.newPerDay });
+      queue = plan.queue;
+    }
     total = queue.length;
     showCard();
   })().catch((err: unknown) => {
@@ -256,5 +265,10 @@ export function reviewScreen(navigate: Navigate): Screen {
     body.append(h('p', { className: 'error-box' }, `La révision n’a pas pu démarrer : ${errorMessage(err)}`));
   });
 
-  return { el, destroy: () => setKeys(null) };
+  return {
+    el,
+    destroy: () => setKeys(null),
+    // Bouton retour d'Android : revient à « Mes fiches » si la séance en vient.
+    onBack: back === 'cards' ? () => (leave(), true) : undefined,
+  };
 }

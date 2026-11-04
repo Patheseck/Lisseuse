@@ -39,7 +39,8 @@ const TAP_EDGE = 0.3;
 /** Bande du bord gauche où un glisser vertical règle la luminosité (mode pages). */
 const BRIGHTNESS_EDGE = 0.14;
 
-export function readerScreen(bookId: string, navigate: Navigate): Screen {
+/** `focusCardId` : ouvre le livre au passage de cette fiche (depuis « Mes fiches »). */
+export function readerScreen(bookId: string, navigate: Navigate, focusCardId?: string): Screen {
   let opened: OpenedBook | null = null;
   let current = 0;
   let saveTimer: number | undefined;
@@ -259,7 +260,7 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
   async function renderChapterExtras(index: number): Promise<void> {
     const [recalls, pretests] = await Promise.all([listRecalls(bookId), pretestDates(bookId)]).catch(() => [[], {}] as [RecallRecord[], Record<string, number>]);
     if (index !== current) return;
-    const questions = chapterCards(index).filter((c) => c.kind !== 'highlight');
+    const questions = chapterCards(index).filter((c) => c.kind !== 'highlight' && !c.suspended);
     const last = pretests[index];
     clear(pretestBox);
     pretestBox.hidden = !(questions.length && !dismissedPretests.has(index) && (!last || Date.now() - last > PRETEST_GAP_MS));
@@ -410,7 +411,7 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
   }
 
   async function runPretest(index: number): Promise<void> {
-    const questions = chapterCards(index).filter((c) => c.kind !== 'highlight').sort(() => Math.random() - 0.5).slice(0, PRETEST_MAX);
+    const questions = chapterCards(index).filter((c) => c.kind !== 'highlight' && !c.suspended).sort(() => Math.random() - 0.5).slice(0, PRETEST_MAX);
     const completed = await pretest(questions);
     dismissedPretests.add(index);
     pretestBox.hidden = true;
@@ -481,6 +482,28 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
       logError('rappel libre', err);
       toast(`Rappel non enregistré : ${errorMessage(err)}`, 'error');
     }
+  }
+
+  /** « Revenir à ma lecture » après un saut vers le passage d'une fiche. */
+  const returnBar = h('div', { className: 'return-bar', role: 'status', 'data-testid': 'return-bar', hidden: true });
+  el.append(returnBar);
+  let returnTimer: number | undefined;
+  function showReturnBar(chapter: number, offset: number): void {
+    clear(returnBar);
+    returnBar.append(
+      h('span', {}, 'Passage de la fiche.'),
+      h('button', {
+        type: 'button', className: 'btn btn-primary', 'data-testid': 'return-to-reading',
+        onclick: () => {
+          returnBar.hidden = true;
+          go(Math.min(chapter, (opened?.chapters.length ?? 1) - 1), { offset });
+        },
+      }, 'Revenir à ma lecture'),
+      h('button', { type: 'button', className: 'icon-btn', 'aria-label': 'Fermer', onclick: () => (returnBar.hidden = true) }, icon('close')),
+    );
+    returnBar.hidden = false;
+    window.clearTimeout(returnTimer);
+    returnTimer = window.setTimeout(() => (returnBar.hidden = true), 12_000);
   }
 
   function flash(start: number, end: number): void {
@@ -1210,7 +1233,19 @@ export function readerScreen(bookId: string, navigate: Navigate): Screen {
     toolButtons.hidden = false;
     const progress = await getProgress(bookId);
     const start = Math.min(Math.max(0, progress?.chapter ?? 0), opened.chapters.length - 1);
-    go(start, { offset: progress?.offset ?? 0 });
+    const focusCard = focusCardId ? cards.find((c) => c.id === focusCardId) : undefined;
+    if (focusCard && focusCard.chapter < opened.chapters.length) {
+      // Ouvert depuis une fiche : au passage, avec de quoi revenir à l'endroit de la lecture.
+      go(focusCard.chapter, {
+        after: () => {
+          const found = focusCard.origin === 'guide' ? null : locate(content.textContent ?? '', focusCard.anchor);
+          if (found) flash(found.start, found.end);
+          if (progress) showReturnBar(progress.chapter, progress.offset);
+        },
+      });
+    } else {
+      go(start, { offset: progress?.offset ?? 0 });
+    }
     void startBookAmbiance().catch((err: unknown) => logError('ambiance', err));
     await touchBook(bookId);
   })().catch((err: unknown) => {

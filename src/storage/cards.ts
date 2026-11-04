@@ -30,6 +30,8 @@ export interface CardRecord {
    * `guide` : fiche née de la question directrice d'un chapitre (ancrée au début du chapitre, sans surlignage).
    */
   origin?: 'v5' | 'guide';
+  /** Fiche mise en pause : elle ne revient plus en révision, sans rien perdre. */
+  suspended?: boolean;
 }
 
 export interface Mnemonic {
@@ -83,11 +85,17 @@ export function normalizeCard(raw: Partial<CardRecord> & Pick<CardRecord, 'id' |
     srs: raw.srs ?? null,
     ...(raw.mnemonic ? { mnemonic: raw.mnemonic } : {}),
     ...(raw.origin ? { origin: raw.origin } : {}),
+    ...(raw.suspended ? { suspended: true } : {}),
     id: raw.id,
     bookId: raw.bookId,
     chapter: raw.chapter,
     anchor: raw.anchor,
   };
+}
+
+/** Fiche qui participe aux révisions : une question (pas un simple surlignage), pas en pause. */
+export function isReviewable(card: Pick<CardRecord, 'kind' | 'srs' | 'suspended'>): boolean {
+  return card.kind !== 'highlight' && !!card.srs && !card.suspended;
 }
 
 function sortCards(cards: CardRecord[]): CardRecord[] {

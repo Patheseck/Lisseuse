@@ -217,3 +217,24 @@ footer.reader-chrome { bottom: calc(var(--status-h) + var(--safe-bottom)); min-h
 .selection-more { padding-left: 0.25rem; margin-left: 0.15rem; border-left: 1px solid var(--border); }
 .selection-more .icon-btn { min-width: 40px; min-height: 40px; }
 .goal-box { border-color: var(--accent); }
+
+/* Après un saut vers le passage d'une fiche */
+.return-bar {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--status-h) + var(--safe-bottom) + var(--bar-h) + 0.6rem);
+  z-index: 26;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: calc(100vw - 24px);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.35rem 0.35rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel);
+  box-shadow: 0 6px 20px var(--shadow);
+  font-size: 0.85rem;
+}
+.return-bar[hidden] { display: none; }

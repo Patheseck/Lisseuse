@@ -16,6 +16,7 @@ import './styles/reader.css';
 import './styles/sheet.css';
 import './styles/review.css';
 import './styles/stats.css';
+import './styles/cards.css';
 
 import { logError } from './core/errors';
 import { applyReaderSettings, loadReaderSettings } from './storage/settings';
@@ -32,6 +33,7 @@ import { libraryScreen } from './ui/library';
 import { readerScreen } from './ui/reader';
 import { reviewScreen } from './ui/review';
 import { statsScreen } from './ui/stats';
+import { cardsScreen } from './ui/cards';
 import type { Route, Screen } from './ui/screen';
 
 window.addEventListener('error', (e) => {
@@ -50,7 +52,12 @@ let screen: Screen | null = null;
 
 function navigate(route: Route): void {
   screen?.destroy();
-  screen = route.name === 'reader' ? readerScreen(route.bookId, navigate) : route.name === 'review' ? reviewScreen(navigate) : route.name === 'stats' ? statsScreen(navigate) : libraryScreen(navigate);
+  screen =
+    route.name === 'reader' ? readerScreen(route.bookId, navigate, route.cardId)
+    : route.name === 'review' ? reviewScreen(navigate, route.cardIds, route.back)
+    : route.name === 'stats' ? statsScreen(navigate)
+    : route.name === 'cards' ? cardsScreen(navigate, route.book)
+    : libraryScreen(navigate);
   // Transition douce : on entre dans un écran en avançant, on revient à la bibliothèque en reculant.
   const from = document.documentElement.dataset.screen;
   if (from) screen.el.classList.add(route.name === 'library' ? 'enter-back' : 'enter-forward');

@@ -1,7 +1,7 @@
 import { importAndOpen } from './import-flow';
 import { errorMessage, logError } from '../core/errors';
 import { planSession } from '../core/session';
-import { listAllCards, listReviews, type CardRecord } from '../storage/cards';
+import { isReviewable, listAllCards, listReviews, type CardRecord } from '../storage/cards';
 import { deleteBook, listBooks, listProgress, percentRead, type BookRecord, type ProgressRecord } from '../storage/library';
 import { focusKey, goalKey, loadShelf, normalizeFocus, saveShelf, type ShelfPrefs, type ShelfSort } from '../storage/method';
 import { goalSummary, normalizeGoal } from '../core/goal';
@@ -36,6 +36,7 @@ export function libraryScreen(navigate: Navigate): Screen {
     h('header', { className: 'topbar' },
       h('h1', { className: 'topbar-title' }, 'Bibliothèque'),
       h('button', { type: 'button', className: 'btn btn-primary', onclick: () => fileInput.click() }, '+ Importer'),
+      h('button', { type: 'button', className: 'icon-btn', 'aria-label': 'Mes fiches', 'data-testid': 'open-cards', onclick: () => navigate({ name: 'cards' }) }, icon('card')),
       h('button', { type: 'button', className: 'icon-btn', 'aria-label': 'Ma mémoire : tableau de bord', 'data-testid': 'open-stats', onclick: () => navigate({ name: 'stats' }) }, icon('chart')),
       h('button', { type: 'button', className: 'icon-btn', 'aria-label': 'Mes données et à propos : sauvegarde, restauration, version', 'data-testid': 'open-data', onclick: () => openData() }, icon('more')),
     ),
@@ -194,7 +195,7 @@ export function libraryScreen(navigate: Navigate): Screen {
 
   function reviewBanner(books: BookRecord[], cards: CardRecord[], reviews: Awaited<ReturnType<typeof listReviews>>, newPerDay: number): HTMLElement | null {
     const known = new Set(books.map((b) => b.id));
-    const reviewable = cards.filter((c) => c.kind !== 'highlight' && c.srs && known.has(c.bookId));
+    const reviewable = cards.filter((c) => isReviewable(c) && known.has(c.bookId));
     if (!reviewable.length) return null;
     const plan = planSession(reviewable, reviews, { now: Date.now(), newPerDay });
     const count = plan.queue.length;
@@ -238,6 +239,17 @@ export function libraryScreen(navigate: Navigate): Screen {
     }
     const banner = reviewBanner(books, cards, reviews, reviewSettings.newPerDay);
     if (banner) body.append(banner);
+    // Accès direct aux fiches, sans ouvrir de livre.
+    const known = new Set(books.map((b) => b.id));
+    const mine = cards.filter((c) => known.has(c.bookId));
+    if (mine.length) {
+      const questions = mine.filter((c) => c.kind !== 'highlight').length;
+      body.append(h('button', { type: 'button', className: 'cards-entry', 'data-testid': 'cards-entry', onclick: () => navigate({ name: 'cards' }) },
+        icon('card'),
+        h('span', {}, h('strong', {}, 'Mes fiches'), h('small', { className: 'muted' }, `${questions} fiche${questions > 1 ? 's' : ''} · ${mine.length - questions} passage${mine.length - questions > 1 ? 's' : ''} surligné${mine.length - questions > 1 ? 's' : ''}`)),
+        icon('chevronRight'),
+      ));
+    }
     body.append(shelfBar(renderList));
     if (books.length >= SEARCH_THRESHOLD) {
       const search = h('input', { type: 'search', className: 'input', placeholder: 'Rechercher un titre ou un auteur…', 'aria-label': 'Rechercher dans la bibliothèque', value: query });

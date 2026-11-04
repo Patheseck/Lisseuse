@@ -6,6 +6,13 @@ export interface Screen {
   onBack?(): boolean;
 }
 
-export type Route = { name: 'library' } | { name: 'reader'; bookId: string } | { name: 'review' } | { name: 'stats' };
+export type Route =
+  | { name: 'library' }
+  /** `cardId` : ouvre le livre au passage de cette fiche (depuis « Mes fiches »). */
+  | { name: 'reader'; bookId: string; cardId?: string }
+  /** `cardIds` : révision de ces fiches seulement, même si elles ne sont pas encore à revoir. */
+  | { name: 'review'; cardIds?: string[]; back?: 'cards' }
+  | { name: 'stats' }
+  | { name: 'cards'; book?: string };
 
 export type Navigate = (route: Route) => void;

@@ -40,6 +40,7 @@ d'apprentissage hors ligne, simple, fiable, fondée sur la recherche** (voir
 | **Tri des idées en 3 niveaux** (retrouvé / revenu en relisant / mal compris) : fiches proposées, fiches « mal comprises » remontées en révision, liste « À approfondir » ; fiche automatique « question directrice → idée principale » | Repérage des lacunes, illusion de compétence (« Récupérer ») |
 | **Chapitres choisis** pour son objectif : la progression ne compte qu'eux | Lecture sélective guidée par un but |
 | **Objectif du livre** (de quoi il parle, pourquoi le lire, type d'objectif, « je serai capable de… », ce que je sais déjà), relié aux questions des chapitres, à la restitution et aux fiches | But de lecture, utilité personnelle, K-W-L, intentions de mise en œuvre |
+| **Mes fiches** : toutes les fiches hors des livres (recherche, filtres, tris), détail et historique, pause, révision immédiate, remise à zéro | Pratique de récupération à la demande ; la pause retire une fiche sans perdre son historique |
 | **Pré-questions** en rouvrant un chapitre qui a des fiches | Pré-test |
 | **Rappel quotidien** à heure choisie (notification locale) | Espacement, habitude |
 | Fiche **séquence** : étapes à remettre dans l'ordre, option palais mental | Méthode des lieux |
