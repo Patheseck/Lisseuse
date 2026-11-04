@@ -146,6 +146,11 @@ button { font: inherit; color: inherit; }
   background: color-mix(in srgb, var(--bg) 92%, transparent);
   color: var(--muted);
 }
+.busy-box { display: grid; gap: 0.6rem; justify-items: center; width: min(18rem, 80vw); text-align: center; }
+.busy-text, .busy-detail { margin: 0; }
+.busy-detail { font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+.busy-progress { width: 100%; height: 6px; accent-color: var(--accent); }
+.busy-progress[hidden] { display: none; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }

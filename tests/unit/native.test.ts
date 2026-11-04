@@ -14,6 +14,12 @@ describe('fileNameFromUri', () => {
     expect(fileNameFromUri('content://media/external/file/42?x=1', TEXT)).toBe('42.md');
     expect(fileNameFromUri('content://x/%E0%A4%A', ZIP)).toMatch(/\.epub$/);
   });
+
+  it('reconnaît un PDF transmis sans nom de fichier', () => {
+    const PDF = new TextEncoder().encode('%PDF-1.7\n%âãÏÓ');
+    expect(fileNameFromUri('content://com.whatsapp.provider.media/item/123', PDF)).toBe('123.pdf');
+    expect(fileNameFromUri('file:///storage/emulated/0/Download/cours.pdf', PDF)).toBe('cours.pdf');
+  });
 });
 
 describe('normalizeReminder', () => {

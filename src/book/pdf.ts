@@ -1,0 +1,209 @@
+import type { PDFDocumentProxy } from 'pdfjs-dist';
+import type { TextItem } from 'pdfjs-dist/types/src/display/api';
+import workerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
+import { detectLanguage, normalizeLanguage } from '../core/language';
+import { DrmError, textSample } from './epub';
+import { ImportCancelled, ImportError, ScannedPdfError } from './errors';
+import { convertPdfText, unreadableRatio, type PdfOutlineEntry, type PdfPageText } from './pdf-text';
+import { sanitizeHtml } from './sanitize';
+import type { ParsedBook } from './types';
+
+// Lecture des PDF avec pdf.js (le moteur PDF de Firefox), chargé seulement quand un PDF arrive.
+// Aucun contenu actif du PDF n'est exécuté : pdf.js n'exécute ni les scripts des PDF ni code
+// évalué à la volée (compatible avec la politique de sécurité de l'app), et les formulaires XFA
+// sont désactivés. Tout se passe sur l'appareil.
+
+export interface PdfOptions {
+  /** Avancement de la lecture des pages. */
+  onProgress?: (done: number, total: number) => void;
+  /** Mot de passe d'un PDF protégé (`retry` : le précédent était faux) ; null pour abandonner. */
+  askPassword?: (retry: boolean) => Promise<string | null>;
+}
+
+type PdfJs = typeof import('pdfjs-dist/legacy/build/pdf.mjs');
+let library: Promise<PdfJs> | null = null;
+
+function loadPdfJs(): Promise<PdfJs> {
+  library ??= import('pdfjs-dist/legacy/build/pdf.mjs').then((pdfjs) => {
+    pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
+    return pdfjs;
+  });
+  return library;
+}
+
+/** Marques des DRM connus dans le dictionnaire de chiffrement. */
+const DRM_MARKERS: [RegExp, string][] = [
+  [/EBX_HANDLER|ADEPT/, 'Adobe'],
+  [/FOPN_/, 'FileOpen'],
+  [/LOCKLIZARD|LLZ/i, 'LockLizard'],
+];
+
+async function drmVendor(source: Blob): Promise<string> {
+  // Le dictionnaire de chiffrement est presque toujours près de la fin du fichier.
+  const tail = source.slice(Math.max(0, source.size - (1 << 20)));
+  const text = new TextDecoder('latin1').decode(await tail.arrayBuffer());
+  return DRM_MARKERS.find(([re]) => re.test(text))?.[1] ?? 'inconnu';
+}
+
+const isTextItem = (item: object): item is TextItem => 'str' in item;
+
+function cleanTitle(raw: unknown, fileName: string): string {
+  const t = typeof raw === 'string' ? raw.replace(/\s+/g, ' ').trim() : '';
+  const junk = t.length < 2 || /^(untitled|sans titre|document\s*\d*|microsoft word\b|titre|title)\b/i.test(t) || /\.(docx?|pdf|indd|qxd|rtf|odt|tex|dvi|ps|pages)$/i.test(t) || /^[\W\d_]+$/.test(t);
+  if (!junk) return t.slice(0, 200);
+  return fileName.replace(/\.pdf$/i, '').replace(/_+/g, ' ').replace(/\s+/g, ' ').trim() || 'Sans titre';
+}
+
+function cleanAuthor(raw: unknown): string | null {
+  const t = (Array.isArray(raw) ? raw.join(', ') : typeof raw === 'string' ? raw : '').replace(/\s+/g, ' ').trim();
+  if (!t || /^(unknown|inconnu|admin(istrat(or|eur))?|user|utilisateur|owner|auteur|author|propriétaire|[\W\d_]*)$/i.test(t)) return null;
+  return t.slice(0, 200);
+}
+
+async function readOutline(doc: PDFDocumentProxy, origins: number[]): Promise<PdfOutlineEntry[]> {
+  const out: PdfOutlineEntry[] = [];
+  type Node = Awaited<ReturnType<PDFDocumentProxy['getOutline']>>[number];
+  const walk = async (items: Node[] | null | undefined, level: number): Promise<void> => {
+    for (const item of items ?? []) {
+      if (out.length >= 2000) return;
+      let page = -1;
+      let y: number | null = null;
+      try {
+        const dest = typeof item.dest === 'string' ? await doc.getDestination(item.dest) : item.dest;
+        if (Array.isArray(dest) && dest[0] !== undefined && dest[0] !== null) {
+          page = typeof dest[0] === 'number' ? dest[0] : await doc.getPageIndex(dest[0]);
+          const mode = (dest[1] as { name?: string } | undefined)?.name;
+          const top = mode === 'XYZ' ? dest[3] : mode === 'FitH' || mode === 'FitBH' ? dest[2] : null;
+          if (typeof top === 'number') y = top - (origins[page] ?? 0);
+        }
+      } catch {
+        // signet sans destination utilisable : ignoré
+      }
+      out.push({ title: item.title ?? '', level, page, y });
+      await walk(item.items as Node[], level + 1);
+    }
+  };
+  await walk(await doc.getOutline().catch(() => null), 0);
+  return out;
+}
+
+/** Première page rendue en image, si elle ressemble à une couverture (illustrée, pas une page de texte). */
+async function renderCover(doc: PDFDocumentProxy): Promise<Blob | null> {
+  // Hors navigateur (tests unitaires sous jsdom) : pas de dessin possible.
+  if (typeof document === 'undefined' || /jsdom/i.test(navigator.userAgent)) return null;
+  try {
+    const page = await doc.getPage(1);
+    const scale = Math.min(2, 480 / page.getViewport({ scale: 1 }).width);
+    const viewport = page.getViewport({ scale });
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.ceil(viewport.width));
+    canvas.height = Math.max(1, Math.ceil(viewport.height));
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return null;
+    await page.render({ canvas, viewport }).promise;
+    page.cleanup();
+    const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    let inked = 0;
+    for (let i = 0; i < data.length; i += 16) if (data[i]! < 235 || data[i + 1]! < 235 || data[i + 2]! < 235) inked++;
+    if (inked / (data.length / 16) < 0.2) return null;
+    return await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.85));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Convertit un PDF en livre : texte des pages, chapitres (signets, titres ou tranches de pages),
+ * métadonnées et couverture. `data` est cédé à pdf.js ; `source` sert à relire le fichier.
+ */
+export async function parsePdf(data: Uint8Array, source: Blob, fileName: string, options: PdfOptions = {}): Promise<ParsedBook> {
+  const pdfjs = await loadPdfJs();
+  const task = pdfjs.getDocument({
+    data,
+    enableXfa: false,
+    useSystemFonts: true,
+    cMapUrl: typeof document !== 'undefined' ? new URL('pdfjs/cmaps/', document.baseURI).href : undefined,
+    cMapPacked: true,
+    verbosity: pdfjs.VerbosityLevel.ERRORS,
+  });
+  let cancelled = false;
+  task.onPassword = (update: (password: string) => void, reason: number) => {
+    const ask = options.askPassword;
+    if (!ask) {
+      cancelled = true;
+      void task.destroy();
+      return;
+    }
+    void ask(reason === pdfjs.PasswordResponses.INCORRECT_PASSWORD).then((password) => {
+      if (password === null) {
+        cancelled = true;
+        void task.destroy();
+      } else update(password);
+    }, () => {
+      cancelled = true;
+      void task.destroy();
+    });
+  };
+
+  let doc: PDFDocumentProxy;
+  try {
+    doc = await task.promise;
+  } catch (err) {
+    if (cancelled) {
+      if (!options.askPassword) throw new ImportError('Ce PDF est protégé par un mot de passe.');
+      throw new ImportCancelled();
+    }
+    const message = String((err as Error)?.message ?? err);
+    if (/encryption/i.test(message)) throw new DrmError(await drmVendor(source));
+    if ((err as Error)?.name === 'InvalidPDFException' || /invalid pdf/i.test(message)) throw new ImportError('Ce fichier PDF est abîmé ou incomplet.');
+    throw err;
+  }
+
+  try {
+    const total = doc.numPages;
+    const pages: PdfPageText[] = [];
+    const origins: number[] = [];
+    let lang: string | null = null;
+    for (let i = 1; i <= total; i++) {
+      const page = await doc.getPage(i);
+      const [x0 = 0, y0 = 0, x1 = 0, y1 = 0] = page.view;
+      const content = await page.getTextContent();
+      lang ??= content.lang;
+      origins.push(y0);
+      pages.push({
+        width: x1 - x0,
+        height: y1 - y0,
+        items: content.items.filter(isTextItem).map((it) => ({
+          str: it.str,
+          x: (it.transform[4] as number) - x0,
+          y: (it.transform[5] as number) - y0,
+          width: it.width,
+          size: Math.hypot(it.transform[2] as number, it.transform[3] as number) || it.height,
+          font: it.fontName,
+        })),
+      });
+      page.cleanup();
+      options.onProgress?.(i, total);
+    }
+    const [outline, meta, cover] = await Promise.all([
+      readOutline(doc, origins),
+      doc.getMetadata().catch(() => null),
+      renderCover(doc),
+    ]);
+    const info = (meta?.info ?? {}) as Record<string, unknown>;
+    const title = cleanTitle(meta?.metadata?.get('dc:title') ?? info.Title, fileName);
+    const author = cleanAuthor(meta?.metadata?.get('dc:creator') ?? info.Author);
+
+    const result = convertPdfText(pages, outline, title);
+    if (result.words < Math.max(20, total * 3)) throw new ScannedPdfError();
+    const chapters = result.chapters.map((c) => ({ ...c, html: sanitizeHtml(c.html) }));
+    const sample = textSample(chapters);
+    if (unreadableRatio(sample) > 0.3) {
+      throw new ImportError('Le texte de ce PDF est illisible : ses polices ne disent pas à quelles lettres correspondent leurs caractères.');
+    }
+    const language = normalizeLanguage(lang) ?? detectLanguage(sample);
+    return { format: 'pdf', title, author, chapters, resources: {}, cover, language };
+  } finally {
+    void task.destroy();
+  }
+}

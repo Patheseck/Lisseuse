@@ -44,13 +44,26 @@ export function confirmDialog(options: { title: string; message: string; confirm
 
 let busyEl: HTMLElement | null = null;
 
-/** Écran d'attente pendant une opération longue (import, ouverture). */
-export async function withBusy<T>(message: string, fn: () => Promise<T>): Promise<T> {
-  busyEl ??= h('div', { className: 'busy', role: 'alert', 'aria-busy': 'true' });
-  busyEl.textContent = message;
+/** Avancement affiché sous le message d'attente (0 à 1), avec un nouveau message au besoin. */
+export type BusyUpdate = (progress: number, message?: string) => void;
+
+/**
+ * Écran d'attente pendant une opération longue (import, ouverture). Le message est annoncé une
+ * fois ; l'avancement (barre et détail) se met à jour sans être relu à chaque étape.
+ */
+export async function withBusy<T>(message: string, fn: (update: BusyUpdate) => Promise<T>): Promise<T> {
+  const detail = h('p', { className: 'busy-detail', 'aria-hidden': 'true', 'data-testid': 'busy-detail' });
+  const bar = h('progress', { className: 'busy-progress', max: 1, value: 0, hidden: true, 'aria-label': message, 'data-testid': 'busy-progress' });
+  busyEl ??= h('div', { className: 'busy', role: 'alert', 'aria-busy': 'true', 'data-testid': 'busy' });
+  busyEl.replaceChildren(h('div', { className: 'busy-box' }, h('p', { className: 'busy-text' }, message), bar, detail));
   document.body.append(busyEl);
+  const update: BusyUpdate = (progress, next) => {
+    bar.hidden = false;
+    bar.value = Math.min(1, Math.max(0, progress));
+    if (next && detail.textContent !== next) detail.textContent = next;
+  };
   try {
-    return await fn();
+    return await fn(update);
   } finally {
     busyEl.remove();
   }

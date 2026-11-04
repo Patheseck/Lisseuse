@@ -80,7 +80,8 @@ Pour ouvrir le projet dans Android Studio : `npm run android:sync` puis `npx cap
 
 | Fonction | Fonctionnement |
 |---|---|
-| Ouvrir un EPUB depuis un gestionnaire de fichiers | « Ouvrir avec → Liseuse » importe le livre et l'ouvre (EPUB, Markdown, texte, y compris les fichiers reçus sans type précis ; un livre protégé par DRM ou un PDF est refusé avec une explication) |
+| Ouvrir un livre depuis un gestionnaire de fichiers | « Ouvrir avec → Liseuse » importe le livre et l'ouvre (EPUB, PDF, Markdown, texte, y compris les fichiers reçus sans type précis ; un livre protégé par DRM ou un PDF scanné est refusé avec une explication) |
+| Livres PDF | le texte est converti en livre sur le téléphone, sans Internet (pdf.js) ; un PDF protégé par mot de passe le demande à chaque conversion, sans le garder |
 | Exporter une sauvegarde | menu de partage d'Android (Drive, e-mail, Fichiers…) |
 | Écouter un chapitre | synthèse vocale du téléphone, à partir du paragraphe visible |
 | Rappel quotidien | notification locale à l'heure choisie (Ma mémoire → Réglages) |

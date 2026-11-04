@@ -25,13 +25,6 @@ test.describe('Préparation à la vente', () => {
     await expect(page.getByTestId('empty-library')).toBeVisible();
   });
 
-  test('un PDF est refusé clairement', async ({ page }) => {
-    errors.length = 0;
-    await importFile(page, 'cours.pdf', 'application/pdf', Buffer.from('%PDF-1.7\n...'));
-    await expect(page.getByTestId('toast')).toContainText('PDF');
-    errors.length = 0; // l'échec d'import est journalisé en console volontairement
-  });
-
   test('un texte d’un seul tenant est découpé en chapitres, et les pages tournent', async ({ page }) => {
     // Un paragraphe par ligne, sans ligne vide (courant dans les .txt) ; chapitre II très long.
     const lines = (n: number) => Array.from({ length: n }, (_, i) => `Paragraphe ${i} de ce long récit écrit sans aucun titre Markdown, une ligne par paragraphe comme souvent.`).join('\n');

@@ -13,10 +13,11 @@ export function fileNameFromUri(uri: string, bytes: Uint8Array): string {
     // nom laissé tel quel
   }
   last = last.split(/[:/]/).pop() ?? '';
-  if (/\.(epub|md|markdown|txt)$/i.test(last)) return last;
+  if (/\.(epub|pdf|md|markdown|txt)$/i.test(last)) return last;
   const isZip = bytes[0] === 0x50 && bytes[1] === 0x4b;
-  // Sans extension connue : EPUB si c'est une archive, sinon texte (vérifié à l'import).
-  return isZip ? `${last || 'livre'}.epub` : `${last || 'document'}.md`;
+  const isPdf = String.fromCharCode(...bytes.subarray(0, 8)).includes('%PDF-');
+  // Sans extension connue : EPUB si c'est une archive, PDF à sa signature, sinon texte (vérifié à l'import).
+  return isZip ? `${last || 'livre'}.epub` : isPdf ? `${last || 'document'}.pdf` : `${last || 'document'}.md`;
 }
 
 /**

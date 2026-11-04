@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DrmError, EpubError, parseEpub, resolvePath } from '../../src/book/epub';
 import { detectFormat, parseBookFile } from '../../src/book/import';
+import './pdf-worker';
 import { makeEpub2, makeEpub3, makeProtectedEpub } from '../fixtures/make-epub';
 
 describe('resolvePath', () => {
@@ -65,6 +66,12 @@ describe('erreurs', () => {
     expect(detectFormat('livre.bin', Uint8Array.of(0x50, 0x4b, 3, 4))).toBe('epub');
     expect(detectFormat('notes.md', Uint8Array.of(0x23, 0x20))).toBe('md');
     expect(detectFormat('image.png', Uint8Array.of(0x89, 0x50))).toBeNull();
+    // PDF : à sa signature, même précédée de quelques octets ou sans la bonne extension.
+    expect(detectFormat('cours.bin', new TextEncoder().encode('%PDF-1.7\n'))).toBe('pdf');
+    expect(detectFormat('cours.pdf', new TextEncoder().encode('\n\n%PDF-1.4\n'))).toBe('pdf');
+    expect(detectFormat('cours.pdf', new TextEncoder().encode(`${'x'.repeat(300)}%PDF-1.4\n`))).toBe('pdf');
+    // Un texte qui parle du format PDF reste un texte.
+    expect(detectFormat('notes.md', new TextEncoder().encode('# Mes notes\n\nLe fichier commence par %PDF-1.7.'))).toBe('md');
   });
 
   it('donne le même identifiant au même fichier', async () => {
@@ -97,8 +104,8 @@ describe('livres protégés (DRM)', () => {
 });
 
 describe('fichiers qui ne sont pas des livres', () => {
-  it('refuse un PDF et un binaire, accepte un texte Latin-1', async () => {
-    await expect(parseBookFile(new Blob(['%PDF-1.7 ...']), 'doc.pdf')).rejects.toThrow('PDF');
+  it('refuse un PDF abîmé et un binaire, accepte un texte Latin-1', async () => {
+    await expect(parseBookFile(new Blob(['%PDF-1.7 ...']), 'doc.pdf')).rejects.toThrow('Ce fichier PDF est abîmé ou incomplet.');
     await expect(parseBookFile(new Blob([new Uint8Array([0x41, 0, 0x42, 0x43])]), 'image.txt')).rejects.toThrow('pas un texte lisible');
     const latin = new Uint8Array([0x23, 0x20, 0x43, 0x61, 0x66, 0xe9, 0x0a]); // « # Café » en Latin-1
     const { parsed } = await parseBookFile(new Blob([latin]), 'ancien.txt');

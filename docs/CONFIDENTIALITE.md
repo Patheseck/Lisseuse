@@ -1,6 +1,6 @@
 # Politique de confidentialité de Liseuse
 
-*Dernière mise à jour : 28 octobre 2026*
+*Dernière mise à jour : 4 novembre 2026*
 
 Liseuse est une application de lecture et d'apprentissage qui fonctionne **entièrement hors ligne**.
 Cette page décrit, simplement et complètement, ce que l'application fait de tes données : rien ne
@@ -18,7 +18,8 @@ quitte ton appareil sans une action de ta part.
 
 Pour fonctionner, Liseuse enregistre dans la mémoire privée de l'application, sur ton appareil :
 
-- les livres que tu importes (fichiers EPUB, Markdown ou texte) ;
+- les livres que tu importes (fichiers EPUB, PDF, Markdown ou texte) ; un PDF est converti en
+  texte sur ton appareil, et le mot de passe d'un PDF protégé n'est jamais enregistré ;
 - tes surlignages, fiches, questions directrices, signets et révisions ;
 - ta progression de lecture, tes statistiques et tes réglages ;
 - les morceaux de musique que tu ajoutes aux ambiances de lecture (ils ne font pas partie des

@@ -1,6 +1,7 @@
 import { detectLanguage } from '../core/language';
 import { logError } from '../core/errors';
 import { decodeText, parseBookFile } from './import';
+import { parsePdf, type PdfOptions } from './pdf';
 import { LAYOUT_VERSION, layoutChapters } from './layout';
 import { parseEpub, readEpubLanguage, textSample } from './epub';
 import { parseLegacy } from './legacy';
@@ -34,8 +35,8 @@ async function layoutForNewBook(id: string): Promise<number> {
 }
 
 /** Importe un fichier choisi par l'utilisateur et l'enregistre dans la bibliothèque. */
-export async function importBook(file: File): Promise<{ book: BookRecord; existed: boolean }> {
-  const { id, parsed } = await parseBookFile(file, file.name);
+export async function importBook(file: File, options: PdfOptions = {}): Promise<{ book: BookRecord; existed: boolean }> {
+  const { id, parsed } = await parseBookFile(file, file.name, options);
   const existing = await getBook(id);
   const layout = existing ? (existing.layout ?? 0) : await layoutForNewBook(id);
   const chapters = layoutChapters(parsed.chapters, { format: parsed.format, fileName: file.name }, layout);
@@ -44,9 +45,10 @@ export async function importBook(file: File): Promise<{ book: BookRecord; existe
 
 /**
  * Charge un livre pour la lecture. Un livre enregistré avec un ancien découpage est migré
- * (chapitres et données) ; le cache des chapitres est reconstruit au besoin depuis le fichier.
+ * (chapitres et données) ; le cache des chapitres est reconstruit au besoin depuis le fichier
+ * (pour un PDF, `options` suit la lecture des pages et demande le mot de passe).
  */
-export async function openBook(id: string): Promise<OpenedBook> {
+export async function openBook(id: string, options: PdfOptions = {}): Promise<OpenedBook> {
   let book = await getBook(id);
   if (!book) throw new Error('Ce livre n’est plus dans la bibliothèque.');
   const cache = await getChapterCache(id);
@@ -54,13 +56,13 @@ export async function openBook(id: string): Promise<OpenedBook> {
   let parsed: ParsedBook | null = null;
 
   if ((book.layout ?? 0) < LAYOUT_VERSION) {
-    const base = cache && (cache.layout ?? 0) === 0 ? cache : (parsed = await parseStoredBook(book));
+    const base = cache && (cache.layout ?? 0) === 0 ? cache : (parsed = await parseStoredBook(book, options));
     const upgraded = await upgradeLayout(book, base.chapters, base.resources);
     opened = { book: upgraded.book, chapters: upgraded.chapters, resources: base.resources };
   } else if (cache && (cache.layout ?? 0) === book.layout) {
     opened = { book, chapters: cache.chapters, resources: cache.resources };
   } else {
-    parsed = await parseStoredBook(book);
+    parsed = await parseStoredBook(book, options);
     const chapters = layoutChapters(parsed.chapters, book, book.layout ?? 0);
     await putChapterCache({ bookId: id, parserVersion: PARSER_VERSION, layout: book.layout ?? 0, chapters, resources: parsed.resources });
     opened = { book, chapters, resources: parsed.resources };
@@ -77,8 +79,9 @@ export async function openBook(id: string): Promise<OpenedBook> {
 }
 
 /** Réanalyse un livre à partir du fichier conservé dans la bibliothèque (chapitres de l'analyseur). */
-export async function parseStoredBook(book: Pick<BookRecord, 'format' | 'file' | 'fileName'>): Promise<ParsedBook> {
+export async function parseStoredBook(book: Pick<BookRecord, 'format' | 'file' | 'fileName'>, options: PdfOptions = {}): Promise<ParsedBook> {
   if (book.format === 'epub') return parseEpub(book.file, book.fileName);
+  if (book.format === 'pdf') return parsePdf(new Uint8Array(await book.file.arrayBuffer()), book.file, book.fileName, options);
   if (book.format === 'legacy') return parseLegacy(await book.file.text());
   return parseMarkdown(decodeText(await book.file.arrayBuffer()) ?? '', book.fileName);
 }

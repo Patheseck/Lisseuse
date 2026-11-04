@@ -14,7 +14,7 @@ import { clear, h } from './dom';
 import { confirmDialog, toast } from './feedback';
 import type { Navigate, Screen } from './screen';
 
-const ACCEPT = '.epub,.md,.markdown,.txt,application/epub+zip,text/markdown,text/plain';
+const ACCEPT = '.epub,.pdf,.md,.markdown,.txt,application/epub+zip,application/pdf,text/markdown,text/plain';
 const SEARCH_THRESHOLD = 4;
 
 /** Teinte stable tirée du titre, pour les couvertures générées. */
@@ -93,7 +93,7 @@ export function libraryScreen(navigate: Navigate): Screen {
 
   function bookItem(book: BookRecord, progress: ProgressRecord | undefined, focus: number[]): HTMLElement {
     const pct = percentRead(book, progress, focus);
-    const meta = [book.format === 'epub' ? 'EPUB' : book.format === 'md' ? 'Markdown' : 'Ancien format', `${book.chapterCount} chapitre${book.chapterCount > 1 ? 's' : ''}`, progress ? `${pct} % lu` : 'Pas commencé'];
+    const meta = [book.format === 'epub' ? 'EPUB' : book.format === 'pdf' ? 'PDF' : book.format === 'md' ? 'Markdown' : 'Ancien format', `${book.chapterCount} chapitre${book.chapterCount > 1 ? 's' : ''}`, progress ? `${pct} % lu` : 'Pas commencé'];
     if (focus.length) meta.push(`objectif : ${focus.length} chap.`);
     return h('li', { className: 'book-item', 'data-testid': 'book-item' },
       h('button', { type: 'button', className: 'book-open', onclick: () => navigate({ name: 'reader', bookId: book.id }) },
@@ -187,9 +187,9 @@ export function libraryScreen(navigate: Navigate): Screen {
   function emptyState(): HTMLElement {
     return h('section', { className: 'empty', 'data-testid': 'empty-library' },
       h('h2', {}, 'Ta liseuse d’apprentissage'),
-      h('p', {}, 'Importe un livre EPUB ou un document Markdown. Pendant la lecture, transforme les passages importants en questions : l’app te les reposera au bon moment pour les retenir durablement.'),
+      h('p', {}, 'Importe un livre EPUB ou PDF, ou un texte. Pendant la lecture, transforme les passages importants en questions : l’app te les reposera au bon moment pour les retenir durablement.'),
       h('button', { type: 'button', className: 'dropzone', onclick: () => fileInput.click() },
-        h('strong', {}, 'Choisir un fichier'), h('span', {}, '.epub ou .md — ou dépose-le ici')),
+        h('strong', {}, 'Choisir un fichier'), h('span', {}, '.epub, .pdf, .md ou .txt — ou dépose-le ici')),
     );
   }
 

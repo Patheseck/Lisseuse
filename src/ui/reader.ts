@@ -23,6 +23,7 @@ import { getBookAmbiance, loadAmbiancePrefs } from '../storage/audio';
 import { ambianceSheet } from './ambiance-sheet';
 import { addRecall, listRecalls, markPretest, pretestDates, type RecallRecord } from '../storage/learning';
 import { chapterHeadings, chapterRecall, chapterSurveySheet, pretest } from './chapter-practice';
+import { pdfOptions } from './import-flow';
 import { add, clear, h } from './dom';
 import { confirmDialog, toast } from './feedback';
 import { speak, stop as stopSpeech, ttsAvailable } from '../native/tts';
@@ -1349,7 +1350,10 @@ export function readerScreen(bookId: string, navigate: Navigate, focusCardId?: s
 
   // ---------- Ouverture ----------
   (async () => {
-    opened = await openBook(bookId);
+    // Un PDF dont les chapitres ne sont plus en cache (sauvegarde restaurée) est relu : on suit l'avancement.
+    opened = await openBook(bookId, pdfOptions((_, message) => {
+      if (message) content.replaceChildren(h('p', { className: 'muted', 'data-testid': 'reader-loading' }, message));
+    }, 'Préparation du PDF'));
     cards = await listCards(bookId);
     [guides, focus, bookmarks] = await Promise.all([
       loadGuides(bookId).catch(() => ({})),

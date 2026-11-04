@@ -12,6 +12,7 @@ export const PRIVACY_POINTS = [
   'Liseuse fonctionne entièrement hors ligne : l’application n’a pas accès à Internet.',
   'Aucune donnée n’est collectée, transmise ni vendue : pas de compte, pas de publicité, pas de mesure d’audience.',
   'Tes livres, fiches, statistiques et réglages restent dans la mémoire de ton appareil.',
+  'Un PDF est converti en texte sur l’appareil ; le mot de passe d’un PDF protégé n’est jamais enregistré.',
   'Les sauvegardes sont des fichiers que tu exportes toi-même, où tu le décides ; tu peux les chiffrer avec un mot de passe.',
   'Le rappel quotidien est une notification programmée sur l’appareil, sans serveur.',
   'Le journal d’erreurs reste sur l’appareil et n’est envoyé à personne.',
