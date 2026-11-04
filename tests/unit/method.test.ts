@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { surveyChapter, surveyIsEmpty } from '../../src/core/survey';
 import { percentRead } from '../../src/storage/library';
-import { loadBookmarks, loadFocus, loadGuides, normalizeFocus, normalizeShelf, saveBookmarks, saveFocus, saveGuide } from '../../src/storage/method';
+import { bilanKey, bookSettingKeys, loadBilan, loadBookmarks, loadFocus, loadGuides, normalizeFocus, normalizeShelf, saveBilan, saveBookmarks, saveFocus, saveGuide } from '../../src/storage/method';
+import { putSetting } from '../../src/storage/settings';
 import { normalizeReaderSettings } from '../../src/storage/settings';
 
 describe('surveyChapter', () => {
@@ -62,5 +63,30 @@ describe('stockage de la méthode', () => {
 
     await saveBookmarks('b1', [{ id: 'b', chapter: 2, offset: 0.1, label: '', at: 1 }, { id: 'a', chapter: 0, offset: 0.5, label: '', at: 2 }]);
     expect((await loadBookmarks('b1')).map((b) => b.id)).toEqual(['a', 'b']);
+  });
+});
+
+describe('bilan du livre', () => {
+  it('s’enregistre par livre et part avec le livre', async () => {
+    expect(await loadBilan('b-bilan')).toBeNull();
+    const bilan = { about: 'Le sommeil consolide', ideas: ['A', 'B'], links: [{ from: 'A', relation: 'cause' as const, to: 'B', cardId: 'c1' }], reached: 'partly' as const, next: 'Dormir plus', at: 5, aboutCardId: 'c2' };
+    await saveBilan('b-bilan', bilan);
+    expect(await loadBilan('b-bilan')).toEqual(bilan);
+    expect(await loadBilan('autre')).toBeNull();
+    expect(bookSettingKeys('b-bilan')).toContain(bilanKey('b-bilan'));
+  });
+
+  it('relit un bilan abîmé sans planter', async () => {
+    await putSetting(bilanKey('b-abime'), { about: 3, ideas: 'A', links: [{ from: 'A' }, { from: 'A', relation: 'oppose', to: 'B' }], reached: 'peut-être', at: 'hier' });
+    const bilan = await loadBilan('b-abime');
+    expect(bilan).toMatchObject({ about: '', ideas: [], links: [{ from: 'A', relation: 'oppose', to: 'B' }], reached: null, next: '' });
+    expect(typeof bilan?.at).toBe('number');
+  });
+
+  it('les idées et liens des chapitres sont vérifiés à la lecture', async () => {
+    await saveGuide('b-guide-abime', 0, { question: 'Q', questionAt: 1, ideas: ['A', 4 as unknown as string], links: [{ from: 'A', relation: 'x' as never, to: 'B' }] });
+    const guides = await loadGuides('b-guide-abime');
+    expect(guides[0]?.ideas).toEqual(['A']);
+    expect(guides[0]?.links).toEqual([]);
   });
 });

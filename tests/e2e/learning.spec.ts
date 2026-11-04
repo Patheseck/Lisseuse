@@ -58,6 +58,8 @@ test.describe('Étape 5 — apprentissage actif', () => {
     await page.clock.runFor(155_000);
     await expect(sheet).toContainText('Temps écoulé');
     await sheet.getByTestId('recall-finish').click();
+    // Deux idées (principale + centrale) : l'étape « Relier tes idées » s'intercale ; on la passe.
+    await sheet.getByTestId('links-continue').click();
 
     await expect(sheet).toContainText('Le sommeil aide à consolider.');
     await expect(sheet).toContainText('le cerveau range');

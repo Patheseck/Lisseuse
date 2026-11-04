@@ -3,7 +3,7 @@ import { fold } from '../reader/search';
 
 // « Mes fiches » : état de chaque fiche, filtres, recherche et tris (logique sans interface).
 
-export type CardType = 'all' | 'qa' | 'sequence' | 'highlight' | 'guide';
+export type CardType = 'all' | 'qa' | 'sequence' | 'highlight' | 'guide' | 'synthesis';
 export type CardStateFilter = 'all' | 'new' | 'due' | 'difficult' | 'mastered' | 'paused';
 export type CardSort = 'book' | 'recent' | 'due' | 'difficult';
 
@@ -13,7 +13,7 @@ export interface FilterableCard {
   bookId: string;
   chapter: number;
   kind: 'highlight' | 'qa' | 'sequence';
-  origin?: 'v5' | 'guide';
+  origin?: 'v5' | 'guide' | 'ideas' | 'link' | 'bilan';
   question: string;
   answer: string;
   steps: string[];
@@ -50,7 +50,8 @@ export function isDueToday(srs: SrsState, now: number): boolean {
 export function matchesType(card: FilterableCard, type: CardType): boolean {
   if (type === 'all') return true;
   if (type === 'guide') return card.origin === 'guide';
-  if (type === 'qa') return card.kind === 'qa' && card.origin !== 'guide';
+  if (type === 'synthesis') return card.origin === 'ideas' || card.origin === 'link' || card.origin === 'bilan';
+  if (type === 'qa') return card.kind === 'qa' && (!card.origin || card.origin === 'v5');
   return card.kind === type;
 }
 
@@ -89,7 +90,9 @@ export function filterCards<T extends FilterableCard>(cards: readonly T[], f: Ca
  */
 export function sortCards<T extends FilterableCard>(cards: readonly T[], sort: CardSort, bookOrder: readonly string[] = []): T[] {
   const rank = new Map(bookOrder.map((id, i) => [id, i]));
-  const byBook = (a: T, b: T) => (rank.get(a.bookId) ?? Infinity) - (rank.get(b.bookId) ?? Infinity) || a.bookId.localeCompare(b.bookId) || a.chapter - b.chapter || a.anchor.start - b.anchor.start;
+  // Les fiches du bilan concernent tout le livre : en tête du livre, avant le premier chapitre.
+  const place = (c: T) => (c.origin === 'bilan' ? -1 : c.chapter);
+  const byBook = (a: T, b: T) => (rank.get(a.bookId) ?? Infinity) - (rank.get(b.bookId) ?? Infinity) || a.bookId.localeCompare(b.bookId) || place(a) - place(b) || a.anchor.start - b.anchor.start || a.createdAt - b.createdAt;
   const due = (c: T) => (c.srs && !c.suspended && c.kind !== 'highlight' ? c.srs.due : Infinity);
   const hardness = (c: T) => (c.srs ? c.srs.lapses * 10 + c.srs.difficulty : -1);
   const compare: Record<CardSort, (a: T, b: T) => number> = {

@@ -1,4 +1,4 @@
-import type { CardRecord } from '../storage/cards';
+import { isSynthesis, originLabel, type CardRecord } from '../storage/cards';
 import type { Bookmark } from '../storage/method';
 import { clear, h } from './dom';
 import { icon } from './icons';
@@ -19,6 +19,10 @@ export interface TocOptions {
   /** Résumé de l'objectif du livre (null s'il n'est pas défini). */
   goal: () => string | null;
   onEditGoal: () => void;
+  /** Bilan du livre déjà fait. */
+  hasBilan: () => boolean;
+  onMap: () => void;
+  onBilan: () => void;
   /** Chapitres choisis pour l'objectif de lecture (vide = tout le livre). */
   focus: () => number[];
   onToggleFocus: (index: number) => void;
@@ -54,6 +58,10 @@ export function readerTocSheet(o: TocOptions): Sheet & { refresh(): void } {
       panel.append(h('div', { className: 'toc-goal', 'data-testid': 'toc-goal' },
         goal ? h('p', {}, h('span', { className: 'field-label' }, 'Mon objectif'), h('span', { className: 'toc-goal-text' }, goal)) : h('p', { className: 'hint' }, 'Pourquoi lis-tu ce livre ? Un objectif guide ta lecture et tes questions.'),
         h('button', { type: 'button', className: 'btn', 'data-testid': 'edit-goal', onclick: () => { sheet.close(); o.onEditGoal(); } }, icon('target'), goal ? 'Modifier' : 'Définir mon objectif'),
+      ));
+      panel.append(h('div', { className: 'toc-actions' },
+        h('button', { type: 'button', className: 'btn', 'data-testid': 'open-map', onclick: () => { sheet.close(); o.onMap(); } }, icon('grid'), 'Carte des idées'),
+        h('button', { type: 'button', className: 'btn', 'data-testid': 'open-bilan', onclick: () => { sheet.close(); o.onBilan(); } }, icon('check'), o.hasBilan() ? 'Mon bilan' : 'Bilan du livre'),
       ));
       const focus = new Set(o.focus());
       panel.append(h('p', { className: 'hint toc-focus-hint', 'data-testid': 'focus-hint' },
@@ -109,8 +117,8 @@ export function readerTocSheet(o: TocOptions): Sheet & { refresh(): void } {
       list.append(h('li', { className: 'hl-item', 'data-testid': 'highlight-item' },
         h('button', { type: 'button', className: 'hl-open', onclick: () => { sheet.close(); o.onCard(card); } },
           h('span', { className: 'hl-chapter' }, o.labels()[card.chapter] ?? `Chapitre ${card.chapter + 1}`, orphans.has(card.id) ? ' · passage introuvable' : ''),
-          card.origin === 'guide' ? null : h('span', { className: 'hl-quote' }, card.anchor.quote.length > 220 ? `${card.anchor.quote.slice(0, 220)}…` : card.anchor.quote),
-          card.kind !== 'highlight' ? h('span', { className: 'hl-question' }, h('span', { className: 'pill' }, card.origin === 'guide' ? 'Question directrice' : 'Fiche'), card.question) : null,
+          isSynthesis(card) ? null : h('span', { className: 'hl-quote' }, card.anchor.quote.length > 220 ? `${card.anchor.quote.slice(0, 220)}…` : card.anchor.quote),
+          card.kind !== 'highlight' ? h('span', { className: 'hl-question' }, h('span', { className: 'pill' }, isSynthesis(card) ? originLabel(card) : 'Fiche'), card.question) : null,
         ),
         h('button', { type: 'button', className: 'icon-btn', 'aria-label': card.kind === 'highlight' ? 'Créer une fiche' : 'Modifier la fiche', 'data-testid': 'toc-edit-card', onclick: () => { sheet.close(); o.onEditCard(card); } }, icon('card')),
         h('button', { type: 'button', className: 'icon-btn', 'aria-label': 'Retirer ce surlignage', onclick: () => o.onDeleteCard(card) }, icon('trash')),

@@ -1,4 +1,5 @@
 import { normalizeGoal, type BookGoal } from '../core/goal';
+import { normalizeIdeas, normalizeLinks, type IdeaLink } from '../core/ideas';
 import { getSetting, putSetting } from './settings';
 
 // Méthode « Lire, Poser, Récupérer » par chapitre, chapitres choisis et signets.
@@ -29,6 +30,11 @@ export interface ChapterGuide {
   cardId?: string;
   /** Ce que le chapitre apporte à l'objectif du livre, ou action à essayer. */
   apply?: string;
+  /** Idées centrales (en plus de l'idée principale) et liens entre elles. */
+  ideas?: string[];
+  links?: IdeaLink[];
+  /** Fiche « idées centrales du chapitre ». */
+  ideasCardId?: string;
 }
 
 export interface Bookmark {
@@ -43,13 +49,14 @@ export const guideKey = (bookId: string) => `guide:${bookId}`;
 export const focusKey = (bookId: string) => `focus:${bookId}`;
 export const bookmarksKey = (bookId: string) => `bookmarks:${bookId}`;
 export const goalKey = (bookId: string) => `goal:${bookId}`;
+export const bilanKey = (bookId: string) => `bilan:${bookId}`;
 /**
  * Version de découpage des données restaurées d'un livre absent de l'appareil : quand il sera
  * importé, il le sera dans cette version pour que ses fiches restent à leur place.
  */
 export const layoutHintKey = (bookId: string) => `layout:${bookId}`;
 /** Clés de réglages propres à un livre (supprimées avec lui). */
-export const bookSettingKeys = (bookId: string) => [`recall:${bookId}`, `pretest:${bookId}`, guideKey(bookId), focusKey(bookId), bookmarksKey(bookId), layoutHintKey(bookId), `ambiance:${bookId}`, goalKey(bookId)];
+export const bookSettingKeys = (bookId: string) => [`recall:${bookId}`, `pretest:${bookId}`, guideKey(bookId), focusKey(bookId), bookmarksKey(bookId), layoutHintKey(bookId), `ambiance:${bookId}`, goalKey(bookId), bilanKey(bookId)];
 
 const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 
@@ -57,7 +64,14 @@ export async function loadGuides(bookId: string): Promise<Record<string, Chapter
   const value = await getSetting(guideKey(bookId));
   if (!isObject(value)) return {};
   const out: Record<string, ChapterGuide> = {};
-  for (const [k, g] of Object.entries(value)) if (isObject(g) && typeof g.question === 'string') out[k] = g as unknown as ChapterGuide;
+  for (const [k, g] of Object.entries(value)) {
+    if (!isObject(g) || typeof g.question !== 'string') continue;
+    const guide = { ...g } as unknown as ChapterGuide;
+    // Idées et liens : vérifiés un par un (une sauvegarde peut venir d'ailleurs).
+    if ('ideas' in g) guide.ideas = normalizeIdeas(g.ideas);
+    if ('links' in g) guide.links = normalizeLinks(g.links);
+    out[k] = guide;
+  }
   return out;
 }
 
@@ -99,6 +113,42 @@ export async function loadGoal(bookId: string): Promise<BookGoal | null> {
 
 export async function saveGoal(bookId: string, goal: BookGoal): Promise<void> {
   await putSetting(goalKey(bookId), goal);
+}
+
+// ---------- Bilan du livre ----------
+
+/** Bilan de fin de livre (le « ce que j'ai appris » de K-W-L). */
+export interface BookBilan {
+  /** « De quoi parle vraiment ce livre ? », à comparer avec l'hypothèse de départ. */
+  about: string;
+  ideas: string[];
+  links: IdeaLink[];
+  reached: Answered | null;
+  /** « Et maintenant ? » : ce que l'on va faire de ce livre. */
+  next: string;
+  at: number;
+  aboutCardId?: string;
+  ideasCardId?: string;
+}
+
+export async function loadBilan(bookId: string): Promise<BookBilan | null> {
+  const value = await getSetting(bilanKey(bookId));
+  if (!value || typeof value !== 'object') return null;
+  const b = value as Partial<BookBilan>;
+  return {
+    about: typeof b.about === 'string' ? b.about : '',
+    ideas: normalizeIdeas(b.ideas),
+    links: normalizeLinks(b.links),
+    reached: b.reached === 'yes' || b.reached === 'partly' || b.reached === 'no' ? b.reached : null,
+    next: typeof b.next === 'string' ? b.next : '',
+    at: typeof b.at === 'number' ? b.at : Date.now(),
+    ...(typeof b.aboutCardId === 'string' ? { aboutCardId: b.aboutCardId } : {}),
+    ...(typeof b.ideasCardId === 'string' ? { ideasCardId: b.ideasCardId } : {}),
+  };
+}
+
+export async function saveBilan(bookId: string, bilan: BookBilan): Promise<void> {
+  await putSetting(bilanKey(bookId), bilan);
 }
 
 // ---------- Préférences de la bibliothèque ----------

@@ -1,6 +1,6 @@
 import { cardStatus, filterCards, sortCards, summarize, type CardFilters, type CardSort, type CardStateFilter, type CardType } from '../core/card-filters';
 import { errorMessage, logError } from '../core/errors';
-import { listAllCards, listReviews, type CardRecord, type ReviewRecord } from '../storage/cards';
+import { cardPlace, listAllCards, listReviews, type CardRecord, type ReviewRecord } from '../storage/cards';
 import { listBooks, type BookRecord } from '../storage/library';
 import { cardDetailSheet } from './card-detail';
 import { add, clear, h } from './dom';
@@ -9,7 +9,7 @@ import type { Navigate, Screen } from './screen';
 
 const PAGE = 60;
 
-const TYPES: [CardType, string][] = [['all', 'Tous les types'], ['qa', 'Questions'], ['sequence', 'Étapes'], ['guide', 'Questions directrices'], ['highlight', 'Passages surlignés']];
+const TYPES: [CardType, string][] = [['all', 'Tous les types'], ['qa', 'Questions'], ['sequence', 'Étapes'], ['guide', 'Questions directrices'], ['synthesis', 'Idées, liens et bilans'], ['highlight', 'Passages surlignés']];
 const STATES: [CardStateFilter, string][] = [['all', 'Toutes'], ['due', 'À revoir'], ['new', 'Nouvelles'], ['difficult', 'Difficiles'], ['mastered', 'Maîtrisées'], ['paused', 'En pause']];
 const SORTS: [CardSort, string][] = [['book', 'Ordre du livre'], ['recent', 'Plus récentes'], ['due', 'Prochaine révision'], ['difficult', 'Plus difficiles']];
 
@@ -64,7 +64,7 @@ export function cardsScreen(navigate: Navigate, presetBook?: string): Screen {
   sortSelect.addEventListener('change', () => { sort = sortSelect.value as CardSort; shown = PAGE; renderList(); });
 
   const titleOf = (bookId: string) => books.find((b) => b.id === bookId)?.title ?? 'Livre absent de la bibliothèque';
-  const chapterOf = (card: CardRecord) => books.find((b) => b.id === card.bookId)?.chapterLabels?.[card.chapter] ?? `Chapitre ${card.chapter + 1}`;
+  const chapterOf = (card: CardRecord) => cardPlace(card, books.find((b) => b.id === card.bookId)?.chapterLabels?.[card.chapter]);
 
   function renderStates(): void {
     const now = Date.now();
@@ -116,7 +116,7 @@ export function cardsScreen(navigate: Navigate, presetBook?: string): Screen {
     let lastGroup = '';
     for (const card of result.slice(0, shown)) {
       if (grouped) {
-        const group = `${card.bookId}|${card.chapter}`;
+        const group = `${card.bookId}|${card.origin === 'bilan' ? 'livre' : card.chapter}`;
         if (group !== lastGroup) {
           lastGroup = group;
           list.append(h('li', { className: 'cards-group', 'data-testid': 'cards-group' }, h('strong', {}, titleOf(card.bookId)), ` · ${chapterOf(card)}`));

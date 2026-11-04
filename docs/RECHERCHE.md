@@ -159,6 +159,23 @@ pendant la révision de ses fiches (option).
 ouverture ; l'objectif est rappelé dans l'aperçu des chapitres, relié à la restitution (« ce que ce
 chapitre t'apporte » ou « une action à essayer ») et aux modèles de fiches.
 
+## 13. Idées centrales, liens et bilan — ★★
+
+- **Relier les idées.** Construire soi-même une carte des idées (des notions reliées par des
+  relations nommées) aide à retenir et à transférer, davantage que lire un texte, une liste ou un
+  plan (Nesbit & Adesope, 2006). Dégager l'essentiel, résumer et organiser font partie des
+  activités « génératives » qui aident à comprendre (Fiorella & Mayer, 2016).
+- **De mémoire, livre fermé.** Faire la carte en ayant le texte sous les yeux apporte moins que
+  se tester (Karpicke & Blunt, 2011) ; la faire de mémoire réunit les deux bénéfices (Blunt &
+  Karpicke, 2014). Les liens se construisent donc pendant la restitution, livre fermé.
+- **Bilan de fin de livre.** Le « ce que j'ai appris » de K-W-L (Ogle, 1986) : comparer
+  l'hypothèse de départ à ce que dit vraiment le livre, vérifier l'objectif, décider de la suite.
+
+→ Dans l'app (6.7) : la restitution demande les idées centrales (une par ligne), puis propose de
+les relier par une des 8 relations ; des fiches « idées centrales » et « lien » rejoignent les
+révisions. En fin de livre, le bilan (de quoi il parle vraiment, idées et liens du livre, objectif
+atteint, et maintenant) ; la carte des idées réunit le tout et se partage en texte.
+
 ## Ce qui est retiré faute de preuves
 
 | Fonction V5.7 | Raison du retrait |
@@ -192,3 +209,7 @@ chapitre t'apporte » ou « une action à essayer ») et aux modèles de fiches.
 - Hulleman & Harackiewicz (2009). *Promoting interest and performance in high school science classes.* Science.
 - Ogle (1986). *K-W-L: a teaching model that develops active reading of expository text.* The Reading Teacher.
 - Gollwitzer (1999). *Implementation intentions: strong effects of simple plans.* American Psychologist.
+- Nesbit & Adesope (2006). *Learning with concept and knowledge maps: a meta-analysis.* Review of Educational Research.
+- Fiorella & Mayer (2016). *Eight ways to promote generative learning.* Educational Psychology Review.
+- Karpicke & Blunt (2011). *Retrieval practice produces more learning than elaborative studying with concept mapping.* Science.
+- Blunt & Karpicke (2014). *Learning with retrieval-based concept mapping.* Journal of Educational Psychology.

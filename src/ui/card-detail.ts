@@ -3,7 +3,7 @@ import { errorMessage, logError } from '../core/errors';
 import { cardTemplates } from '../core/goal';
 import { hasMnemonic, hintText, nextFreeNumber } from '../core/mnemonic';
 import { GRADE_LABELS, newSrs, retrievability } from '../core/scheduler';
-import { deleteCard, demoteCard, putCard, type CardRecord, type ReviewRecord } from '../storage/cards';
+import { deleteCard, demoteCard, isSynthesis, putCard, type CardRecord, type ReviewRecord } from '../storage/cards';
 import { loadGoal } from '../storage/method';
 import { loadMojorTable } from '../storage/settings';
 import { editCard } from './card-editor';
@@ -130,7 +130,7 @@ export function cardDetailSheet(initial: CardRecord, ctx: CardDetailContext): Sh
         : h('h2', { className: 'review-question', 'data-testid': 'detail-question' }, card.question),
       card.kind === 'qa' ? h('div', { className: 'review-block review-block-answer', 'data-testid': 'detail-answer' }, h('span', { className: 'field-label' }, 'Réponse'), h('div', { className: 'review-answer' }, card.answer)) : null,
       card.kind === 'sequence' ? h('div', { className: 'review-block review-block-answer', 'data-testid': 'detail-answer' }, h('span', { className: 'field-label' }, 'Étapes'), h('ol', { className: 'review-answer' }, ...card.steps.map((s) => h('li', {}, s)))) : null,
-      card.origin === 'guide' || !card.anchor.quote ? null : h('blockquote', { className: 'passage', 'data-testid': 'detail-passage' }, card.anchor.quote),
+      isSynthesis(card) || !card.anchor.quote ? null : h('blockquote', { className: 'passage', 'data-testid': 'detail-passage' }, card.anchor.quote),
       hasMnemonic(card.mnemonic) ? h('p', { className: 'review-hint' }, hintText(card.mnemonic)) : null,
       history(),
       h('div', { className: 'detail-actions' },
@@ -144,7 +144,7 @@ export function cardDetailSheet(initial: CardRecord, ctx: CardDetailContext): Sh
         h('button', {
           type: 'button', className: 'btn', 'data-testid': 'card-goto', disabled: !ctx.bookExists,
           onclick: () => { sheet.close(); ctx.navigate({ name: 'reader', bookId: card.bookId, cardId: card.id }); },
-        }, icon('toc'), 'Aller au passage'),
+        }, icon('toc'), card.origin === 'bilan' ? 'Voir le bilan' : isSynthesis(card) ? 'Aller au chapitre' : 'Aller au passage'),
         reviewable
           ? h('button', {
               type: 'button', className: 'btn', 'data-testid': 'card-pause',

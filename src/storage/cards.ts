@@ -8,6 +8,27 @@ import { promisify, tx } from './db';
  * - `sequence` : étapes à rappeler dans l'ordre.
  */
 export type CardKind = 'highlight' | 'qa' | 'sequence';
+export type CardOrigin = 'v5' | 'guide' | 'ideas' | 'link' | 'bilan';
+
+/** Fiche de synthèse (question directrice, idées, lien, bilan) : elle ne renvoie pas à un passage. */
+export function isSynthesis(card: Pick<CardRecord, 'origin'>): boolean {
+  return card.origin === 'guide' || card.origin === 'ideas' || card.origin === 'link' || card.origin === 'bilan';
+}
+
+/** Étiquette du type de fiche, affichée en révision et dans les listes. */
+export function originLabel(card: Pick<CardRecord, 'origin' | 'kind'>): string {
+  if (card.origin === 'guide') return 'Question directrice';
+  if (card.origin === 'ideas') return 'Idées centrales';
+  if (card.origin === 'link') return 'Lien entre idées';
+  if (card.origin === 'bilan') return 'Bilan du livre';
+  return card.kind === 'sequence' ? 'Étapes' : 'Question';
+}
+
+/** Où se situe la fiche : son chapitre, ou tout le livre pour une fiche du bilan. */
+export function cardPlace(card: Pick<CardRecord, 'origin' | 'chapter'>, chapterLabel: string | undefined): string {
+  if (card.origin === 'bilan') return 'Tout le livre';
+  return chapterLabel ?? `Chapitre ${card.chapter + 1}`;
+}
 
 export interface CardRecord {
   schemaVersion: 1;
@@ -26,10 +47,12 @@ export interface CardRecord {
   /** Aide-mémoire (table Mojor, palais mental), repris de la V5 ou créé à l'étape 5. */
   mnemonic?: Mnemonic;
   /**
-   * `v5` : fiche reprise de la V5 (question générée, à personnaliser) ;
-   * `guide` : fiche née de la question directrice d'un chapitre (ancrée au début du chapitre, sans surlignage).
+   * `v5` : fiche reprise de la V5 (question générée, à personnaliser). Les autres sont des fiches
+   * de synthèse, sans passage (ancrées au début de leur chapitre, jamais surlignées) :
+   * `guide` question directrice, `ideas` idées centrales, `link` lien entre deux idées,
+   * `bilan` bilan du livre.
    */
-  origin?: 'v5' | 'guide';
+  origin?: CardOrigin;
   /** Fiche mise en pause : elle ne revient plus en révision, sans rien perdre. */
   suspended?: boolean;
 }

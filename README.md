@@ -23,6 +23,7 @@ Application Android via Capacitor.
 - [x] Ambiance musicale 1 (6.4) : une ambiance par livre parmi 16 traditions, import de ses propres morceaux, fondus et enchaînements, volume, baisse pendant la voix, arrêt écran éteint, recherche dans Spotify / YouTube Music / Deezer
 - [x] Questions 1 (6.5) : « Mon objectif pour ce livre » (de quoi il parle, pourquoi le lire, savoir / savoir-faire / compétence / plaisir, « je serai capable de… », ce que je sais déjà, chapitres utiles), rappelé dans l'aperçu, la restitution, les modèles de fiches, le sommaire et « Continuer la lecture »
 - [x] Fiches 1 (6.6) : « Mes fiches », toutes les fiches sans ouvrir de livre (recherche, filtres livre / type / état, tris), détail avec historique et mémorisation estimée, et actions : modifier, réviser maintenant, aller au passage (puis revenir à sa lecture), mettre en pause, recommencer à zéro, supprimer
+- [x] Questions 2 et 3 (6.7) : idées centrales du chapitre et liens entre elles (8 relations), construits livre fermé et repris en fiches ; bilan de fin de livre (de quoi il parle vraiment, comparé à l'hypothèse de départ ; idées et liens du livre ; objectif atteint ; et maintenant) ; carte des idées du livre, partageable en texte
 - [x] Étape 6 — Application Android (Capacitor) : partage, synthèse vocale, rappel quotidien, ouverture d'EPUB, bouton retour ; APK construit par la CI
 
 ## Développement

@@ -31,15 +31,18 @@ export async function saveFile(blob: Blob, fileName: string): Promise<void> {
   window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
-/** Partage un texte : menu de partage d'Android, Web Share si disponible, sinon copie. */
-export async function shareText(text: string): Promise<void> {
+/**
+ * Partage un texte : menu de partage d'Android, Web Share si disponible, sinon copie
+ * (« copied » : l'appelant le signale, rien ne s'est ouvert).
+ */
+export async function shareText(text: string, dialogTitle = 'Partager ce passage'): Promise<'shared' | 'copied'> {
   if (isNative()) {
     try {
-      await Share.share({ text, dialogTitle: 'Partager ce passage' });
+      await Share.share({ text, dialogTitle });
     } catch (err) {
       if (!/cancel/i.test(String((err as Error)?.message ?? err))) throw err;
     }
-    return;
+    return 'shared';
   }
   if (navigator.share) {
     try {
@@ -47,9 +50,10 @@ export async function shareText(text: string): Promise<void> {
     } catch (err) {
       if ((err as Error)?.name !== 'AbortError') throw err;
     }
-    return;
+    return 'shared';
   }
   await navigator.clipboard.writeText(text);
+  return 'copied';
 }
 
 /** Copie un texte : presse-papiers d'Android (fiable dans l'app), sinon celui du navigateur. */

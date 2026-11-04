@@ -2,13 +2,16 @@ import { openBook, type OpenedBook } from '../book/service';
 import { errorMessage, logError } from '../core/errors';
 import { anchorFromOffsets, anchorFromRange, locate, locateLoose, unwrap, wrapRange, type TextAnchor } from '../reader/anchor';
 import { htmlToText, type SearchHit } from '../reader/search';
-import { deleteCard, demoteCard, listAllCards, listCards, newCard, putCard, type CardRecord } from '../storage/cards';
+import { deleteCard, demoteCard, isSynthesis, listAllCards, listCards, newCard, putCard, type CardRecord } from '../storage/cards';
 import { editCard, type CardEditorOptions } from './card-editor';
 import { nextFreeNumber } from '../core/mnemonic';
 import { getProgress, percentRead, saveProgress, touchBook } from '../storage/library';
-import { loadBookmarks, loadFocus, loadGoal, loadGuides, saveBookmarks, saveFocus, saveGoal, saveGuide, type Bookmark, type ChapterGuide } from '../storage/method';
+import { loadBilan, loadBookmarks, loadFocus, loadGoal, loadGuides, saveBilan, saveBookmarks, saveFocus, saveGoal, saveGuide, type BookBilan, type Bookmark, type ChapterGuide } from '../storage/method';
 import { applyPrompt, cardTemplates, goalSummary, type BookGoal } from '../core/goal';
+import { ideaPool, ideasAnswer, ideasQuestion, linkAnswer, linkQuestion, linkSentence, sameLink, shortIdea, type IdeaLink } from '../core/ideas';
 import { goalSheet } from './goal-sheet';
+import { bilanSheet } from './bilan-sheet';
+import { ideaMapSheet } from './idea-map';
 import { newSrs } from '../core/scheduler';
 import { applyReaderSettings, loadMojorTable, loadReaderSettings, saveReaderSettings, AUTO_SPEED_RANGE, BRIGHTNESS_RANGE, type ReaderSettings } from '../storage/settings';
 import { Pager } from '../reader/pager';
@@ -52,6 +55,7 @@ export function readerScreen(bookId: string, navigate: Navigate, focusCardId?: s
   let bookmarks: Bookmark[] = [];
   let goal: BookGoal | null = null;
   let goalDismissed = false;
+  let bilan: BookBilan | null = null;
   const orphans = new Set<string>();
   const resourceUrls = new Map<string, string>();
   const sheets: Sheet[] = [];
@@ -203,7 +207,7 @@ export function readerScreen(bookId: string, navigate: Navigate, focusCardId?: s
   function paintHighlights(): void {
     unwrap(content, 'mark.hl');
     const text = content.textContent ?? '';
-    for (const card of cards.filter((c) => c.chapter === current && c.origin !== 'guide')) {
+    for (const card of cards.filter((c) => c.chapter === current && !isSynthesis(c))) {
       const found = locate(text, card.anchor);
       if (!found) {
         orphans.add(card.id);
@@ -284,6 +288,15 @@ export function readerScreen(bookId: string, navigate: Navigate, focusCardId?: s
       h('p', {}, h('strong', {}, 'Fin du chapitre.'), ' Ferme le livre un instant : restitue de mémoire ce que tu viens de lire.'),
       guide?.question ? h('p', { className: 'guide-reminder', 'data-testid': 'end-question' }, 'Ta question : ', h('em', {}, guide.question)) : null,
       guide?.apply ? h('p', { className: 'guide-reminder', 'data-testid': 'end-apply' }, `${applyPrompt(goal?.kind)?.label ?? 'Pour ton objectif'} : `, h('em', {}, guide.apply)) : null,
+      guide && ideaPool(guide.main ?? '', guide.ideas ?? []).length >= 2
+        ? h('div', { className: 'deepen', 'data-testid': 'end-ideas' },
+            h('span', { className: 'field-label' }, 'Tes idées centrales'),
+            h('ul', {}, ...ideaPool(guide.main ?? '', guide.ideas ?? []).slice(0, 5).map((i) => h('li', {}, h('span', {}, shortIdea(i, 120))))),
+            guide.links?.length
+              ? h('ul', { className: 'end-links', 'data-testid': 'end-links' }, ...guide.links.slice(0, 4).map((l) => h('li', {}, h('span', {}, linkSentence({ ...l, from: shortIdea(l.from, 50), to: shortIdea(l.to, 50) })))))
+              : null,
+          )
+        : null,
       previous ? h('p', { className: 'hint' }, `Dernier rappel : ${previous.found} / ${previous.total} idées retrouvées, le ${new Date(previous.at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })}.`) : null,
       hard.length
         ? h('div', { className: 'deepen', 'data-testid': 'deepen' },
@@ -299,7 +312,87 @@ export function readerScreen(bookId: string, navigate: Navigate, focusCardId?: s
           : null,
         h('button', { type: 'button', className: 'btn btn-primary', 'data-testid': 'start-recall', onclick: () => void runRecall(index) }, icon('timer'), 'Restituer le chapitre'),
       ),
+      isLastChapter(index)
+        ? h('div', { className: 'end-bilan', 'data-testid': 'end-bilan' },
+            h('p', {}, h('strong', {}, 'Fin du livre.'), bilan
+              ? ` Bilan fait le ${new Date(bilan.at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })} : retrouve-le avec toutes tes idées sur la carte.`
+              : ' Après ce chapitre, fais le bilan : de quoi parle vraiment ce livre, ses idées centrales, ce que tu vas en faire.'),
+            h('div', { className: 'chapter-box-actions' },
+              h('button', { type: 'button', className: 'btn', 'data-testid': 'end-map', onclick: () => openMap() }, 'Carte des idées'),
+              // Bouton principal une fois le dernier chapitre restitué : une étape à la fois.
+              h('button', { type: 'button', className: `btn${!bilan && guide?.restitutedAt ? ' btn-primary' : ''}`, 'data-testid': 'start-bilan', onclick: () => void runBilan() }, bilan ? 'Revoir mon bilan' : 'Faire le bilan'),
+            ),
+          )
+        : null,
     );
+  }
+
+  /** Dernier chapitre du livre, ou dernier des chapitres choisis pour l'objectif. */
+  function isLastChapter(index: number): boolean {
+    const count = opened?.chapters.length ?? 0;
+    return index === count - 1 || (focus.length > 0 && index === Math.max(...focus));
+  }
+
+  /** Bilan de fin de livre : enregistré avec ses fiches (rattachées à tout le livre). */
+  async function runBilan(): Promise<void> {
+    if (!opened) return;
+    const title = opened.book.title;
+    const result = await bilanSheet({ bookTitle: title, goal, bilan, chapters: opened.chapters.map((c, i) => ({ label: c.label, guide: guides[i] })) });
+    if (!result) return;
+    try {
+      let saved = result.bilan;
+      let created = 0;
+      const known = (id?: string) => !!id && cards.some((c) => c.id === id);
+      if (result.makeAboutCard && saved.about) {
+        if (!known(saved.aboutCardId)) created++;
+        const card = synthesisCard(0, 'bilan', `De quoi parle « ${title} » ?`, saved.about, saved.aboutCardId);
+        await saveSynthesis(card);
+        saved = { ...saved, aboutCardId: card.id };
+      }
+      if (result.makeIdeasCard && saved.ideas.length >= 2) {
+        if (!known(saved.ideasCardId)) created++;
+        const card = synthesisCard(0, 'bilan', ideasQuestion(title), ideasAnswer(saved.ideas), saved.ideasCardId);
+        await saveSynthesis(card);
+        saved = { ...saved, ideasCardId: card.id };
+      }
+      if (result.makeLinkCards) {
+        const links: IdeaLink[] = [];
+        for (const link of saved.links) {
+          if (known(link.cardId)) {
+            links.push(link);
+            continue;
+          }
+          const card = synthesisCard(0, 'bilan', linkQuestion(link), linkAnswer(link));
+          await saveSynthesis(card);
+          created++;
+          links.push({ ...link, cardId: card.id });
+        }
+        saved = { ...saved, links };
+      }
+      await saveBilan(bookId, saved);
+      bilan = saved;
+      toast(created ? `Bilan enregistré : ${created} fiche${created > 1 ? 's' : ''} créée${created > 1 ? 's' : ''}.` : 'Bilan enregistré.');
+      void renderChapterExtras(current);
+      toc.refresh();
+    } catch (err) {
+      logError('bilan', err);
+      toast(`Bilan non enregistré : ${errorMessage(err)}`, 'error');
+    }
+  }
+
+  /** Carte des idées du livre ; le bilan lancé depuis la carte y ramène une fois fermé. */
+  function openMap(): void {
+    if (!opened) return;
+    ideaMapSheet({
+      bookTitle: opened.book.title,
+      goal,
+      bilan,
+      chapters: opened.chapters,
+      guides,
+      focus,
+      onChapter: (i) => go(i),
+      onBilan: () => void runBilan().then(() => openMap()),
+    }).open();
   }
 
   /**
@@ -418,15 +511,24 @@ export function readerScreen(bookId: string, navigate: Navigate, focusCardId?: s
     if (completed) await markPretest(bookId, index).catch((err: unknown) => logError('pré-questions', err));
   }
 
-  /** Fiche « question directrice → idée principale », ancrée au début du chapitre (sans surlignage). */
-  function guideCard(index: number, guide: ChapterGuide, main: string): CardRecord {
-    const existing = guide.cardId ? cards.find((c) => c.id === guide.cardId) : undefined;
-    if (existing) return { ...existing, question: guide.question, answer: main, updatedAt: Date.now() };
+  /**
+   * Fiche de synthèse d'un chapitre (question directrice, idées centrales, lien), ancrée au début
+   * du chapitre sans surlignage. Une fiche existante est mise à jour plutôt que recréée.
+   */
+  function synthesisCard(index: number, origin: 'guide' | 'ideas' | 'link' | 'bilan', question: string, answer: string, existingId?: string): CardRecord {
+    const existing = existingId ? cards.find((c) => c.id === existingId) : undefined;
+    if (existing) return { ...existing, question, answer, updatedAt: Date.now() };
     const text = chapterTexts()[index] ?? '';
     const lead = text.trimStart();
     const start = text.length - lead.length;
     const end = Math.min(text.length, start + Math.max(1, Math.min(160, lead.length)));
-    return { ...newCard(bookId, index, anchorFromOffsets(text, start, end)), kind: 'qa', question: guide.question, answer: main, srs: newSrs(), origin: 'guide' };
+    return { ...newCard(bookId, index, anchorFromOffsets(text, start, end)), kind: 'qa', question, answer, srs: newSrs(), origin };
+  }
+
+  async function saveSynthesis(card: CardRecord): Promise<void> {
+    await putCard(card);
+    cards = [...cards.filter((c) => c.id !== card.id), card];
+    sortCards();
   }
 
   async function runRecall(index: number): Promise<void> {
@@ -445,13 +547,37 @@ export function readerScreen(bookId: string, navigate: Navigate, focusCardId?: s
         ...(before ?? { question: '', questionAt: 0 }),
         answered: result.answered, main: result.main, args: result.text, explain: result.explain,
         restitutedAt: Date.now(), gaps: result.gaps, ...(result.apply ? { apply: result.apply } : {}),
+        ideas: result.ideas,
+        // Les liens déjà connus gardent leur fiche ; les nouveaux s'ajoutent.
+        links: result.links.map((l) => {
+          const known = (before?.links ?? []).find((old) => sameLink(old, l));
+          return known?.cardId ? { ...l, cardId: known.cardId } : l;
+        }),
       };
       if (result.makeGuideCard && guide.question && result.main) {
-        const card = guideCard(index, guide, result.main);
-        await putCard(card);
-        cards = [...cards.filter((c) => c.id !== card.id), card];
-        sortCards();
+        const card = synthesisCard(index, 'guide', guide.question, result.main, guide.cardId);
+        await saveSynthesis(card);
         guide = { ...guide, cardId: card.id };
+      }
+      const chapterLabel = opened?.chapters[index]?.label ?? `Chapitre ${index + 1}`;
+      const pool = ideaPool(result.main, result.ideas);
+      if (result.makeIdeasCard && pool.length >= 2) {
+        const card = synthesisCard(index, 'ideas', ideasQuestion(chapterLabel), ideasAnswer(pool), guide.ideasCardId);
+        await saveSynthesis(card);
+        guide = { ...guide, ideasCardId: card.id };
+      }
+      if (result.makeLinkCards) {
+        const links: IdeaLink[] = [];
+        for (const link of guide.links ?? []) {
+          if (link.cardId && cards.some((c) => c.id === link.cardId)) {
+            links.push(link);
+            continue;
+          }
+          const card = synthesisCard(index, 'link', linkQuestion(link), linkAnswer(link));
+          await saveSynthesis(card);
+          links.push({ ...link, cardId: card.id });
+        }
+        guide = { ...guide, links };
       }
       // Fiches existantes jugées « mal comprises » : elles remontent en tête des révisions.
       const now = Date.now();
@@ -576,7 +702,7 @@ export function readerScreen(bookId: string, navigate: Navigate, focusCardId?: s
     if (!taken || !opened) return;
     const text = `« ${taken.anchor.quote} »\n— ${opened.book.title}${opened.book.author ? `, ${opened.book.author}` : ''}`;
     try {
-      await shareText(text);
+      if ((await shareText(text)) === 'copied') toast('Passage copié.');
     } catch (err) {
       logError('partage', err);
       toast('Partage impossible sur cet appareil.', 'error');
@@ -620,7 +746,7 @@ export function readerScreen(bookId: string, navigate: Navigate, focusCardId?: s
     // Les marques existantes ne changent pas le texte : les positions restent exactes.
     const anchor = takeSelection()?.anchor;
     if (!anchor) return;
-    const overlapping = cards.find((c) => c.chapter === current && c.origin !== 'guide' && !orphans.has(c.id) && c.anchor.start < anchor.end && anchor.start < c.anchor.end);
+    const overlapping = cards.find((c) => c.chapter === current && !isSynthesis(c) && !orphans.has(c.id) && c.anchor.start < anchor.end && anchor.start < c.anchor.end);
     if (overlapping) {
       toast('Ce passage chevauche un surlignage existant.');
       return;
@@ -710,8 +836,13 @@ export function readerScreen(bookId: string, navigate: Navigate, focusCardId?: s
     orphans: () => orphans,
     onChapter: (i) => go(i),
     onCard: (card) => {
-      // Fiche de question directrice : elle concerne tout le chapitre, on l'ouvre à son début.
-      if (card.origin === 'guide') {
+      // Fiche du bilan : elle concerne tout le livre, la carte la montre avec les autres idées.
+      if (card.origin === 'bilan') {
+        openMap();
+        return;
+      }
+      // Fiche de synthèse : elle concerne tout le chapitre, on l'ouvre à son début.
+      if (isSynthesis(card)) {
         go(card.chapter);
         return;
       }
@@ -727,6 +858,9 @@ export function readerScreen(bookId: string, navigate: Navigate, focusCardId?: s
     onDeleteCard: (card) => void removeCard(card),
     goal: () => goalSummary(goal),
     onEditGoal: () => void runGoal(),
+    hasBilan: () => !!bilan,
+    onMap: () => openMap(),
+    onBilan: () => void runBilan(),
     focus: () => focus,
     onToggleFocus: (i) => {
       focus = focus.includes(i) ? focus.filter((c) => c !== i) : [...focus, i].sort((a, b) => a - b);
@@ -1223,6 +1357,7 @@ export function readerScreen(bookId: string, navigate: Navigate, focusCardId?: s
       loadBookmarks(bookId).catch(() => []),
     ]);
     goal = await loadGoal(bookId).catch(() => null);
+    bilan = await loadBilan(bookId).catch(() => null);
     settings = await loadReaderSettings();
     pager.setMode(settings.layout);
     void applyReaderNative(settings);
@@ -1234,11 +1369,14 @@ export function readerScreen(bookId: string, navigate: Navigate, focusCardId?: s
     const progress = await getProgress(bookId);
     const start = Math.min(Math.max(0, progress?.chapter ?? 0), opened.chapters.length - 1);
     const focusCard = focusCardId ? cards.find((c) => c.id === focusCardId) : undefined;
-    if (focusCard && focusCard.chapter < opened.chapters.length) {
+    if (focusCard?.origin === 'bilan') {
+      // Fiche du bilan : le livre reste à la page de lecture, la carte des idées s'ouvre.
+      go(start, { offset: progress?.offset ?? 0, after: () => openMap() });
+    } else if (focusCard && focusCard.chapter < opened.chapters.length) {
       // Ouvert depuis une fiche : au passage, avec de quoi revenir à l'endroit de la lecture.
       go(focusCard.chapter, {
         after: () => {
-          const found = focusCard.origin === 'guide' ? null : locate(content.textContent ?? '', focusCard.anchor);
+          const found = isSynthesis(focusCard) ? null : locate(content.textContent ?? '', focusCard.anchor);
           if (found) flash(found.start, found.end);
           if (progress) showReturnBar(progress.chapter, progress.offset);
         },

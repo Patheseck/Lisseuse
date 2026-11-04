@@ -1,7 +1,9 @@
 import { goalSummary, guidingExamples, type BookGoal } from '../core/goal';
+import { ideaPool, linkSentence, splitIdeas, type IdeaLink } from '../core/ideas';
+import { linkBuilder } from './link-builder';
 import { questionWarning } from '../core/question';
 import { surveyChapter, surveyIsEmpty } from '../core/survey';
-import type { CardRecord } from '../storage/cards';
+import { isSynthesis, type CardRecord } from '../storage/cards';
 import type { Answered, GapItem, GapLevel } from '../storage/method';
 import { add, clear, h } from './dom';
 import { createSheet } from './sheet';
@@ -9,8 +11,15 @@ import { createSheet } from './sheet';
 export const RECALL_SECONDS = 180;
 
 export interface RecallResult {
-  /** Arguments et souvenirs en vrac (champ principal du rappel). */
+  /** Idées centrales telles qu'écrites (une par ligne). */
   text: string;
+  /** Idées centrales (hors idée principale), et liens construits entre les idées. */
+  ideas: string[];
+  links: IdeaLink[];
+  /** Créer (ou mettre à jour) la fiche « idées centrales du chapitre ». */
+  makeIdeasCard: boolean;
+  /** Créer une fiche pour chaque nouveau lien. */
+  makeLinkCards: boolean;
   found: number;
   total: number;
   answered?: Answered;
@@ -153,10 +162,10 @@ export function chapterRecall(options: {
     const clock = h('span', { className: 'clock', role: 'timer', 'aria-live': 'off', 'data-testid': 'recall-clock' }, formatClock(remaining));
     const note = h('p', { className: 'hint', 'aria-live': 'polite' });
     const main = h('textarea', { className: 'input textarea', rows: 2, 'data-testid': 'recall-main', placeholder: 'Ce chapitre montre que…' });
-    const text = h('textarea', { className: 'input textarea recall-text', rows: 5, 'data-testid': 'recall-text', placeholder: 'Arguments, exemples, mots-clés, dans le désordre…' });
+    const text = h('textarea', { className: 'input textarea recall-text', rows: 5, 'data-testid': 'recall-text', placeholder: 'Une idée par ligne…' });
     const explain = h('textarea', { className: 'input textarea', rows: 4, 'data-testid': 'recall-explain', placeholder: 'Imagine que tu l’expliques à un ami, simplement…' });
     const apply = h('textarea', { className: 'input textarea', rows: 2, 'data-testid': 'recall-apply', placeholder: options.applyPrompt?.placeholder ?? '' });
-    const finish = h('button', { type: 'button', className: 'btn btn-primary', 'data-testid': 'recall-finish', onclick: () => compare() }, 'J’ai fini');
+    const finish = h('button', { type: 'button', className: 'btn btn-primary', 'data-testid': 'recall-finish', onclick: () => linkIdeas() }, 'J’ai fini');
     add(sheet.body,
       h('p', { className: 'recall-head' }, h('span', {}, `Chapitre : ${options.chapterLabel}`), clock),
       h('p', { className: 'hint' }, 'Livre fermé : écris de mémoire. Chercher, même difficilement, renforce le souvenir bien plus qu’une relecture — et révèle ce qui t’a échappé.'),
@@ -168,7 +177,7 @@ export function chapterRecall(options: {
             radios<Answered>('recall-answered', 'As-tu trouvé la réponse ?', [['yes', 'Oui'], ['partly', 'En partie'], ['no', 'Non']], (v) => (answered = v)))
         : null,
       field('1. L’idée principale, en une phrase', main),
-      field('2. Les arguments qui l’appuient', text),
+      field('2. Les idées centrales, une par ligne', text, '2 à 4 idées qui appuient l’idée principale (arguments, causes, exemples clés), chacune en une phrase courte.'),
       field('3. Explique-le avec tes mots', explain, 'Comme si tu l’enseignais à quelqu’un : là où tu bloques se trouvent tes trous.'),
       options.applyPrompt ? field(`4. ${options.applyPrompt.label}`, apply, options.applyPrompt.hint) : null,
       note,
@@ -184,18 +193,39 @@ export function chapterRecall(options: {
       }
     }, 1000);
 
+    // ---------- Phase 1 bis : relier les idées (de mémoire, toujours) ----------
+    const links: IdeaLink[] = [];
+    function linkIdeas(): void {
+      window.clearInterval(timer);
+      const pool = ideaPool(main.value, splitIdeas(text.value));
+      if (pool.length < 2) return compare();
+      clear(sheet.body);
+      const next = h('button', { type: 'button', className: 'btn btn-primary', 'data-testid': 'links-continue', onclick: () => compare() }, 'Passer cette étape');
+      const builder = linkBuilder({ pool, links, onChange: () => (next.textContent = links.length ? 'Continuer' : 'Passer cette étape') });
+      add(sheet.body,
+        h('p', { className: 'recall-head' }, h('span', {}, `Chapitre : ${options.chapterLabel}`)),
+        h('h3', { className: 'settings-group' }, 'Relier tes idées'),
+        h('p', { className: 'hint' }, 'Toujours de mémoire : comment tes idées s’articulent-elles ? Une cause, une conséquence, une opposition, un exemple… Relier les idées aide à les retenir et à s’en servir.'),
+        builder,
+        h('div', { className: 'sheet-actions' }, next),
+      );
+      builder.querySelector('select')?.focus();
+    }
+
     // ---------- Phase 2 : comparer et trier ----------
     function compare(): void {
       window.clearInterval(timer);
       const written = { main: main.value.trim(), text: text.value.trim(), explain: explain.value.trim(), apply: apply.value.trim() };
+      const ideas = splitIdeas(written.text);
       clear(sheet.body);
-      const yours = [['Idée principale', written.main], ['Arguments', written.text], ['Avec tes mots', written.explain], [options.applyPrompt?.label ?? 'Objectif', written.apply]].filter(([, v]) => v);
+      const yours = [['Idée principale', written.main], ['Idées centrales', ideas.map((i) => `• ${i}`).join('\n')], ['Liens', links.map(linkSentence).join('\n')], ['Avec tes mots', written.explain], [options.applyPrompt?.label ?? 'Objectif', written.apply]].filter(([, v]) => v);
       add(sheet.body,
         h('p', { className: 'hint' }, 'Rouvre le livre et rebalaye le chapitre. Pour chaque idée, sois honnête : l’avais-tu retrouvée ?'),
         yours.length ? h('div', { className: 'review-block' }, h('span', { className: 'field-label' }, 'Ta restitution'), ...yours.map(([k, v]) => h('p', { className: 'review-attempt-text' }, h('strong', {}, `${k} : `), v!))) : null,
       );
-      const items = options.passages.filter((c) => c.origin !== 'guide').length
-        ? options.passages.filter((c) => c.origin !== 'guide').map((c) => ({ label: c.kind === 'highlight' ? c.anchor.quote : c.question, card: c as CardRecord | null }))
+      const passages = options.passages.filter((c) => !isSynthesis(c));
+      const items = passages.length
+        ? passages.map((c) => ({ label: c.kind === 'highlight' ? c.anchor.quote : c.question, card: c as CardRecord | null }))
         : options.headings.map((label) => ({ label, card: null as CardRecord | null }));
       if (!items.length) {
         sheet.body.append(h('p', { className: 'muted' }, 'Ce chapitre n’a encore aucun passage marqué. Relis-le rapidement pour repérer ce que tu avais oublié, et surligne les idées importantes.'));
@@ -221,11 +251,19 @@ export function chapterRecall(options: {
         sheet.body.append(h('label', { className: 'check recall-guide' }, guideBox,
           h('span', {}, options.hasGuideCard ? 'Mettre à jour la fiche de ta question directrice avec cette idée principale' : 'Créer une fiche : ta question directrice → ton idée principale')));
       }
+      const ideasBox = ideaPool(written.main, ideas).length >= 2 ? h('input', { type: 'checkbox', checked: true, 'data-testid': 'recall-ideas-card' }) : null;
+      if (ideasBox) sheet.body.append(h('label', { className: 'check recall-guide' }, ideasBox, h('span', {}, `Créer une fiche : les idées centrales de « ${options.chapterLabel} »`)));
+      const linksBox = links.length ? h('input', { type: 'checkbox', checked: true, 'data-testid': 'recall-link-cards' }) : null;
+      if (linksBox) sheet.body.append(h('label', { className: 'check recall-guide' }, linksBox, h('span', {}, links.length > 1 ? `Créer une fiche pour chacun de tes ${links.length} liens` : 'Créer une fiche pour ton lien')));
       const done = h('button', {
         type: 'button', className: 'btn btn-primary', 'data-testid': 'recall-done',
         onclick: () => {
           result = {
             ...written,
+            ideas,
+            links: [...links],
+            makeIdeasCard: !!ideasBox?.checked,
+            makeLinkCards: !!linksBox?.checked,
             answered,
             found: rows.filter((r) => r.state.level === 'easy').length,
             total: rows.length,
