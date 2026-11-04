@@ -109,6 +109,38 @@ test.describe('Ambiance musicale', () => {
     await expect.poll(() => playing(page)).toBe(1);
   });
 
+  test('la musique reprend là où elle s’était arrêtée : en revenant au livre, et après un redémarrage', async ({ page }) => {
+    await showChrome(page);
+    await page.getByTestId('open-ambiance').click();
+    const sheet = page.getByTestId('ambiance-sheet');
+    await sheet.getByTestId('ambiance-option-kora').click();
+    await sheet.getByTestId('track-input').setInputFiles({ name: 'kora-long.wav', mimeType: 'audio/wav', buffer: wav(40) });
+    await expect(page.getByTestId('open-ambiance')).toHaveAttribute('data-state', 'playing');
+    const position = () => page.evaluate(() => (window as unknown as { __audios: HTMLAudioElement[] }).__audios.find((a) => !a.paused && a.src)?.currentTime ?? -1);
+    await expect.poll(position, { timeout: 10000 }).toBeGreaterThan(4);
+    await page.keyboard.press('Escape');
+
+    // Quitter le livre, puis y revenir : reprise vers la même seconde, pas au début.
+    await page.getByTestId('back').click();
+    await expect.poll(() => playing(page), { timeout: 4000 }).toBe(0);
+    await page.getByTestId('continue-reading').click();
+    await expect(page.getByTestId('open-ambiance')).toHaveAttribute('data-state', 'playing');
+    // Délai court : repartie du début, la musique ne pourrait pas atteindre ce point à temps.
+    await expect.poll(position, { timeout: 2000 }).toBeGreaterThan(3.5);
+
+    // Redémarrage de l'app (Android peut la fermer en arrière-plan) : la position est gardée.
+    await expect.poll(position, { timeout: 10000 }).toBeGreaterThan(7);
+    await page.evaluate(() => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await page.waitForTimeout(300);
+    await page.reload();
+    await page.getByTestId('continue-reading').click();
+    await expect(page.getByTestId('open-ambiance')).toHaveAttribute('data-state', 'playing');
+    await expect.poll(position, { timeout: 2000 }).toBeGreaterThan(6.5);
+  });
+
   test('« Silence » arrête la musique pour ce livre ; un fichier non audio est refusé', async ({ page }) => {
     await showChrome(page);
     await page.getByTestId('open-ambiance').click();

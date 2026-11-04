@@ -1,4 +1,4 @@
-import { AUDIO_EXTENSIONS, DEFAULT_VOLUME } from '../core/ambiances';
+import { AUDIO_EXTENSIONS, DEFAULT_VOLUME, type ResumePoint } from '../core/ambiances';
 import { promisify, tx } from './db';
 import { getSetting, putSetting } from './settings';
 
@@ -22,6 +22,7 @@ export interface AmbiancePrefs {
 }
 
 export const ambianceKey = (bookId: string) => `ambiance:${bookId}`;
+const RESUME_KEY = 'ambiance-resume';
 
 export function isAudioFile(file: Pick<File, 'name' | 'type'>): boolean {
   return file.type.startsWith('audio/') || AUDIO_EXTENSIONS.test(file.name);
@@ -71,6 +72,21 @@ export async function loadAmbiancePrefs(): Promise<AmbiancePrefs> {
 
 export async function saveAmbiancePrefs(prefs: AmbiancePrefs): Promise<void> {
   await putSetting('ambiance', prefs);
+}
+
+/** Points de reprise de chaque ambiance (morceau et seconde où elle s'est arrêtée). */
+export async function loadResumePoints(): Promise<Record<string, ResumePoint>> {
+  const value = await getSetting(RESUME_KEY);
+  if (!value || typeof value !== 'object') return {};
+  const out: Record<string, ResumePoint> = {};
+  for (const [id, p] of Object.entries(value as Record<string, Partial<ResumePoint>>)) {
+    if (p && typeof p.trackId === 'string' && typeof p.time === 'number' && Number.isFinite(p.time)) out[id] = { trackId: p.trackId, time: p.time, at: typeof p.at === 'number' ? p.at : 0 };
+  }
+  return out;
+}
+
+export async function saveResumePoints(points: Record<string, ResumePoint>): Promise<void> {
+  await putSetting(RESUME_KEY, points);
 }
 
 /** Ambiance choisie pour un livre (null : silence). */

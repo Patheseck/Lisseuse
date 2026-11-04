@@ -69,6 +69,25 @@ export function shuffled<T>(items: readonly T[], random: () => number = Math.ran
   return out;
 }
 
+/** Où une ambiance s'était arrêtée : le morceau et la seconde. */
+export interface ResumePoint {
+  trackId: string;
+  time: number;
+  at: number;
+}
+
+/**
+ * Ordre de lecture à la reprise : le morceau interrompu d'abord, à sa position, puis les autres
+ * mélangés. Sans point de reprise (ou si le morceau a été retiré), un ordre mélangé depuis le début.
+ */
+export function resumeOrder<T extends { id: string }>(tracks: readonly T[], point: Pick<ResumePoint, 'trackId' | 'time'> | null | undefined, random: () => number = Math.random): { queue: T[]; offset: number } {
+  const queue = shuffled(tracks, random);
+  const i = point ? queue.findIndex((t) => t.id === point.trackId) : -1;
+  if (i < 0) return { queue, offset: 0 };
+  const [track] = queue.splice(i, 1);
+  return { queue: [track!, ...queue], offset: Number.isFinite(point!.time) ? Math.max(0, point!.time) : 0 };
+}
+
 /** Durée du fondu entre deux morceaux, raccourcie pour les morceaux très courts. */
 export function crossfadeFor(duration: number, preferred = 4): number {
   if (!Number.isFinite(duration) || duration <= 0) return preferred;

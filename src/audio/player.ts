@@ -1,10 +1,11 @@
-import { crossfadeFor, DEFAULT_VOLUME, DUCK_FACTOR, effectiveVolume, shuffled } from '../core/ambiances';
+import { crossfadeFor, DEFAULT_VOLUME, DUCK_FACTOR, effectiveVolume, resumeOrder, shuffled, type ResumePoint } from '../core/ambiances';
 import { logError } from '../core/errors';
-import { listTracks, type AudioTrack } from '../storage/audio';
+import { listTracks, loadResumePoints, saveResumePoints, type AudioTrack } from '../storage/audio';
 
 // Lecteur des ambiances : deux pistes qui se relaient pour enchaîner les morceaux en fondu,
 // dans un ordre mélangé, en boucle. La musique s'arrête quand l'écran s'éteint ou que l'app
-// passe en arrière-plan, et reprend au retour.
+// passe en arrière-plan, et reprend au retour. Chaque ambiance retient où elle s'est arrêtée
+// (morceau et seconde) : en revenant au livre, même après un redémarrage de l'app, elle reprend là.
 
 export type PlayerState = 'stopped' | 'playing' | 'paused';
 
@@ -12,10 +13,13 @@ const FADE_IN_MS = 2500;
 const FADE_OUT_MS = 1200;
 const DUCK_MS = 400;
 const TICK_MS = 50;
+/** Fréquence d'enregistrement de la position pendant la lecture. */
+const REMEMBER_MS = 5000;
 
 interface Deck {
   el: HTMLAudioElement;
   url: string | null;
+  track: AudioTrack | null;
   /** Gain du fondu (0 à 1) et sa cible ; `step` : variation par milliseconde. */
   fade: number;
   target: number;
@@ -37,6 +41,8 @@ export class AmbiancePlayer {
   private failures = 0;
   private timer: number | undefined;
   private lastTick = 0;
+  private resumePoints: Record<string, ResumePoint> | null = null;
+  private lastRemembered = 0;
   private readonly listeners = new Set<() => void>();
   /** Message de la dernière erreur de lecture (fichiers illisibles), pour l'interface. */
   lastError: string | null = null;
@@ -70,13 +76,15 @@ export class AmbiancePlayer {
       this.stop();
       return false;
     }
+    this.resumePoints ??= await loadResumePoints().catch(() => ({}));
+    const { queue, offset } = resumeOrder(tracks, this.resumePoints[ambianceId]);
     this.ambianceId = ambianceId;
-    this.queue = shuffled(tracks);
+    this.queue = queue;
     this.position = 0;
     this.failures = 0;
     this.lastError = null;
     this.state = 'playing';
-    this.start(this.queue[0]!, FADE_IN_MS);
+    this.start(this.queue[0]!, FADE_IN_MS, offset);
     this.emit();
     return true;
   }
@@ -99,6 +107,7 @@ export class AmbiancePlayer {
   /** Arrête en fondu et oublie l'ambiance en cours. */
   stop(fadeMs = FADE_OUT_MS): void {
     if (this.state === 'stopped' && !this.ambianceId) return;
+    this.remember();
     this.state = 'stopped';
     this.ambianceId = null;
     this.pausedByVisibility = false;
@@ -109,6 +118,7 @@ export class AmbiancePlayer {
   /** Pause choisie (bouton) : l'ambiance reste celle du livre. */
   pause(): void {
     if (this.state !== 'playing') return;
+    this.remember();
     this.state = 'paused';
     for (const deck of this.decks) this.fadeTo(deck, 0, 500);
     this.emit();
@@ -139,9 +149,10 @@ export class AmbiancePlayer {
   private makeDeck(index: 0 | 1): Deck {
     const el = new Audio();
     el.preload = 'auto';
-    const deck: Deck = { el, url: null, fade: 0, target: 0, step: 0 };
+    const deck: Deck = { el, url: null, track: null, fade: 0, target: 0, step: 0 };
     el.addEventListener('timeupdate', () => {
       if (index !== this.active || this.state !== 'playing' || this.crossfading) return;
+      if (performance.now() - this.lastRemembered > REMEMBER_MS) this.remember();
       const fade = crossfadeFor(el.duration);
       if (Number.isFinite(el.duration) && el.duration - el.currentTime <= fade) {
         this.crossfading = true;
@@ -158,13 +169,23 @@ export class AmbiancePlayer {
     return deck;
   }
 
-  private start(track: AudioTrack, fadeMs: number): void {
+  /** Lance un morceau sur la piste libre, à partir de `offset` secondes, en fondu. */
+  private start(track: AudioTrack, fadeMs: number, offset = 0): void {
     const previous = this.decks[this.active];
     const idle: 0 | 1 = this.active === 0 ? 1 : 0;
     const deck = this.decks[idle];
     this.release(deck);
     deck.url = URL.createObjectURL(track.blob);
+    deck.track = track;
     deck.el.src = deck.url;
+    if (offset > 0) {
+      // Avant le chargement, la position demandée devient la position de départ ; on la
+      // réapplique une fois la durée connue (au-delà de la fin, le morceau suivant enchaîne).
+      deck.el.currentTime = offset;
+      deck.el.addEventListener('loadedmetadata', () => {
+        if (deck.track === track && Math.abs(deck.el.currentTime - offset) > 1) deck.el.currentTime = Math.min(offset, Math.max(0, deck.el.duration - 0.5));
+      }, { once: true });
+    }
     deck.fade = 0;
     this.applyVolume(deck);
     void deck.el.play().catch((err: unknown) => this.onDeckError(deck, err));
@@ -207,6 +228,7 @@ export class AmbiancePlayer {
     deck.el.load();
     if (deck.url) URL.revokeObjectURL(deck.url);
     deck.url = null;
+    deck.track = null;
     deck.fade = 0;
     deck.target = 0;
   }
@@ -269,9 +291,19 @@ export class AmbiancePlayer {
 
   // ---------- Écran éteint, autre app ----------
 
+  /** Enregistre où en est l'ambiance (Android peut fermer l'app pendant qu'elle est cachée). */
+  private remember(): void {
+    const deck = this.decks[this.active];
+    if (!this.ambianceId || !deck.track || !Number.isFinite(deck.el.currentTime)) return;
+    this.lastRemembered = performance.now();
+    this.resumePoints = { ...(this.resumePoints ?? {}), [this.ambianceId]: { trackId: deck.track.id, time: deck.el.currentTime, at: Date.now() } };
+    saveResumePoints(this.resumePoints).catch((err: unknown) => logError('ambiance', err));
+  }
+
   private onVisibility(): void {
     if (document.visibilityState === 'hidden') {
       if (this.state !== 'playing') return;
+      this.remember();
       this.pausedByVisibility = true;
       for (const deck of this.decks) deck.el.pause();
       return;

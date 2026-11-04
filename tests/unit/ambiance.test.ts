@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { AMBIANCE_GROUPS, AMBIANCES, crossfadeFor, DUCK_FACTOR, effectiveVolume, findAmbiance, MUSIC_APPS, shuffled } from '../../src/core/ambiances';
-import { addTracks, countTracks, deleteTrack, getBookAmbiance, isAudioFile, listTracks, loadAmbiancePrefs, saveAmbiancePrefs, setBookAmbiance } from '../../src/storage/audio';
+import { AMBIANCE_GROUPS, AMBIANCES, crossfadeFor, DUCK_FACTOR, effectiveVolume, findAmbiance, MUSIC_APPS, resumeOrder, shuffled } from '../../src/core/ambiances';
+import { addTracks, countTracks, deleteTrack, getBookAmbiance, isAudioFile, listTracks, loadAmbiancePrefs, loadResumePoints, saveAmbiancePrefs, saveResumePoints, setBookAmbiance } from '../../src/storage/audio';
 import { closeDb, DB_NAME, openDb, promisify, tx } from '../../src/storage/db';
 import { deleteBook, saveBook } from '../../src/storage/library';
 
@@ -36,6 +36,18 @@ describe('catalogue des ambiances', () => {
     expect(crossfadeFor(Number.NaN)).toBe(4);
   });
 
+  it('reprend le morceau interrompu à sa position, puis les autres', () => {
+    const tracks = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+    const resumed = resumeOrder(tracks, { trackId: 'b', time: 42.5 });
+    expect(resumed.queue[0]!.id).toBe('b');
+    expect(resumed.offset).toBe(42.5);
+    expect(resumed.queue.map((t) => t.id).sort()).toEqual(['a', 'b', 'c']);
+    // Morceau retiré entre-temps, ou aucune reprise : depuis le début.
+    expect(resumeOrder(tracks, { trackId: 'z', time: 10 }).offset).toBe(0);
+    expect(resumeOrder(tracks, null).offset).toBe(0);
+    expect(resumeOrder(tracks, { trackId: 'a', time: Number.NaN }).offset).toBe(0);
+  });
+
   it('reconnaît les fichiers audio', () => {
     expect(isAudioFile({ name: 'kora.mp3', type: '' })).toBe(true);
     expect(isAudioFile({ name: 'piste', type: 'audio/ogg' })).toBe(true);
@@ -55,6 +67,14 @@ describe('morceaux et choix par livre', () => {
     expect((await listTracks('kora'))[0]!.blob).toBeInstanceOf(Blob);
     await deleteTrack(a!.id);
     expect((await listTracks('kora')).map((t) => t.id)).toEqual([b!.id]);
+  });
+
+  it('enregistre les points de reprise et ignore les valeurs invalides', async () => {
+    expect(await loadResumePoints()).toEqual({});
+    await saveResumePoints({ kora: { trackId: 't1', time: 63.2, at: 5 } });
+    expect(await loadResumePoints()).toEqual({ kora: { trackId: 't1', time: 63.2, at: 5 } });
+    await saveResumePoints({ oud: { trackId: 7 as unknown as string, time: 1, at: 1 }, santour: { trackId: 's', time: 'x' as unknown as number, at: 1 } });
+    expect(await loadResumePoints()).toEqual({});
   });
 
   it('mémorise le volume et l’ambiance de chaque livre, effacée avec le livre', async () => {
