@@ -17,6 +17,7 @@ import './styles/sheet.css';
 import './styles/review.css';
 import './styles/stats.css';
 import './styles/cards.css';
+import './styles/pdf.css';
 
 import { logError } from './core/errors';
 import { applyReaderSettings, loadReaderSettings } from './storage/settings';
@@ -30,7 +31,7 @@ import { watchSystemBars } from './native/system-bars';
 import { importAndOpen } from './ui/import-flow';
 import { toast, withBusy } from './ui/feedback';
 import { libraryScreen } from './ui/library';
-import { readerScreen } from './ui/reader';
+import { bookScreen } from './ui/book-screen';
 import { reviewScreen } from './ui/review';
 import { statsScreen } from './ui/stats';
 import { cardsScreen } from './ui/cards';
@@ -53,7 +54,7 @@ let screen: Screen | null = null;
 function navigate(route: Route): void {
   screen?.destroy();
   screen =
-    route.name === 'reader' ? readerScreen(route.bookId, navigate, route.cardId)
+    route.name === 'reader' ? bookScreen(route.bookId, navigate, route.cardId, route.view)
     : route.name === 'review' ? reviewScreen(navigate, route.cardIds, route.back)
     : route.name === 'stats' ? statsScreen(navigate)
     : route.name === 'cards' ? cardsScreen(navigate, route.book)

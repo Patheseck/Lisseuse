@@ -23,6 +23,8 @@ export interface ParsedBook {
   cover: Blob | null;
   /** Langue du texte (balise BCP 47, ex. « fr », « en-GB ») si elle est connue. */
   language?: string | null;
+  /** PDF : nombre de pages (lu même sans convertir le texte). */
+  pageCount?: number;
 }
 
 /**

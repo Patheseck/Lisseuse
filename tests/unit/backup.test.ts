@@ -77,14 +77,18 @@ describe('sauvegarde', () => {
     const report = await restoreBackup(await readBackup(await blob.text(), async () => null));
     expect(report.failures).toEqual([]);
     expect(report.books).toBe(1);
+    // Importé pour être lu en pages : pas encore de texte adapté, mais son nombre de pages.
     const restored = (await getBook(book.id))!;
-    expect(restored.chapterLabels).toEqual(['Début du livre', 'Un', 'Deux']);
+    expect(restored).toMatchObject({ format: 'pdf', chapterLabels: [], pageCount: book.pageCount });
+    expect(book.pageCount).toBeGreaterThanOrEqual(3);
     expect(await getChapterCache(book.id)).toBeUndefined();
+    // Texte adapté à la demande : mot de passe demandé, chapitres connus ensuite.
     const asked: boolean[] = [];
     const opened = await openBook(book.id, { askPassword: async (retry) => (asked.push(retry), 'lune') });
     expect(asked).toEqual([false]);
     expect(opened.chapters.map((c) => c.label)).toEqual(['Début du livre', 'Un', 'Deux']);
     expect(await getChapterCache(book.id)).toBeDefined();
+    expect((await getBook(book.id))!.chapterLabels).toEqual(['Début du livre', 'Un', 'Deux']);
   });
 
   it('sans les livres : signale ceux à réimporter, garde les fiches', async () => {

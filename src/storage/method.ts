@@ -56,7 +56,9 @@ export const bilanKey = (bookId: string) => `bilan:${bookId}`;
  */
 export const layoutHintKey = (bookId: string) => `layout:${bookId}`;
 /** Clés de réglages propres à un livre (supprimées avec lui). */
-export const bookSettingKeys = (bookId: string) => [`recall:${bookId}`, `pretest:${bookId}`, guideKey(bookId), focusKey(bookId), bookmarksKey(bookId), layoutHintKey(bookId), `ambiance:${bookId}`, goalKey(bookId), bilanKey(bookId)];
+/** Signets d'un PDF lu en pages originales (numéros de page, depuis 0). */
+export const pageMarksKey = (bookId: string) => `pdfmarks:${bookId}`;
+export const bookSettingKeys = (bookId: string) => [`recall:${bookId}`, `pretest:${bookId}`, guideKey(bookId), focusKey(bookId), bookmarksKey(bookId), layoutHintKey(bookId), `ambiance:${bookId}`, goalKey(bookId), bilanKey(bookId), pageMarksKey(bookId)];
 
 const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 
@@ -171,4 +173,37 @@ export async function loadShelf(): Promise<ShelfPrefs> {
 
 export async function saveShelf(prefs: ShelfPrefs): Promise<void> {
   await putSetting('shelf', prefs);
+}
+
+// ---------- PDF en pages originales ----------
+
+export function normalizePageMarks(value: unknown, pageCount = Infinity): number[] {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.filter((n): n is number => Number.isInteger(n) && n >= 0 && n < pageCount))].sort((a, b) => a - b);
+}
+
+export async function loadPageMarks(bookId: string, pageCount?: number): Promise<number[]> {
+  return normalizePageMarks(await getSetting(pageMarksKey(bookId)), pageCount);
+}
+
+export async function savePageMarks(bookId: string, pages: number[]): Promise<void> {
+  await putSetting(pageMarksKey(bookId), normalizePageMarks(pages));
+}
+
+export type PdfScroll = 'vertical' | 'pages';
+export type PdfColors = 'theme' | 'original';
+/** Affichage des PDF en pages originales : défilement continu ou page par page, couleurs des pages. */
+export interface PdfViewPrefs { scroll: PdfScroll; colors: PdfColors }
+
+export function normalizePdfPrefs(value: unknown): PdfViewPrefs {
+  const v = isObject(value) ? value : {};
+  return { scroll: v.scroll === 'pages' ? 'pages' : 'vertical', colors: v.colors === 'original' ? 'original' : 'theme' };
+}
+
+export async function loadPdfPrefs(): Promise<PdfViewPrefs> {
+  return normalizePdfPrefs(await getSetting('pdf-view'));
+}
+
+export async function savePdfPrefs(prefs: PdfViewPrefs): Promise<void> {
+  await putSetting('pdf-view', normalizePdfPrefs(prefs));
 }

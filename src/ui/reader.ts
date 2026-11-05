@@ -5,7 +5,7 @@ import { htmlToText, type SearchHit } from '../reader/search';
 import { deleteCard, demoteCard, isSynthesis, listAllCards, listCards, newCard, putCard, type CardRecord } from '../storage/cards';
 import { editCard, type CardEditorOptions } from './card-editor';
 import { nextFreeNumber } from '../core/mnemonic';
-import { getProgress, percentRead, saveProgress, touchBook } from '../storage/library';
+import { getProgress, percentRead, saveJump, saveProgress, touchBook, updateBook } from '../storage/library';
 import { loadBilan, loadBookmarks, loadFocus, loadGoal, loadGuides, saveBilan, saveBookmarks, saveFocus, saveGoal, saveGuide, type BookBilan, type Bookmark, type ChapterGuide } from '../storage/method';
 import { applyPrompt, cardTemplates, goalSummary, type BookGoal } from '../core/goal';
 import { ideaPool, ideasAnswer, ideasQuestion, linkAnswer, linkQuestion, linkSentence, sameLink, shortIdea, type IdeaLink } from '../core/ideas';
@@ -24,7 +24,7 @@ import { ambianceSheet } from './ambiance-sheet';
 import { addRecall, listRecalls, markPretest, pretestDates, type RecallRecord } from '../storage/learning';
 import { chapterHeadings, chapterRecall, chapterSurveySheet, pretest } from './chapter-practice';
 import { pdfOptions } from './import-flow';
-import { ImportCancelled } from '../book/errors';
+import { ImportCancelled, ScannedPdfError } from '../book/errors';
 import { add, clear, h } from './dom';
 import { confirmDialog, toast } from './feedback';
 import { speak, stop as stopSpeech, ttsAvailable } from '../native/tts';
@@ -1364,6 +1364,18 @@ export function readerScreen(bookId: string, navigate: Navigate, focusCardId?: s
     () => document.removeEventListener('pointerdown', onPointerDown),
   );
 
+  /** PDF : retour aux pages originales, à l'endroit équivalent du livre. */
+  async function switchToPages(): Promise<void> {
+    if (saveTimer !== undefined) persist();
+    try {
+      if (opened?.chapters.length) await saveJump(bookId, (current + offset()) / opened.chapters.length);
+      await updateBook(bookId, { pdfView: 'pages' });
+    } catch (err) {
+      logError('pdf', err);
+    }
+    navigate({ name: 'reader', bookId, view: 'pages' });
+  }
+
   // ---------- Ouverture ----------
   (async () => {
     // Un PDF dont les chapitres ne sont plus en cache (sauvegarde restaurée) est relu : on suit l'avancement.
@@ -1388,11 +1400,22 @@ export function readerScreen(bookId: string, navigate: Navigate, focusCardId?: s
     content.lang = opened.book.language || 'fr';
     footer.hidden = false;
     toolButtons.hidden = false;
-    const start = Math.min(Math.max(0, progress?.chapter ?? 0), opened.chapters.length - 1);
+    let start = Math.min(Math.max(0, progress?.chapter ?? 0), opened.chapters.length - 1);
+    let startOffset = progress?.offset ?? 0;
+    if (opened.book.format === 'pdf') {
+      // PDF : retour aux pages originales à un geste.
+      toolButtons.prepend(h('button', { type: 'button', className: 'icon-btn', 'aria-label': 'Pages originales du PDF', 'data-testid': 'pdf-to-pages', onclick: () => void switchToPages() }, icon('page')));
+      // Arrivée depuis les pages originales : l'endroit équivalent du livre.
+      if (progress?.jump !== undefined && opened.chapters.length) {
+        const at = progress.jump * opened.chapters.length;
+        start = Math.min(opened.chapters.length - 1, Math.floor(at));
+        startOffset = Math.min(1, at - start);
+      }
+    }
     const focusCard = focusCardId ? cards.find((c) => c.id === focusCardId) : undefined;
     if (focusCard?.origin === 'bilan') {
       // Fiche du bilan : le livre reste à la page de lecture, la carte des idées s'ouvre.
-      go(start, { offset: progress?.offset ?? 0, after: () => openMap() });
+      go(start, { offset: startOffset, after: () => openMap() });
     } else if (focusCard && focusCard.chapter < opened.chapters.length) {
       // Ouvert depuis une fiche : au passage, avec de quoi revenir à l'endroit de la lecture.
       go(focusCard.chapter, {
@@ -1403,13 +1426,22 @@ export function readerScreen(bookId: string, navigate: Navigate, focusCardId?: s
         },
       });
     } else {
-      go(start, { offset: progress?.offset ?? 0 });
+      go(start, { offset: startOffset });
     }
     void startBookAmbiance().catch((err: unknown) => logError('ambiance', err));
     await touchBook(bookId);
   })().catch((err: unknown) => {
     if (destroyed) return;
     clear(content);
+    if (err instanceof ScannedPdfError) {
+      // PDF scanné : pas de texte à adapter, il se lit en pages originales.
+      bookTitle.textContent = 'PDF sans texte';
+      content.append(h('div', { className: 'error-box', 'data-testid': 'reader-error' },
+        h('p', {}, 'Les pages de ce PDF sont des images (livre scanné) : il n’a pas de texte à adapter. Il se lit en pages originales.'),
+        h('button', { type: 'button', className: 'btn btn-primary', 'data-testid': 'pdf-to-pages', onclick: () => void switchToPages() }, 'Lire les pages originales'),
+      ));
+      return;
+    }
     if (err instanceof ImportCancelled) {
       // PDF protégé dont le mot de passe n'a pas été saisi : rien d'anormal.
       bookTitle.textContent = 'PDF protégé';

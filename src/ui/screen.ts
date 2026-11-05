@@ -8,8 +8,11 @@ export interface Screen {
 
 export type Route =
   | { name: 'library' }
-  /** `cardId` : ouvre le livre au passage de cette fiche (depuis « Mes fiches »). */
-  | { name: 'reader'; bookId: string; cardId?: string }
+  /**
+   * `cardId` : ouvre le livre au passage de cette fiche (depuis « Mes fiches »).
+   * `view` : pour un PDF, pages originales ou texte adapté (sinon le choix enregistré du livre).
+   */
+  | { name: 'reader'; bookId: string; cardId?: string; view?: 'pages' | 'text' }
   /** `cardIds` : révision de ces fiches seulement, même si elles ne sont pas encore à revoir. */
   | { name: 'review'; cardIds?: string[]; back?: 'cards' }
   | { name: 'stats' }

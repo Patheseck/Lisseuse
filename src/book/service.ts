@@ -68,6 +68,14 @@ export async function openBook(id: string, options: PdfOptions = {}): Promise<Op
     opened = { book, chapters, resources: parsed.resources };
   }
 
+  // PDF converti à la demande (« texte adapté ») : le livre connaît désormais ses chapitres et sa langue.
+  if (opened.book.format === 'pdf' && parsed) {
+    const labels = opened.chapters.map((c) => c.label);
+    const patch = { chapterCount: labels.length, chapterLabels: labels, language: parsed.language ?? null, ...(parsed.pageCount ? { pageCount: parsed.pageCount } : {}) };
+    opened = { ...opened, book: { ...opened.book, ...patch } };
+    await updateBook(id, patch).catch((err: unknown) => logError('pdf', err));
+  }
+
   // Livre importé avant la 6.3 : sa langue n'était pas connue.
   if (opened.book.language === undefined) {
     book = opened.book;

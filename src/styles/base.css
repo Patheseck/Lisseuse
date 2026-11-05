@@ -10,6 +10,8 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 #app { height: 100%; }
+/* Écran de lecture choisi après lecture du livre (PDF en pages ou texte) : il remplit l'écran. */
+.screen-host { height: 100%; }
 
 .screen {
   height: 100dvh;

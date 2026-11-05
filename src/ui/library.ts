@@ -2,7 +2,7 @@ import { importAndOpen } from './import-flow';
 import { errorMessage, logError } from '../core/errors';
 import { planSession } from '../core/session';
 import { isReviewable, listAllCards, listReviews, type CardRecord } from '../storage/cards';
-import { deleteBook, listBooks, listProgress, percentRead, type BookRecord, type ProgressRecord } from '../storage/library';
+import { deleteBook, listBooks, listProgress, percentRead, readsPages, type BookRecord, type ProgressRecord } from '../storage/library';
 import { focusKey, goalKey, loadShelf, normalizeFocus, saveShelf, type ShelfPrefs, type ShelfSort } from '../storage/method';
 import { goalSummary, normalizeGoal } from '../core/goal';
 import { listSettings, loadReviewSettings } from '../storage/settings';
@@ -93,7 +93,9 @@ export function libraryScreen(navigate: Navigate): Screen {
 
   function bookItem(book: BookRecord, progress: ProgressRecord | undefined, focus: number[]): HTMLElement {
     const pct = percentRead(book, progress, focus);
-    const meta = [book.format === 'epub' ? 'EPUB' : book.format === 'pdf' ? 'PDF' : book.format === 'md' ? 'Markdown' : 'Ancien format', `${book.chapterCount} chapitre${book.chapterCount > 1 ? 's' : ''}`, progress ? `${pct} % lu` : 'Pas commencé'];
+    const size = readsPages(book) && book.pageCount ? `${book.pageCount} page${book.pageCount > 1 ? 's' : ''}` : `${book.chapterCount} chapitre${book.chapterCount > 1 ? 's' : ''}`;
+    const started = readsPages(book) ? progress?.page !== undefined : !!progress;
+    const meta = [book.format === 'epub' ? 'EPUB' : book.format === 'pdf' ? 'PDF' : book.format === 'md' ? 'Markdown' : 'Ancien format', size, started ? `${pct} % lu` : 'Pas commencé'];
     if (focus.length) meta.push(`objectif : ${focus.length} chap.`);
     return h('li', { className: 'book-item', 'data-testid': 'book-item' },
       h('button', { type: 'button', className: 'book-open', onclick: () => navigate({ name: 'reader', bookId: book.id }) },
@@ -131,7 +133,9 @@ export function libraryScreen(navigate: Navigate): Screen {
   /** Grand bouton « Continuer la lecture » : le dernier livre ouvert, s'il est commencé et pas fini. */
   function continueCard(book: BookRecord, progress: ProgressRecord, focus: number[], goal: string | null): HTMLElement {
     const pct = percentRead(book, progress, focus);
-    const chapter = book.chapterLabels?.[progress.chapter] ?? `Chapitre ${progress.chapter + 1}`;
+    const chapter = readsPages(book)
+      ? `Page ${(progress.page ?? 0) + 1}${book.pageCount ? ` sur ${book.pageCount}` : ''}`
+      : (book.chapterLabels?.[progress.chapter] ?? `Chapitre ${progress.chapter + 1}`);
     return h('section', { className: 'continue', 'data-testid': 'continue-card' },
       coverFor(book, 'continue-cover'),
       h('div', { className: 'continue-info' },

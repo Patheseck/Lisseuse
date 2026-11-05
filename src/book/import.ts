@@ -1,7 +1,7 @@
 import { parseEpub } from './epub';
 import { ImportError } from './errors';
 import { parseMarkdown } from './markdown';
-import { parsePdf, type PdfOptions } from './pdf';
+import { readPdfInfo, type PdfOptions } from './pdf';
 import type { BookFormat, ParsedBook } from './types';
 
 export { ImportError };
@@ -54,8 +54,9 @@ export async function parseBookFile(file: Blob, fileName: string, options: PdfOp
   if (!format) throw new ImportError('Format non pris en charge. Choisis un fichier .epub, .pdf, .md ou .txt.');
   const id = await sha256Hex(buffer);
   if (format === 'epub') return { id, parsed: await parseEpub(buffer, fileName) };
+  // PDF : lu en pages originales, son texte n'est converti qu'à la demande (« texte adapté »).
   // pdf.js prend possession du tampon : l'empreinte est calculée avant.
-  if (format === 'pdf') return { id, parsed: await parsePdf(new Uint8Array(buffer), file, fileName, options) };
+  if (format === 'pdf') return { id, parsed: await readPdfInfo(new Uint8Array(buffer), file, fileName, options) };
   const text = decodeText(buffer);
   if (text === null) throw new ImportError('Ce fichier n’est pas un texte lisible. Choisis un fichier .epub, .pdf, .md ou .txt.');
   return { id, parsed: parseMarkdown(text, fileName) };

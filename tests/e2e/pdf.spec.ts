@@ -24,14 +24,32 @@ const BOOK: BookSpec = {
 const pdf = (spec: Partial<BookSpec> = {}) => Buffer.from(makePdf(typesetBook({ ...BOOK, ...spec })));
 const click = (page: Page, testId: string) => page.evaluate((id) => (document.querySelector(`[data-testid=${id}]`) as HTMLButtonElement).click(), testId);
 
+/** PDF ouvert en pages originales : la visionneuse a dessiné sa première page. */
+async function pagesShown(page: Page): Promise<number> {
+  await expect(page.getByTestId('pdf-viewer')).toBeVisible();
+  await expect(page.locator('.pdfViewer .page canvas').first()).toBeAttached();
+  const label = await page.getByTestId('pdf-page').textContent();
+  return Number(label!.match(/sur (\d+)/)![1]);
+}
+
+/** Bascule en texte adapté (réglages d'affichage du PDF). */
+async function toText(page: Page): Promise<void> {
+  await click(page, 'open-settings');
+  await page.getByTestId('settings-sheet').locator('label[for="pdf-mode-text"]').click();
+  // Converti puis ouvert : le titre du chapitre est affiché.
+  await expect(page.getByTestId('reader-chapter')).toHaveText(/\S/, { timeout: 15000 });
+}
+
 async function tocLabels(page: Page): Promise<string[]> {
   await click(page, 'open-toc');
-  const labels = await page.getByTestId('toc-sheet').locator('.toc-item').allTextContents();
+  const sheet = page.getByTestId('toc-sheet');
+  await expect(sheet.locator('.toc-item').first()).toBeVisible();
+  const labels = await sheet.locator('.toc-item').allTextContents();
   await page.keyboard.press('Escape');
   return labels;
 }
 
-test.describe('Livres PDF', () => {
+test.describe('PDF en pages originales', () => {
   let errors: string[];
   test.beforeEach(async ({ page }) => {
     errors = watchErrors(page);
@@ -41,10 +59,204 @@ test.describe('Livres PDF', () => {
     expect(errors, 'aucune erreur JavaScript').toEqual([]);
   });
 
-  test('PDF avec signets : chapitres, texte recollé, en-têtes et numéros de page retirés, notes en fin de chapitre', async ({ page }) => {
+  test('un PDF s’ouvre tel quel, comme dans une liseuse : pages dessinées, texte sélectionnable, couverture', async ({ page }) => {
     await importFile(page, 'sommeil.pdf', 'application/pdf', pdf());
     await expect(page.getByTestId('reader-title')).toHaveText('Le Sommeil et la Mémoire');
-    await expect(page.getByTestId('reader-chapter')).toHaveText('Début du livre');
+    const total = await pagesShown(page);
+    expect(total).toBeGreaterThanOrEqual(4);
+    await expect(page.locator('.pdfViewer .page')).toHaveCount(total);
+    await expect(page.getByTestId('status-page')).toHaveText(`1 / ${total}`);
+    // Couche de texte : le texte de la page se sélectionne (copier, partager).
+    await expect(page.locator('.pdfViewer .page').first().locator('.textLayer')).toContainText('Le Sommeil et la Mémoire');
+    await click(page, 'back');
+    await expect(page.getByTestId('book-meta')).toContainText(`PDF · ${total} pages`);
+    await expect(page.getByTestId('book-item').locator('img.book-cover')).toHaveCount(1);
+  });
+
+  test('navigation : suite, aller à la page, sommaire du PDF, signets ; la page lue est gardée', async ({ page }) => {
+    await importFile(page, 'sommeil.pdf', 'application/pdf', pdf());
+    const total = await pagesShown(page);
+    await click(page, 'next-page');
+    await expect(page.getByTestId('status-page')).not.toHaveText(`1 / ${total}`);
+
+    // Aller à une page précise.
+    await click(page, 'pdf-go-page');
+    const go = page.getByTestId('pdf-go-sheet');
+    await go.getByTestId('pdf-go-input').fill(String(total));
+    await go.getByTestId('pdf-go-confirm').click();
+    await expect(page.getByTestId('status-page')).toHaveText(`${total} / ${total}`);
+
+    // Sommaire du PDF (ses signets) : vers le chapitre 1.
+    await click(page, 'open-toc');
+    const toc = page.getByTestId('toc-sheet');
+    await expect(toc.getByTestId('pdf-outline-item')).toHaveText(['Chapitre 1 — Dormir', 'Chapitre 2 — Rêver']);
+    await toc.getByTestId('pdf-outline-item').first().click();
+    await expect(page.getByTestId('status-page')).toHaveText(`2 / ${total}`);
+
+    // Signet sur cette page, retrouvé dans le sommaire.
+    await click(page, 'toggle-bookmark');
+    await expect(page.getByTestId('toast').last()).toContainText('Signet ajouté : page 2');
+    await click(page, 'open-toc');
+    await toc.getByRole('tab', { name: 'Signets (1)' }).click();
+    await expect(toc.getByTestId('bookmark-item')).toHaveText('Page 2');
+    await page.keyboard.press('Escape');
+
+    // Rouvert plus tard : à la même page.
+    await page.waitForTimeout(700);
+    await page.reload();
+    await page.getByTestId('continue-reading').click();
+    await pagesShown(page);
+    await expect(page.getByTestId('status-page')).toHaveText(`2 / ${total}`);
+    await expect(page.getByTestId('toggle-bookmark')).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  test('recherche : résultats comptés et surlignés sur la page', async ({ page }) => {
+    await importFile(page, 'sommeil.pdf', 'application/pdf', pdf());
+    const total = await pagesShown(page);
+    await click(page, 'open-search');
+    await page.getByTestId('pdf-find-input').fill('anciens');
+    await expect(page.getByTestId('pdf-find-count')).toHaveText('1 / 1');
+    await expect(page.getByTestId('status-page')).toHaveText(`${total} / ${total}`);
+    await expect(page.locator('.textLayer .highlight')).toHaveCount(1);
+    // Accents ignorés, comme dans le texte : « reve » trouve « rêve ».
+    await page.getByTestId('pdf-find-input').fill('reve melange');
+    await expect(page.getByTestId('pdf-find-count')).toHaveText('1 / 1');
+    await page.getByTestId('pdf-find-input').fill('introuvablexyz');
+    await expect(page.getByTestId('pdf-find-count')).toHaveText('Introuvable');
+    await page.getByTestId('pdf-find-close').click();
+    await expect(page.getByTestId('pdf-find')).toBeHidden();
+    await expect(page.locator('.textLayer .highlight')).toHaveCount(0);
+  });
+
+  test('page par page, zoom, couleurs des pages selon le thème', async ({ page }) => {
+    await importFile(page, 'sommeil.pdf', 'application/pdf', pdf());
+    await pagesShown(page);
+    await click(page, 'open-settings');
+    const sheet = page.getByTestId('settings-sheet');
+    // Page par page : les pages défilent de côté, une à la fois.
+    await sheet.locator('label[for="pdf-scroll-pages"]').click();
+    await expect(page.getByTestId('pdf-viewer')).toHaveClass(/pdf-snap/);
+    await expect(page.locator('.pdfViewer')).toHaveClass(/scrollHorizontal/);
+    // Zoomé : plus d'aimantation (on se déplace dans la page) ; « Ajuster » la rétablit.
+    const width = () => page.locator('.pdfViewer .page').first().evaluate((el) => el.getBoundingClientRect().width);
+    const fitted = await width();
+    await sheet.getByTestId('pdf-zoom-in').click();
+    await expect.poll(width).toBeGreaterThan(fitted * 1.2);
+    await expect(page.getByTestId('pdf-viewer')).not.toHaveClass(/pdf-snap/);
+    await sheet.getByTestId('pdf-zoom-fit').click();
+    await expect.poll(width).toBeCloseTo(fitted, 0);
+    await expect(page.getByTestId('pdf-viewer')).toHaveClass(/pdf-snap/);
+
+    // Thème nuit : les pages prennent ses couleurs ; « couleurs d'origine » : page blanche.
+    const corner = () => page.locator('.pdfViewer .page canvas').first().evaluate((c: HTMLCanvasElement) => {
+      const [r, g, b] = c.getContext('2d')!.getImageData(3, 3, 1, 1).data;
+      return (r! + g! + b!) / 3;
+    });
+    await sheet.locator('label[for="set-theme-dark"]').click();
+    await expect.poll(corner, { timeout: 8000 }).toBeLessThan(80);
+    await sheet.locator('label[for="pdf-colors-original"]').click();
+    await expect.poll(corner, { timeout: 8000 }).toBeGreaterThan(230);
+  });
+
+  test('zoom à deux doigts et double appui', async ({ page, context }) => {
+    await importFile(page, 'sommeil.pdf', 'application/pdf', pdf());
+    await pagesShown(page);
+    const width = () => page.locator('.pdfViewer .page').first().evaluate((el) => el.getBoundingClientRect().width);
+    const fitted = await width();
+    // Deux doigts qui s'écartent : la page grandit.
+    const cdp = await context.newCDPSession(page);
+    const touch = (type: 'touchStart' | 'touchMove' | 'touchEnd', points: [number, number][]) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points.map(([x, y], i) => ({ x, y, id: i + 1, radiusX: 5, radiusY: 5, force: 1 })) });
+    await touch('touchStart', [[180, 400], [230, 450]]);
+    for (let i = 1; i <= 8; i++) {
+      await touch('touchMove', [[180 - i * 12, 400 - i * 12], [230 + i * 12, 450 + i * 12]]);
+      await page.waitForTimeout(30);
+    }
+    await touch('touchEnd', []);
+    await expect.poll(width).toBeGreaterThan(fitted * 2);
+    // Double appui : retour à la largeur de l'écran, puis zoom ×2 ; les menus ne bougent pas.
+    const box = (await page.getByTestId('pdf-viewer').boundingBox())!;
+    const doubleTap = async () => {
+      await page.mouse.click(box.x + box.width / 2, box.y + 300);
+      await page.waitForTimeout(60);
+      await page.mouse.click(box.x + box.width / 2, box.y + 300);
+    };
+    await doubleTap();
+    await expect.poll(width).toBeCloseTo(fitted, 0);
+    await doubleTap();
+    await expect.poll(width).toBeCloseTo(fitted * 2, 0);
+    await expect(page.locator('.pdf-reader.chrome-hidden')).toHaveCount(0);
+  });
+
+  test('PDF scanné : ses pages se lisent ; le texte adapté explique pourquoi il n’existe pas', async ({ page }) => {
+    const scanned = Buffer.from(makePdf({ pages: [{ runs: [], image: true }, { runs: [], image: true }], title: 'Mon scan' }));
+    await importFile(page, 'scan.pdf', 'application/pdf', scanned);
+    expect(await pagesShown(page)).toBe(2);
+    await click(page, 'open-settings');
+    await page.getByTestId('settings-sheet').locator('label[for="pdf-mode-text"]').click();
+    await expect(page.getByTestId('reader-error')).toContainText('pas de texte à adapter');
+    await page.getByTestId('reader-error').getByTestId('pdf-to-pages').click();
+    expect(await pagesShown(page)).toBe(2);
+  });
+
+  test('mot de passe : demandé à l’import et à chaque ouverture, jamais gardé', async ({ page }) => {
+    const file = pdf({ userPassword: 'lune' });
+    await importFile(page, 'secret.pdf', 'application/pdf', file);
+    const dialog = page.locator('dialog.dialog');
+    await expect(dialog).toContainText('PDF protégé');
+    // Abandon : rien n'est importé.
+    await dialog.getByRole('button', { name: 'Annuler' }).click();
+    await expect(page.getByTestId('toast').last()).toContainText('Import annulé');
+    await expect(page.getByTestId('empty-library')).toBeVisible();
+
+    await importFile(page, 'secret.pdf', 'application/pdf', file);
+    await dialog.getByTestId('password').fill('soleil');
+    await dialog.getByTestId('password-ok').click();
+    await expect(dialog).toContainText('Mot de passe incorrect');
+    await dialog.getByTestId('password').fill('lune');
+    await dialog.getByTestId('password-ok').click();
+    // Les pages s'ouvrent : le mot de passe est redemandé (il n'est pas gardé).
+    await expect(dialog).toContainText('PDF protégé');
+    await dialog.getByTestId('password').fill('lune');
+    await dialog.getByTestId('password-ok').click();
+    await pagesShown(page);
+    // Sans mot de passe à l'ouverture : une explication.
+    await click(page, 'back');
+    await page.getByTestId('book-item').getByRole('button').first().click();
+    await dialog.getByRole('button', { name: 'Annuler' }).click();
+    await expect(page.getByTestId('pdf-message')).toContainText('protégé par un mot de passe');
+  });
+
+  test('PDF verrouillé par un DRM : refusé comme un EPUB protégé', async ({ page }) => {
+    const locked = Buffer.from(makePdf({ ...typesetBook(BOOK), drm: true }));
+    await importFile(page, 'achete.pdf', 'application/pdf', locked);
+    const dialog = page.getByTestId('info-dialog');
+    await expect(dialog).toContainText('Livre protégé (DRM)');
+    await expect(dialog).toContainText('Adobe');
+    await dialog.getByTestId('info-ok').click();
+  });
+
+  test('PDF abîmé : message clair', async ({ page }) => {
+    await importFile(page, 'cours.pdf', 'application/pdf', Buffer.from('%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\n'));
+    await expect(page.getByTestId('toast').last()).toContainText('Import impossible');
+    errors.length = 0; // l'échec d'import est journalisé en console volontairement
+  });
+});
+
+test.describe('PDF en texte adapté', () => {
+  let errors: string[];
+  test.beforeEach(async ({ page }) => {
+    errors = watchErrors(page);
+    await page.goto('/');
+  });
+  test.afterEach(() => {
+    expect(errors, 'aucune erreur JavaScript').toEqual([]);
+  });
+
+  test('chapitres, texte recollé, en-têtes et numéros retirés, notes ; retour aux pages au même endroit', async ({ page }) => {
+    await importFile(page, 'sommeil.pdf', 'application/pdf', pdf());
+    const total = await pagesShown(page);
+    await toText(page);
+    await expect(page.getByTestId('reader-title')).toHaveText('Le Sommeil et la Mémoire');
     expect(await tocLabels(page)).toEqual(['Début du livre', 'Chapitre 1 — Dormir', 'Chapitre 2 — Rêver']);
 
     await click(page, 'next-chapter');
@@ -66,66 +278,56 @@ test.describe('Livres PDF', () => {
     await page.getByTestId('highlight-selection').click();
     await expect(page.locator('mark.hl')).toHaveText('Les souvenirs se fixent la nuit');
 
-    // Bibliothèque : format, auteur ; le livre se rouvre sans relire le PDF.
+    // Le choix est gardé : rouvert, le livre est en texte adapté (sans relire le PDF).
     await click(page, 'back');
-    await expect(page.getByTestId('book-meta')).toContainText('PDF');
-    await expect(page.getByTestId('book-item')).toContainText('Claire Dupont');
+    await expect(page.getByTestId('book-meta')).toContainText('3 chapitres');
     await page.reload();
     await page.getByTestId('book-item').getByRole('button').first().click();
     await expect(page.getByTestId('reader-chapter')).toHaveText('Chapitre 1 — Dormir');
     await expect(page.locator('mark.hl')).toHaveText('Les souvenirs se fixent la nuit');
+
+    // Retour aux pages originales, vers le même endroit du livre (le chapitre 1, page 2).
+    await click(page, 'pdf-to-pages');
+    await pagesShown(page);
+    await expect(page.getByTestId('status-page')).toHaveText(new RegExp(`^[2-3] / ${total}$`));
   });
 
-  test('PDF sans signets : les titres, plus grands que le texte, font les chapitres', async ({ page }) => {
+  test('sans signets : les titres, plus grands que le texte, font les chapitres', async ({ page }) => {
     await importFile(page, 'sommeil.pdf', 'application/pdf', pdf({ outline: false }));
-    await expect(page.getByTestId('reader-title')).toHaveText('Le Sommeil et la Mémoire');
+    await pagesShown(page);
+    await toText(page);
     expect(await tocLabels(page)).toEqual(['Début du livre', 'Chapitre 1 — Dormir', 'Chapitre 2 — Rêver']);
   });
 
-  test('PDF sans aucune structure : découpé en tranches de pages', async ({ page }) => {
+  test('sans aucune structure : découpé en tranches de pages', async ({ page }) => {
     const paragraphs = Array.from({ length: 60 }, (_, i) => filler(200, i + 1));
     await importFile(page, 'notes.pdf', 'application/pdf', pdf({ plain: true, outline: false, title: '', chapters: [{ title: '', paragraphs }] }));
     // Sans titre dans le fichier : le nom du fichier.
     await expect(page.getByTestId('reader-title')).toHaveText('notes');
+    await pagesShown(page);
+    await toText(page);
     const labels = await tocLabels(page);
     expect(labels.length).toBeGreaterThanOrEqual(2);
     expect(labels.every((l) => /^Pages? \d+( à \d+)?$/.test(l))).toBe(true);
     expect(labels[0]).toMatch(/^Pages 1 à \d+$/);
   });
 
-  test('couverture : la première page illustrée devient la couverture', async ({ page }) => {
-    await importFile(page, 'sommeil.pdf', 'application/pdf', pdf({ coverImage: true }));
-    await expect(page.getByTestId('reader-title')).toHaveText('Le Sommeil et la Mémoire');
-    await click(page, 'back');
-    await expect(page.getByTestId('book-item').locator('img.book-cover')).toHaveCount(1);
-  });
-
-  test('PDF protégé par un mot de passe : demandé, vérifié, jamais gardé', async ({ page }) => {
-    const file = pdf({ userPassword: 'lune' });
-    await importFile(page, 'secret.pdf', 'application/pdf', file);
-    const dialog = page.locator('dialog.dialog');
-    await expect(dialog).toContainText('PDF protégé');
-    // Abandon : rien n'est importé.
-    await dialog.getByRole('button', { name: 'Annuler' }).click();
-    await expect(page.getByTestId('toast').last()).toContainText('Import annulé');
-    await expect(page.getByTestId('empty-library')).toBeVisible();
-
-    await importFile(page, 'secret.pdf', 'application/pdf', file);
-    await dialog.getByTestId('password').fill('soleil');
-    await dialog.getByTestId('password-ok').click();
-    await expect(dialog).toContainText('Mot de passe incorrect');
-    await dialog.getByTestId('password').fill('lune');
-    await dialog.getByTestId('password-ok').click();
-    await expect(page.getByTestId('reader-title')).toHaveText('Le Sommeil et la Mémoire');
-    expect(await tocLabels(page)).toEqual(['Début du livre', 'Chapitre 1 — Dormir', 'Chapitre 2 — Rêver']);
-  });
-
   test('sans les chapitres en cache (sauvegarde restaurée) : le PDF est relu, mot de passe compris, et les surlignages tiennent', async ({ page }) => {
-    await importFile(page, 'secret.pdf', 'application/pdf', pdf({ userPassword: 'lune' }));
     const dialog = page.locator('dialog.dialog');
-    await dialog.getByTestId('password').fill('lune');
-    await dialog.getByTestId('password-ok').click();
+    const password = async () => {
+      await expect(dialog).toContainText('PDF protégé');
+      await dialog.getByTestId('password').fill('lune');
+      await dialog.getByTestId('password-ok').click();
+    };
+    await importFile(page, 'secret.pdf', 'application/pdf', pdf({ userPassword: 'lune' }));
+    await password();
+    await password();
+    await pagesShown(page);
+    await click(page, 'open-settings');
+    await page.getByTestId('settings-sheet').locator('label[for="pdf-mode-text"]').click();
+    await password();
     await expect(page.getByTestId('reader-title')).toHaveText('Le Sommeil et la Mémoire');
+    await page.getByTestId('reader-content').locator('h2, h3').first().waitFor();
     await click(page, 'next-chapter');
     await selectText(page, 'Les souvenirs se fixent', 'la nuit');
     await page.getByTestId('highlight-selection').click();
@@ -150,35 +352,8 @@ test.describe('Livres PDF', () => {
     await expect(page.getByTestId('toast')).toHaveCount(0);
     await click(page, 'back');
     await page.getByTestId('book-item').getByRole('button').first().click();
-    await expect(dialog).toContainText('PDF protégé');
-    await dialog.getByTestId('password').fill('lune');
-    await dialog.getByTestId('password-ok').click();
+    await password();
     await expect(page.getByTestId('reader-chapter')).toHaveText('Chapitre 1 — Dormir');
     await expect(page.locator('mark.hl')).toHaveText('Les souvenirs se fixent la nuit');
-  });
-
-  test('PDF scanné (images seules) : refusé avec une explication', async ({ page }) => {
-    const scanned = Buffer.from(makePdf({ pages: [{ runs: [], image: true }, { runs: [], image: true }], title: 'Scan' }));
-    await importFile(page, 'scan.pdf', 'application/pdf', scanned);
-    const dialog = page.getByTestId('info-dialog');
-    await expect(dialog).toContainText('PDF sans texte');
-    await expect(dialog).toContainText('scanné');
-    await dialog.getByTestId('info-ok').click();
-    await expect(page.getByTestId('empty-library')).toBeVisible();
-  });
-
-  test('PDF verrouillé par un DRM : refusé comme un EPUB protégé', async ({ page }) => {
-    const locked = Buffer.from(makePdf({ ...typesetBook(BOOK), drm: true }));
-    await importFile(page, 'achete.pdf', 'application/pdf', locked);
-    const dialog = page.getByTestId('info-dialog');
-    await expect(dialog).toContainText('Livre protégé (DRM)');
-    await expect(dialog).toContainText('Adobe');
-    await dialog.getByTestId('info-ok').click();
-  });
-
-  test('PDF abîmé : message clair', async ({ page }) => {
-    await importFile(page, 'cours.pdf', 'application/pdf', Buffer.from('%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\n'));
-    await expect(page.getByTestId('toast').last()).toContainText('Import impossible');
-    errors.length = 0; // l'échec d'import est journalisé en console volontairement
   });
 });

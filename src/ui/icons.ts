@@ -9,6 +9,7 @@ const PATHS = {
   trash: 'M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3',
   highlight: 'M4 20h7M14 4l6 6-9 9H5v-6z',
   card: 'M4 5h16v14H4zM8 10h8M8 14h5',
+  page: 'M6 3h8l4 4v14H6zM14 3v4h4M9 12h6M9 16h6',
   check: 'M5 12l5 5 9-10',
   review: 'M4 12a8 8 0 0 1 14-5.3M20 12a8 8 0 0 1-14 5.3M18 3v4h-4M6 21v-4h4',
   chart: 'M4 20V10M10 20V4M16 20v-7M22 20H2',

@@ -18,8 +18,9 @@ quitte ton appareil sans une action de ta part.
 
 Pour fonctionner, Liseuse enregistre dans la mémoire privée de l'application, sur ton appareil :
 
-- les livres que tu importes (fichiers EPUB, PDF, Markdown ou texte) ; un PDF est converti en
-  texte sur ton appareil, et le mot de passe d'un PDF protégé n'est jamais enregistré ;
+- les livres que tu importes (fichiers EPUB, PDF, Markdown ou texte) ; un PDF est affiché, et
+  converti en texte si tu le demandes, sur ton appareil ; le mot de passe d'un PDF protégé n'est
+  jamais enregistré ;
 - tes surlignages, fiches, questions directrices, signets et révisions ;
 - ta progression de lecture, tes statistiques et tes réglages ;
 - les morceaux de musique que tu ajoutes aux ambiances de lecture (ils ne font pas partie des

@@ -23,12 +23,27 @@ export interface PdfOptions {
 type PdfJs = typeof import('pdfjs-dist/legacy/build/pdf.mjs');
 let library: Promise<PdfJs> | null = null;
 
-function loadPdfJs(): Promise<PdfJs> {
+export function loadPdfJs(): Promise<PdfJs> {
   library ??= import('pdfjs-dist/legacy/build/pdf.mjs').then((pdfjs) => {
     pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
     return pdfjs;
   });
   return library;
+}
+
+type PdfViewerLib = typeof import('pdfjs-dist/legacy/web/pdf_viewer.mjs');
+let viewerLibrary: Promise<{ pdfjs: PdfJs; viewer: PdfViewerLib }> | null = null;
+
+/**
+ * Visionneuse de pdf.js (pages, couche de texte, liens, recherche), chargée seulement pour lire un
+ * PDF en pages originales. Elle s'appuie sur la bibliothèque déclarée dans `globalThis.pdfjsLib`.
+ */
+export function loadPdfViewer(): Promise<{ pdfjs: PdfJs; viewer: PdfViewerLib }> {
+  viewerLibrary ??= loadPdfJs().then(async (pdfjs) => {
+    (globalThis as { pdfjsLib?: unknown }).pdfjsLib = pdfjs;
+    return { pdfjs, viewer: await import('pdfjs-dist/legacy/web/pdf_viewer.mjs') };
+  });
+  return viewerLibrary;
 }
 
 /** Marques des DRM connus dans le dictionnaire de chiffrement. */
@@ -70,7 +85,8 @@ export function cleanAuthor(raw: unknown): string | null {
   return t.slice(0, 200);
 }
 
-async function readOutline(doc: PDFDocumentProxy, origins: number[]): Promise<PdfOutlineEntry[]> {
+/** Sommaire (signets) du PDF, avec la page et la hauteur de chaque destination. */
+export async function readOutline(doc: PDFDocumentProxy, origins: number[] = []): Promise<PdfOutlineEntry[]> {
   const out: PdfOutlineEntry[] = [];
   type Node = Awaited<ReturnType<PDFDocumentProxy['getOutline']>>[number];
   const walk = async (items: Node[] | null | undefined, level: number): Promise<void> => {
@@ -97,8 +113,11 @@ async function readOutline(doc: PDFDocumentProxy, origins: number[]): Promise<Pd
   return out;
 }
 
-/** Première page rendue en image, si elle ressemble à une couverture (illustrée, pas une page de texte). */
-async function renderCover(doc: PDFDocumentProxy): Promise<Blob | null> {
+/**
+ * Première page rendue en image. `illustratedOnly` : seulement si elle ressemble à une couverture
+ * (illustrée, pas une page de texte) ; sinon la page telle quelle, comme dans les autres liseuses.
+ */
+async function renderCover(doc: PDFDocumentProxy, illustratedOnly = true): Promise<Blob | null> {
   // Hors navigateur (tests unitaires sous jsdom) : pas de dessin possible.
   if (typeof document === 'undefined' || /jsdom/i.test(navigator.userAgent)) return null;
   try {
@@ -115,18 +134,25 @@ async function renderCover(doc: PDFDocumentProxy): Promise<Blob | null> {
     const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
     let inked = 0;
     for (let i = 0; i < data.length; i += 16) if (data[i]! < 235 || data[i + 1]! < 235 || data[i + 2]! < 235) inked++;
-    if (inked / (data.length / 16) < 0.2) return null;
+    if (illustratedOnly && inked / (data.length / 16) < 0.2) return null;
+    if (!inked) return null; // page blanche
     return await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.85));
   } catch {
     return null;
   }
 }
 
+export interface OpenedPdf {
+  doc: PDFDocumentProxy;
+  /** Libère le document et le worker de pdf.js. */
+  close(): void;
+}
+
 /**
- * Convertit un PDF en livre : texte des pages, chapitres (signets, titres ou tranches de pages),
- * métadonnées et couverture. `data` est cédé à pdf.js ; `source` sert à relire le fichier.
+ * Ouvre un PDF avec pdf.js : mot de passe demandé, DRM et fichier abîmé refusés avec une erreur
+ * claire. `data` est cédé à pdf.js ; `source` sert à relire le fichier (nom du DRM).
  */
-export async function parsePdf(data: Uint8Array, source: Blob, fileName: string, options: PdfOptions = {}): Promise<ParsedBook> {
+export async function openPdf(data: Uint8Array, source: Blob, options: PdfOptions = {}): Promise<OpenedPdf> {
   const pdfjs = await loadPdfJs();
   const task = pdfjs.getDocument({
     data,
@@ -170,7 +196,40 @@ export async function parsePdf(data: Uint8Array, source: Blob, fileName: string,
     if ((err as Error)?.name === 'InvalidPDFException' || /invalid pdf/i.test(message)) throw new ImportError('Ce fichier PDF est abîmé ou incomplet.');
     throw err;
   }
+  return { doc, close: () => void task.destroy() };
+}
 
+async function readMeta(doc: PDFDocumentProxy, fileName: string): Promise<{ title: string; author: string | null }> {
+  const meta = await doc.getMetadata().catch(() => null);
+  const info = (meta?.info ?? {}) as Record<string, unknown>;
+  return {
+    title: cleanTitle(meta?.metadata?.get('dc:title') ?? info.Title, fileName),
+    author: cleanAuthor(meta?.metadata?.get('dc:creator') ?? info.Author),
+  };
+}
+
+/**
+ * Import d'un PDF pour le lire en pages originales : titre, auteur, nombre de pages et couverture,
+ * sans convertir le texte (ce sera fait à la demande, en « texte adapté »). Un PDF scanné s'importe
+ * aussi : ses pages sont des images, elles se lisent telles quelles.
+ */
+export async function readPdfInfo(data: Uint8Array, source: Blob, fileName: string, options: PdfOptions = {}): Promise<ParsedBook> {
+  const { doc, close } = await openPdf(data, source, options);
+  try {
+    const [{ title, author }, cover] = await Promise.all([readMeta(doc, fileName), renderCover(doc, false)]);
+    options.onProgress?.(1, 1);
+    return { format: 'pdf', title, author, chapters: [], resources: {}, cover, language: null, pageCount: doc.numPages };
+  } finally {
+    close();
+  }
+}
+
+/**
+ * Convertit un PDF en livre (« texte adapté ») : texte des pages, chapitres (signets, titres ou
+ * tranches de pages), métadonnées et couverture.
+ */
+export async function parsePdf(data: Uint8Array, source: Blob, fileName: string, options: PdfOptions = {}): Promise<ParsedBook> {
+  const { doc, close } = await openPdf(data, source, options);
   try {
     const total = doc.numPages;
     const pages: PdfPageText[] = [];
@@ -197,14 +256,7 @@ export async function parsePdf(data: Uint8Array, source: Blob, fileName: string,
       page.cleanup();
       options.onProgress?.(i, total);
     }
-    const [outline, meta, cover] = await Promise.all([
-      readOutline(doc, origins),
-      doc.getMetadata().catch(() => null),
-      renderCover(doc),
-    ]);
-    const info = (meta?.info ?? {}) as Record<string, unknown>;
-    const title = cleanTitle(meta?.metadata?.get('dc:title') ?? info.Title, fileName);
-    const author = cleanAuthor(meta?.metadata?.get('dc:creator') ?? info.Author);
+    const [outline, { title, author }, cover] = await Promise.all([readOutline(doc, origins), readMeta(doc, fileName), renderCover(doc)]);
 
     const result = convertPdfText(pages, outline, title);
     if (result.words < Math.max(20, total * 3)) throw new ScannedPdfError();
@@ -214,8 +266,8 @@ export async function parsePdf(data: Uint8Array, source: Blob, fileName: string,
       throw new ImportError('Le texte de ce PDF est illisible : ses polices ne disent pas à quelles lettres correspondent leurs caractères.');
     }
     const language = normalizeLanguage(lang) ?? detectLanguage(sample);
-    return { format: 'pdf', title, author, chapters, resources: {}, cover, language };
+    return { format: 'pdf', title, author, chapters, resources: {}, cover, language, pageCount: total };
   } finally {
-    void task.destroy();
+    close();
   }
 }

@@ -9,7 +9,7 @@ import { createSheet, type Sheet } from './sheet';
 
 const SAVE_DELAY_MS = 300;
 
-function segmented<T extends string>(label: string, name: string, options: [T, string, string?][], value: T, onChange: (v: T) => void, className = ''): HTMLElement {
+export function segmented<T extends string>(label: string, name: string, options: [T, string, string?][], value: T, onChange: (v: T) => void, className = ''): HTMLElement {
   const group = h('div', { className: `segmented ${className}`, role: 'radiogroup', 'aria-label': label });
   for (const [v, text, style] of options) {
     const input = h('input', { type: 'radio', name, value: v, id: `${name}-${v}`, className: 'visually-hidden', checked: v === value });
@@ -19,13 +19,13 @@ function segmented<T extends string>(label: string, name: string, options: [T, s
   return h('div', { className: 'setting' }, h('span', { className: 'setting-label' }, label), group);
 }
 
-function toggle(label: string, id: string, value: boolean, onChange: (v: boolean) => void, hint?: string): HTMLElement {
+export function toggle(label: string, id: string, value: boolean, onChange: (v: boolean) => void, hint?: string): HTMLElement {
   const input = h('input', { type: 'checkbox', id, role: 'switch', className: 'switch', 'data-testid': id, checked: value });
   input.addEventListener('change', () => onChange(input.checked));
   return h('label', { className: 'toggle-row', for: id }, h('span', {}, label, hint ? h('small', {}, hint) : null), input);
 }
 
-const THEMES: [Theme, string, string][] = [
+export const THEMES: [Theme, string, string][] = [
   ['auto', 'Auto', 'background:linear-gradient(135deg,#f6f1e7 50%,#17161b 50%);color:#fff;text-shadow:0 1px 3px rgba(0,0,0,0.95)'],
   ['light', 'Jour', 'background:#f6f1e7;color:#2a241c'],
   ['sepia', 'Sépia', 'background:#f4ecd8;color:#4a3b2a'],

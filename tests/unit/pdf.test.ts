@@ -3,7 +3,7 @@ import './pdf-worker';
 import { DrmError } from '../../src/book/epub';
 import { ImportCancelled, ImportError, ScannedPdfError } from '../../src/book/errors';
 import { parseBookFile } from '../../src/book/import';
-import { cleanAuthor, cleanTitle, parsePdf } from '../../src/book/pdf';
+import { cleanAuthor, cleanTitle, parsePdf, readPdfInfo } from '../../src/book/pdf';
 import { filler, makePdf, typesetBook, type BookSpec } from '../fixtures/make-pdf';
 
 const BOOK: BookSpec = {
@@ -45,6 +45,16 @@ describe('lecture d’un PDF', () => {
     expect(cleanAuthor('Лев Толстой')).toBe('Лев Толстой');
     expect(cleanAuthor(['Ada Lovelace', 'Charles Babbage'])).toBe('Ada Lovelace, Charles Babbage');
     for (const junk of ['', '1234', 'Administrator', 'user']) expect(cleanAuthor(junk)).toBeNull();
+  });
+
+  it('import pour les pages originales : titre, auteur, nombre de pages, sans convertir le texte', async () => {
+    const data = bytes();
+    const info = await readPdfInfo(data.slice(), new Blob([data as BlobPart]), 'livre.pdf');
+    expect(info).toMatchObject({ format: 'pdf', title: 'Le Sommeil et la Mémoire', author: 'Claire Dupont', chapters: [] });
+    expect(info.pageCount).toBe((await parse(data)).pageCount);
+    // Un PDF scanné s'importe aussi : ses pages sont des images, elles se lisent telles quelles.
+    const scanned = makePdf({ pages: [{ runs: [], image: true }, { runs: [], image: true }] });
+    expect((await readPdfInfo(scanned.slice(), new Blob([scanned as BlobPart]), 'scan.pdf')).pageCount).toBe(2);
   });
 
   it('donne le même identifiant au même PDF', async () => {
