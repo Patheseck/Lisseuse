@@ -1,3 +1,5 @@
+import { countWords } from './layout';
+import { escapeHtml } from './markdown';
 import type { Chapter } from './types';
 
 // Conversion du texte d'un PDF en chapitres HTML.
@@ -79,7 +81,7 @@ interface Note {
 
 const round = (n: number, step = 0.5) => Math.round(n / step) * step;
 const lineText = (spans: Span[]) => spans.map((s) => s.text).join('');
-const words = (text: string) => text.split(/\s+/).filter(Boolean).length;
+const words = countWords;
 
 const ROMAN = 'm{0,4}(?:cm|cd|d?c{0,3})(?:xc|xl|l?x{0,3})(?:ix|iv|v?i{0,3})';
 /** « 12 », « - 12 - », « Page 12 », « 12 / 300 », « xiv ». */
@@ -425,17 +427,33 @@ function buildBlocks(pages: Line[][], m: Metrics, widths: number[], lex: Lexicon
   return blocks;
 }
 
-/** Tailles de titres classées : la plus grande qui revient sur plusieurs pages ouvre les chapitres. */
-function rankHeadings(blocks: Block[]): number | null {
+interface HeadingPlan {
+  /** Taille des titres qui ouvrent les chapitres (null : aucune). */
+  chapterSize: number | null;
+  /** Tailles « de structure » : des titres différents, sur plusieurs pages. */
+  structural: Set<number>;
+}
+
+/**
+ * Tailles de titres classées. Une taille compte pour la structure si elle porte des titres
+ * différents sur plusieurs pages (le titre du livre répété sur la couverture et la page de titre
+ * n'en est pas une). Comme pour les signets, on descend d'une taille tant que les titres retenus
+ * sont moins de trois (deux parties, puis leurs chapitres).
+ */
+function rankHeadings(blocks: Block[]): HeadingPlan {
   const sized = blocks.filter((b) => b.kind === 'h' && !b.pattern);
   const sizes = [...new Set(sized.map((b) => round(b.size)))].sort((a, b) => b - a);
+  const structural = new Set(sizes.filter((size) => {
+    const at = sized.filter((b) => round(b.size) === size);
+    return new Set(at.map((b) => b.page)).size >= 2 && new Set(at.map((b) => normalizeTitle(lineText(b.spans)))).size >= 2;
+  }));
   let chapterSize: number | null = null;
-  for (const s of sizes) {
-    const pages = new Set(sized.filter((b) => round(b.size) === s).map((b) => b.page));
-    if (pages.size >= 2) {
-      chapterSize = s;
-      break;
-    }
+  let count = 0;
+  for (const size of sizes) {
+    if (!structural.has(size)) continue;
+    count += sized.filter((b) => round(b.size) === size).length;
+    chapterSize = size;
+    if (count >= 3) break;
   }
   const below = sizes.filter((s) => chapterSize === null || s < chapterSize);
   for (const b of blocks) {
@@ -444,12 +462,11 @@ function rankHeadings(blocks: Block[]): number | null {
     else if (chapterSize !== null && round(b.size) >= chapterSize) b.level = 2;
     else b.level = Math.min(4, 3 + Math.max(0, below.indexOf(round(b.size))));
   }
-  return chapterSize;
+  return { chapterSize, structural };
 }
 
 // ---------- 6. Chapitres ----------
 
-const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const normalizeTitle = (s: string) => s.toLowerCase().normalize('NFD').replace(/[^\p{L}\p{N}]+/gu, '');
 
 function blockHtml(b: Block): string {
@@ -477,16 +494,25 @@ function outlineSections(blocks: Block[], outline: PdfOutlineEntry[]): Section[]
   for (const e of chosen) {
     let start = blocks.findIndex((b) => b.page > e.page || (b.page === e.page && (e.y === null || b.y <= e.y + 1)));
     if (start < 0) start = blocks.length;
-    // La destination tombe parfois juste sous le titre : on se cale sur le titre voisin.
+    // La destination tombe parfois juste à côté du titre : on se cale sur le titre voisin qui
+    // correspond le mieux (identique de préférence ; « Chapitre 1 » ne vaut pas « Chapitre 10 »),
+    // sans jamais reculer sur la section précédente.
     const title = normalizeTitle(e.title);
-    for (let k = Math.max(0, start - 2); k <= Math.min(blocks.length - 1, start + 2); k++) {
+    const lowest = sections.length ? floor + 1 : 0;
+    let best = -1;
+    let bestScore = 0;
+    for (let k = Math.max(lowest, start - 2); k <= Math.min(blocks.length - 1, start + 2); k++) {
       const b = blocks[k]!;
       const t = normalizeTitle(lineText(b.spans));
-      if (b.kind === 'h' && t && (t === title || title.startsWith(t) || t.startsWith(title))) {
-        start = k;
-        break;
+      if (b.kind !== 'h' || !t) continue;
+      const prefix = (long: string, short: string) => long.startsWith(short) && !/^\d/.test(long.slice(short.length));
+      const score = t === title ? 2 : prefix(title, t) || prefix(t, title) ? 1 : 0;
+      if (score > bestScore || (score && score === bestScore && Math.abs(k - start) < Math.abs(best - start))) {
+        best = k;
+        bestScore = score;
       }
     }
+    if (best >= 0) start = best;
     start = Math.max(start, floor);
     floor = start;
     sections.push({ label: e.title.replace(/\s+/g, ' ').trim().slice(0, 120), start, level: e.level });
@@ -497,12 +523,19 @@ function outlineSections(blocks: Block[], outline: PdfOutlineEntry[]): Section[]
   return kept.map((s) => ({ label: s.label, start: s.start, ...(lower && s.level === level && level > 0 ? { depth: 1 } : {}) }));
 }
 
-function headingSections(blocks: Block[], chapterSize: number | null): Section[] | null {
+function headingSections(blocks: Block[], plan: HeadingPlan): Section[] | null {
+  const { chapterSize, structural } = plan;
   const starts = blocks
     .map((b, i) => ({ b, i }))
-    .filter(({ b }) => b.kind === 'h' && (chapterSize !== null ? !b.pattern && round(b.size) >= chapterSize && b.level === 2 : b.pattern));
+    .filter(({ b }) => b.kind === 'h' && (chapterSize !== null ? !b.pattern && structural.has(round(b.size)) && round(b.size) >= chapterSize : b.pattern));
   if (starts.length < 2) return null;
-  const sections = starts.map(({ b, i }) => ({ label: lineText(b.spans).replace(/\s+/g, ' ').trim().slice(0, 120), start: i }));
+  // Des parties (titres plus grands) : leurs chapitres sont décalés dans le sommaire.
+  const parts = chapterSize !== null && starts.some(({ b }) => round(b.size) > chapterSize);
+  const sections = starts.map(({ b, i }) => ({
+    label: lineText(b.spans).replace(/\s+/g, ' ').trim().slice(0, 120),
+    start: i,
+    ...(parts && round(b.size) === chapterSize ? { depth: 1 } : {}),
+  }));
   // Trop de « chapitres » minuscules (diapositives, fiches) : le découpage par pages vaut mieux.
   const total = blocks.reduce((n, b) => n + words(lineText(b.spans)), 0);
   if (sections.length > 20 && total / sections.length < 120) return null;
@@ -544,7 +577,7 @@ export function convertPdfText(pages: PdfPageText[], outline: PdfOutlineEntry[],
   const { pages: flow, notes } = extractNotes(cleaned, metrics);
   const lex = lexicon(flow);
   const blocks = buildBlocks(flow, metrics, pages.map((p) => p.width), lex).filter((b) => lineText(b.spans).trim());
-  const chapterSize = rankHeadings(blocks);
+  const plan = rankHeadings(blocks);
   const total = blocks.reduce((n, b) => n + words(lineText(b.spans)), 0);
   if (!blocks.length) return { chapters: [], words: 0, structure: 'pages' };
 
@@ -552,7 +585,7 @@ export function convertPdfText(pages: PdfPageText[], outline: PdfOutlineEntry[],
   let sections = outlineSections(blocks, outline);
   if (!sections) {
     structure = 'headings';
-    sections = headingSections(blocks, chapterSize);
+    sections = headingSections(blocks, plan);
   }
   if (!sections) {
     structure = 'pages';

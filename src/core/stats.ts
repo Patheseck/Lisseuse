@@ -23,7 +23,8 @@ export function forecast(cards: StatCard[], now: number, days = 7): number[] {
   const out = new Array<number>(days).fill(0);
   for (const c of cards) {
     if (!c.srs || c.srs.state === 0) continue;
-    const index = Math.max(0, Math.floor((startOfDay(c.srs.due) - today) / DAY_MS));
+    // Arrondi (et non partie entière) : une journée du passage à l'heure d'été ne dure que 23 h.
+    const index = Math.max(0, Math.round((startOfDay(c.srs.due) - today) / DAY_MS));
     if (index < days) out[index]!++;
   }
   return out;

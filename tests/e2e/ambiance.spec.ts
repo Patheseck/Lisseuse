@@ -89,6 +89,17 @@ test.describe('Ambiance musicale', () => {
     await expect.poll(() => playing(page)).toBe(0);
     await sheet.getByTestId('ambiance-toggle').click();
     await expect(button).toHaveAttribute('data-state', 'playing');
+    // Volume changé juste avant de fermer le panneau : il est bien enregistré.
+    await sheet.getByTestId('ambiance-volume').evaluate((el: HTMLInputElement) => {
+      el.value = '0.6';
+      el.dispatchEvent(new Event('input'));
+      el.dispatchEvent(new Event('change'));
+    });
+    await page.keyboard.press('Escape');
+    await expect(sheet).toBeHidden();
+    await page.waitForTimeout(400);
+    await page.evaluate(() => (document.querySelector('[data-testid=open-ambiance]') as HTMLButtonElement).click());
+    await expect(sheet.getByTestId('ambiance-volume')).toHaveValue('0.6');
     await page.keyboard.press('Escape');
 
     // Écran éteint (page cachée) : la musique s'arrête, et reprend au retour.

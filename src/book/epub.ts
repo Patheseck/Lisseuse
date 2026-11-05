@@ -201,13 +201,16 @@ export async function parseEpub(data: Blob | ArrayBuffer | Uint8Array, fileName:
   const spineIndex = new Map(spine.map((item, i) => [item.href, i]));
   const resources: Record<string, Blob> = {};
   const chapters: Chapter[] = [];
+  /** Chapitre produit par chaque élément de l'ordre de lecture (un fichier manquant n'en produit pas). */
+  const chapterOfSpine = new Map<number, number>();
   let untitled = 0;
 
-  for (const item of spine) {
+  for (const [spinePos, item] of spine.entries()) {
     const raw = await archive.text(item.href);
     const doc = raw ? parseXhtml(raw) : null;
     const body = doc?.body;
     if (!doc || !body) continue;
+    chapterOfSpine.set(spinePos, chapters.length);
 
     // <svg><image href> (couvertures surtout) → <img>, plus simple à afficher et à nettoyer.
     for (const svg of byLocalName(body, 'svg')) {
@@ -252,6 +255,15 @@ export async function parseEpub(data: Blob | ArrayBuffer | Uint8Array, fileName:
     chapters.push({ label, html: sanitizeHtml(body.innerHTML) });
   }
   if (!chapters.length) throw new EpubError('Ce livre ne contient aucun chapitre lisible.');
+  // Liens internes : de la position dans l'ordre de lecture au numéro de chapitre réel.
+  if (chapterOfSpine.size !== spine.length) {
+    for (const chapter of chapters) {
+      chapter.html = chapter.html.replace(/ data-chapter="(\d+)"/g, (_, n: string) => {
+        const target = chapterOfSpine.get(Number(n));
+        return target === undefined ? '' : ` data-chapter="${target}"`;
+      });
+    }
+  }
 
   const language = normalizeLanguage(metaText('language')) ?? detectLanguage(textSample(chapters));
   return { format: 'epub', title, author, chapters, resources, cover, language };

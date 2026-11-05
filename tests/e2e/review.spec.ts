@@ -91,6 +91,37 @@ test.describe('Étape 3 — fiches et révision', () => {
     await expect(page.getByTestId('start-review')).toHaveCount(0);
   });
 
+  test('un double appui sur une note ne compte qu’une fois et ne saute pas la fiche suivante', async ({ page }) => {
+    await createQaCard(page);
+    await selectText(page, 'Étapes principales', ':');
+    await page.getByTestId('card-from-selection').click();
+    const editor = page.getByTestId('card-editor');
+    await editor.getByTestId('card-question').fill('Combien d’étapes principales ?');
+    await editor.getByTestId('card-answer').fill('Trois.');
+    await editor.getByTestId('card-save').click();
+    await expect(editor).toBeHidden();
+    await page.getByTestId('back').click();
+    await page.getByTestId('start-review').click();
+
+    await expect(page.getByTestId('review-progress')).toHaveText('1 / 2');
+    const first = await page.getByTestId('review-question').textContent();
+    await page.getByTestId('confidence-2').click();
+    // Deux appuis très rapprochés, avant même la fin de l'enregistrement.
+    // (« Facile » : une nouvelle fiche sort de la séance, la suivante doit s'afficher.)
+    await page.evaluate(() => {
+      const b = document.querySelector<HTMLButtonElement>('[data-testid=grade-4]')!;
+      b.click();
+      b.click();
+    });
+    await expect(page.getByTestId('review-progress')).toHaveText('2 / 2');
+    await expect(page.getByTestId('review-question')).not.toHaveText(first!);
+    await page.getByTestId('confidence-2').click();
+    await page.getByTestId('grade-4').click();
+    const done = page.getByTestId('review-done');
+    await expect(done).toBeVisible();
+    await expect(done.getByTestId('stat-count')).toHaveText('2');
+  });
+
   test('fiche « étapes » créée depuis un surlignage, révisée dans l’ordre', async ({ page }) => {
     await selectText(page, 'Absorption', 'Cycle de Calvin.');
     await page.getByTestId('highlight-selection').click();

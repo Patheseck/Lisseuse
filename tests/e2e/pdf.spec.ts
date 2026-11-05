@@ -79,7 +79,7 @@ test.describe('Livres PDF', () => {
   test('PDF sans signets : les titres, plus grands que le texte, font les chapitres', async ({ page }) => {
     await importFile(page, 'sommeil.pdf', 'application/pdf', pdf({ outline: false }));
     await expect(page.getByTestId('reader-title')).toHaveText('Le Sommeil et la Mémoire');
-    expect(await tocLabels(page)).toEqual(['Le Sommeil et la Mémoire', 'Chapitre 1 — Dormir', 'Chapitre 2 — Rêver']);
+    expect(await tocLabels(page)).toEqual(['Début du livre', 'Chapitre 1 — Dormir', 'Chapitre 2 — Rêver']);
   });
 
   test('PDF sans aucune structure : découpé en tranches de pages', async ({ page }) => {
@@ -142,6 +142,13 @@ test.describe('Livres PDF', () => {
       };
     }));
     await page.reload();
+    await page.getByTestId('book-item').getByRole('button').first().click();
+    await expect(dialog).toContainText('PDF protégé');
+    // Sans mot de passe : une explication, pas une erreur.
+    await dialog.getByRole('button', { name: 'Annuler' }).click();
+    await expect(page.getByTestId('reader-error')).toContainText('protégé par un mot de passe');
+    await expect(page.getByTestId('toast')).toHaveCount(0);
+    await click(page, 'back');
     await page.getByTestId('book-item').getByRole('button').first().click();
     await expect(dialog).toContainText('PDF protégé');
     await dialog.getByTestId('password').fill('lune');

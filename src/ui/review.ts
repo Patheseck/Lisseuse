@@ -169,7 +169,21 @@ export function reviewScreen(navigate: Navigate, only?: string[], back?: 'cards'
     });
   }
 
+  /** Une note à la fois : un double appui ne doit ni noter deux fois, ni sauter la fiche suivante. */
+  let grading = false;
+
   async function grade(card: CardRecord, attempt: string, confidence: Confidence, g: Grade4): Promise<void> {
+    if (grading || queue[0] !== card.id) return;
+    grading = true;
+    body.querySelectorAll<HTMLButtonElement>('.grade').forEach((b) => (b.disabled = true));
+    try {
+      await saveGrade(card, attempt, confidence, g);
+    } finally {
+      grading = false;
+    }
+  }
+
+  async function saveGrade(card: CardRecord, attempt: string, confidence: Confidence, g: Grade4): Promise<void> {
     setKeys(null);
     const now = Date.now();
     const before = card.srs!;
@@ -185,6 +199,12 @@ export function reviewScreen(navigate: Navigate, only?: string[], back?: 'cards'
     } catch (err) {
       logError('révision', err);
       toast(`Révision non enregistrée : ${errorMessage(err)}`, 'error');
+      // Les notes redeviennent utilisables pour réessayer.
+      body.querySelectorAll<HTMLButtonElement>('.grade').forEach((b) => (b.disabled = false));
+      setKeys((e) => {
+        const n = Number(e.key);
+        if (n >= 1 && n <= 4 && !(e.target as Element).closest?.('textarea, input')) void grade(card, attempt, confidence, n as Grade4);
+      });
       return;
     }
     cards.set(card.id, updated);

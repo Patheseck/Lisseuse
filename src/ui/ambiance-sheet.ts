@@ -61,9 +61,13 @@ export function ambianceSheet(bookId: string): Sheet & { refresh(): void; dispos
   );
 
   volume.addEventListener('input', () => player.setVolume(Number(volume.value)));
+  const saveVolume = () => {
+    saveTimer = undefined;
+    saveAmbiancePrefs({ volume: Number(volume.value) }).catch((err: unknown) => logError('ambiance', err));
+  };
   volume.addEventListener('change', () => {
     window.clearTimeout(saveTimer);
-    saveTimer = window.setTimeout(() => saveAmbiancePrefs({ volume: Number(volume.value) }).catch((err: unknown) => logError('ambiance', err)), SAVE_DELAY_MS);
+    saveTimer = window.setTimeout(saveVolume, SAVE_DELAY_MS);
   });
   fileInput.addEventListener('change', () => {
     const files = Array.from(fileInput.files ?? []);
@@ -174,7 +178,12 @@ export function ambianceSheet(bookId: string): Sheet & { refresh(): void; dispos
   }
 
   const unsubscribe = player.onChange(renderStatus);
-  sheet.el.addEventListener('close', () => window.clearTimeout(saveTimer));
+  // Panneau fermé juste après un réglage du volume : l'enregistrement en attente se fait tout de suite.
+  sheet.el.addEventListener('close', () => {
+    if (saveTimer === undefined) return;
+    window.clearTimeout(saveTimer);
+    saveVolume();
+  });
   const open = sheet.open.bind(sheet);
   return Object.assign(sheet, {
     open() {

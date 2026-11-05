@@ -47,16 +47,26 @@ async function drmVendor(source: Blob): Promise<string> {
 
 const isTextItem = (item: object): item is TextItem => 'str' in item;
 
-function cleanTitle(raw: unknown, fileName: string): string {
+/**
+ * Titre des métadonnées, sauf s'il ne vaut rien : vide, sans aucune lettre (quelle que soit
+ * l'écriture), nom de logiciel ou de fichier (« Microsoft Word - cours.docx », « Document1 »).
+ */
+export function cleanTitle(raw: unknown, fileName: string): string {
   const t = typeof raw === 'string' ? raw.replace(/\s+/g, ' ').trim() : '';
-  const junk = t.length < 2 || /^(untitled|sans titre|document\s*\d*|microsoft word\b|titre|title)\b/i.test(t) || /\.(docx?|pdf|indd|qxd|rtf|odt|tex|dvi|ps|pages)$/i.test(t) || /^[\W\d_]+$/.test(t);
+  // (Un seul caractère latin ne fait pas un titre ; un idéogramme, si : « 道 ».)
+  const junk = /^[\x00-\x7f]?$/.test(t)
+    || !/\p{L}/u.test(t)
+    || /^(untitled|sans titre|document\s*\d*|titre|title|sans nom)$/i.test(t)
+    || /^microsoft (word|powerpoint)\b/i.test(t)
+    || /\.(docx?|pdf|indd|qxd|rtf|odt|tex|dvi|ps|pages)$/i.test(t);
   if (!junk) return t.slice(0, 200);
   return fileName.replace(/\.pdf$/i, '').replace(/_+/g, ' ').replace(/\s+/g, ' ').trim() || 'Sans titre';
 }
 
-function cleanAuthor(raw: unknown): string | null {
+/** Auteur des métadonnées, sauf compte d'ordinateur ou valeur vide (« Administrateur », « user »). */
+export function cleanAuthor(raw: unknown): string | null {
   const t = (Array.isArray(raw) ? raw.join(', ') : typeof raw === 'string' ? raw : '').replace(/\s+/g, ' ').trim();
-  if (!t || /^(unknown|inconnu|admin(istrat(or|eur))?|user|utilisateur|owner|auteur|author|propriétaire|[\W\d_]*)$/i.test(t)) return null;
+  if (!t || !/\p{L}/u.test(t) || /^(unknown|inconnu|admin(istrat(or|eur))?|user|utilisateur|owner|auteur|author|propriétaire)$/i.test(t)) return null;
   return t.slice(0, 200);
 }
 
@@ -149,6 +159,8 @@ export async function parsePdf(data: Uint8Array, source: Blob, fileName: string,
   try {
     doc = await task.promise;
   } catch (err) {
+    // Échec d'ouverture (DRM, fichier abîmé…) : le worker de pdf.js est libéré quand même.
+    if (!cancelled) void task.destroy();
     if (cancelled) {
       if (!options.askPassword) throw new ImportError('Ce PDF est protégé par un mot de passe.');
       throw new ImportCancelled();

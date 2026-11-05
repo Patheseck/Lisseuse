@@ -3,7 +3,7 @@ import './pdf-worker';
 import { DrmError } from '../../src/book/epub';
 import { ImportCancelled, ImportError, ScannedPdfError } from '../../src/book/errors';
 import { parseBookFile } from '../../src/book/import';
-import { parsePdf } from '../../src/book/pdf';
+import { cleanAuthor, cleanTitle, parsePdf } from '../../src/book/pdf';
 import { filler, makePdf, typesetBook, type BookSpec } from '../fixtures/make-pdf';
 
 const BOOK: BookSpec = {
@@ -32,6 +32,19 @@ describe('lecture d’un PDF', () => {
     const book = await parse(data, 'Mon_cours_de_biologie.pdf');
     expect(book.title).toBe('Mon cours de biologie');
     expect(book.author).toBeNull();
+  });
+
+  it('titres et auteurs : toutes les écritures gardées, valeurs sans intérêt écartées', () => {
+    expect(cleanTitle('Война и мир', 'x.pdf')).toBe('Война и мир');
+    expect(cleanTitle('東京物語', 'x.pdf')).toBe('東京物語');
+    expect(cleanTitle('道', 'x.pdf')).toBe('道');
+    expect(cleanTitle('كليلة ودمنة', 'x.pdf')).toBe('كليلة ودمنة');
+    expect(cleanTitle('Document Design Basics', 'x.pdf')).toBe('Document Design Basics');
+    expect(cleanTitle('Title IX and Sports', 'x.pdf')).toBe('Title IX and Sports');
+    for (const junk of ['', ' ', '123', '---', 'Untitled', 'Document1', 'Microsoft Word - brouillon', 'cours.docx']) expect(cleanTitle(junk, 'mon_cours.pdf')).toBe('mon cours');
+    expect(cleanAuthor('Лев Толстой')).toBe('Лев Толстой');
+    expect(cleanAuthor(['Ada Lovelace', 'Charles Babbage'])).toBe('Ada Lovelace, Charles Babbage');
+    for (const junk of ['', '1234', 'Administrator', 'user']) expect(cleanAuthor(junk)).toBeNull();
   });
 
   it('donne le même identifiant au même PDF', async () => {

@@ -130,20 +130,25 @@ export class Pager {
   }
 
   /** Fin du glisser : tourne la page si le geste est assez ample ou rapide. Renvoie la direction, ou 0. */
-  release(dx: number, velocity: number): -1 | 0 | 1 {
+  /**
+   * Fin d'un glisser. `dir` : le sens voulu (0 : geste trop timide) ; `moved` : la page a tourné.
+   * Un geste franc qui n'a pas pu tourner (`dir` non nul, `moved` faux) voulait sortir du chapitre :
+   * le lecteur décide.
+   */
+  release(dx: number, velocity: number): { dir: -1 | 0 | 1; moved: boolean } {
     const decisive = Math.abs(dx) > this.width * 0.18 || Math.abs(velocity) > 0.45;
-    const dir = decisive ? (dx < 0 ? 1 : -1) : 0;
+    const dir: -1 | 0 | 1 = decisive ? (dx < 0 ? 1 : -1) : 0;
     if (dir === 1 && this.page < this.pages - 1) {
       this.goTo(this.page + 1);
-      return 1;
+      return { dir, moved: true };
     }
     if (dir === -1 && this.page > 0) {
       this.goTo(this.page - 1);
-      return -1;
+      return { dir, moved: true };
     }
     this.dragX = 0;
     this.animateTo(this.targetX());
-    return dir === 0 ? 0 : (dir as -1 | 1); // bord du chapitre : le lecteur décide
+    return { dir, moved: false };
   }
 
   // ---------- Éléments ----------

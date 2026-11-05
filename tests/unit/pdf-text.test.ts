@@ -132,6 +132,16 @@ describe('PDF : chapitres', () => {
     expect(html(pages, outline).chapters.map((c) => c.html.split('\n')[0])).toEqual(['<h2>Le sommeil</h2>', '<h2>Les rêves</h2>']);
   });
 
+  it('signets « Chapitre 1 » et « Chapitre 10 » : chacun reste sur son titre', () => {
+    // Un chapitre 1 très court, juste avant le chapitre 10.
+    const pages = [page(item('Chapitre 1', 50, 470, 18), ...body(['>Court.'], 430)), chapterPage('Chapitre 10', 'Dixième.')];
+    const outline: PdfOutlineEntry[] = [{ title: 'Chapitre 1', level: 0, page: 0, y: 488 }, { title: 'Chapitre 10', level: 0, page: 1, y: 488 }];
+    const res = html(pages, outline);
+    expect(res.chapters.map((c) => c.label)).toEqual(['Chapitre 1', 'Chapitre 10']);
+    expect(res.chapters[0]!.html).toContain('Court.');
+    expect(res.chapters[1]!.html.split('\n')[0]).toBe('<h2>Chapitre 10</h2>');
+  });
+
   it('parties et chapitres : une partie vide disparaît, les chapitres d’une partie sont décalés', () => {
     const pages = [page(item('PREMIÈRE PARTIE', 50, 400, 20), ...body(CONTEXT, 300)), chapterPage('Chapitre 1', 'Un.'), chapterPage('Chapitre 2', 'Deux.'), chapterPage('Chapitre 3', 'Trois.')];
     const outline: PdfOutlineEntry[] = [
@@ -149,8 +159,25 @@ describe('PDF : chapitres', () => {
     const pages = [page(item('Titre du livre', 80, 400, 26)), chapterPage('Le sommeil', 'Texte A.'), page(item('Une section', 50, 470, 14), ...body(['>Texte.', ...CONTEXT], 440)), chapterPage('Les rêves', 'Texte B.')];
     const res = html(pages);
     expect(res.structure).toBe('headings');
-    expect(res.chapters.map((c) => c.label)).toEqual(['Titre du livre', 'Le sommeil', 'Les rêves']);
+    // Le titre du livre (une seule fois) reste dans le début du livre.
+    expect(res.chapters.map((c) => c.label)).toEqual([FRONT_LABEL, 'Le sommeil', 'Les rêves']);
+    expect(res.chapters[0]!.html).toContain('<h2>Titre du livre</h2>');
     expect(res.chapters[1]!.html).toContain('<h3>Une section</h3>');
+  });
+
+  it('le titre du livre répété (couverture, page de titre) n’ouvre pas les chapitres', async () => {
+    const pages = [page(item('Le Grand Livre', 60, 400, 28)), page(item('Le Grand Livre', 60, 400, 28), ...body(CONTEXT, 300)), chapterPage('Premier chapitre', 'Un.', 16), chapterPage('Second chapitre', 'Deux.', 16)];
+    expect(html(pages).chapters.map((c) => c.label)).toEqual([FRONT_LABEL, 'Premier chapitre', 'Second chapitre']);
+  });
+
+  it('parties et chapitres repérés par leur taille : les chapitres sont décalés sous leur partie', () => {
+    const pages = [
+      page(item('Première partie', 50, 470, 24), ...body(CONTEXT, 400)),
+      chapterPage('Le sommeil', 'Un.', 16), chapterPage('Les rêves', 'Deux.', 16),
+      page(item('Deuxième partie', 50, 470, 24), ...body(CONTEXT, 400)),
+      chapterPage('Réviser', 'Trois.', 16),
+    ];
+    expect(html(pages).chapters.map((c) => [c.label, c.depth ?? 0])).toEqual([['Première partie', 0], ['Le sommeil', 1], ['Les rêves', 1], ['Deuxième partie', 0], ['Réviser', 1]]);
   });
 
   it('sans signets ni titres plus grands : « Chapitre 3 », « Épilogue »… seuls sur leur ligne', () => {

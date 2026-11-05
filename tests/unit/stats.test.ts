@@ -11,6 +11,19 @@ describe('forecast', () => {
     const cards = [learned(NOW - 3 * DAY), learned(NOW + 1000), learned(NOW + DAY), learned(NOW + 6 * DAY), learned(NOW + 9 * DAY), { kind: 'qa', srs: newSrs(NOW) }, { kind: 'highlight', srs: null }];
     expect(forecast(cards, NOW)).toEqual([2, 1, 0, 0, 0, 0, 1]);
   });
+
+  it('passage à l’heure d’été (journée de 23 h) : chaque jour garde sa colonne', () => {
+    const tz = process.env.TZ;
+    process.env.TZ = 'Europe/Paris';
+    try {
+      const saturday = new Date(2026, 2, 28, 12).getTime(); // l'heure change dans la nuit du 28 au 29 mars
+      const cards = [29, 30, 31].map((day) => learned(new Date(2026, 2, day, 9).getTime()));
+      expect(forecast(cards, saturday)).toEqual([0, 1, 1, 1, 0, 0, 0]);
+    } finally {
+      if (tz === undefined) delete process.env.TZ;
+      else process.env.TZ = tz;
+    }
+  });
 });
 
 describe('retention', () => {

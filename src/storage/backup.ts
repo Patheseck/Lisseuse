@@ -189,6 +189,13 @@ export async function restoreBackup(parsed: ParsedBackup): Promise<ImportReport>
       const { file: encodedFile, cover: encodedCover, ...meta } = b;
       // Restauré avec le découpage qu'il avait à l'export : ses fiches s'y réfèrent.
       const record: BookRecord = { ...meta, layout: typeof meta.layout === 'number' ? meta.layout : 0, file: decodeBlob(encodedFile), cover: encodedCover ? decodeBlob(encodedCover) : null };
+      // Un PDF n'est pas relu ici (c'est long, et un PDF protégé demande son mot de passe) :
+      // il le sera à sa première ouverture, avec la progression et la demande de mot de passe.
+      if (record.format === 'pdf' && Array.isArray(record.chapterLabels) && record.chapterLabels.length === record.chapterCount) {
+        await putImportedBook(record, null);
+        report.books++;
+        continue;
+      }
       const parsedBook = await parseStoredBook(record);
       const chapters = layoutChapters(parsedBook.chapters, record, record.layout ?? 0);
       await putImportedBook({ ...record, chapterCount: chapters.length, chapterLabels: chapters.map((c) => c.label) }, { chapters, resources: parsedBook.resources });

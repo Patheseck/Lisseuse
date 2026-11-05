@@ -1,12 +1,14 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { collectBackup, decrypt, encrypt, exportBackup, readBackup, restoreBackup } from '../../src/storage/backup';
-import { importBook } from '../../src/book/service';
+import { importBook, openBook } from '../../src/book/service';
 import { listAllCards, listReviews, putCard, recordReview, newCard } from '../../src/storage/cards';
 import { closeDb, DB_NAME, tx } from '../../src/storage/db';
-import { getBook, listBooks, saveProgress } from '../../src/storage/library';
+import { getBook, getChapterCache, listBooks, saveProgress } from '../../src/storage/library';
 import { putSetting, getSetting } from '../../src/storage/settings';
 import { anchorFromOffsets } from '../../src/reader/anchor';
 import { newSrs, rate } from '../../src/core/scheduler';
+import { makePdf, typesetBook, filler } from '../fixtures/make-pdf';
+import './pdf-worker';
 
 const MD = '# Un\n\nPremier chapitre avec du texte.\n';
 
@@ -65,6 +67,24 @@ describe('sauvegarde', () => {
     expect((await getBook(bookId))?.chapterCount).toBe(1);
     expect(await (await getBook(bookId))!.file.text()).toBe(MD);
     expect(await getSetting('reader')).toEqual({ fontSize: 24 });
+  });
+
+  it('un PDF protégé par mot de passe se restaure, et sera relu (mot de passe demandé) à l’ouverture', async () => {
+    const pdf = makePdf(typesetBook({ title: 'Secret', author: 'A', outline: true, userPassword: 'lune', chapters: [{ title: 'Un', paragraphs: [filler(200, 1)] }, { title: 'Deux', paragraphs: [filler(200, 2)] }] }));
+    const { book } = await importBook(new File([pdf as BlobPart], 'secret.pdf', { type: 'application/pdf' }), { askPassword: async () => 'lune' });
+    const { blob } = await exportBackup({ includeBooks: true });
+    await wipeAll();
+    const report = await restoreBackup(await readBackup(await blob.text(), async () => null));
+    expect(report.failures).toEqual([]);
+    expect(report.books).toBe(1);
+    const restored = (await getBook(book.id))!;
+    expect(restored.chapterLabels).toEqual(['Début du livre', 'Un', 'Deux']);
+    expect(await getChapterCache(book.id)).toBeUndefined();
+    const asked: boolean[] = [];
+    const opened = await openBook(book.id, { askPassword: async (retry) => (asked.push(retry), 'lune') });
+    expect(asked).toEqual([false]);
+    expect(opened.chapters.map((c) => c.label)).toEqual(['Début du livre', 'Un', 'Deux']);
+    expect(await getChapterCache(book.id)).toBeDefined();
   });
 
   it('sans les livres : signale ceux à réimporter, garde les fiches', async () => {

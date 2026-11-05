@@ -1,3 +1,4 @@
+import JSZip from 'jszip';
 import { describe, expect, it } from 'vitest';
 import { DrmError, EpubError, parseEpub, resolvePath } from '../../src/book/epub';
 import { detectFormat, parseBookFile } from '../../src/book/import';
@@ -37,6 +38,23 @@ describe('parseEpub — EPUB 3', async () => {
     expect(html).toContain('data-anchor="suite"');
     expect(book.chapters[1]!.html).toContain('data-anchor-id="suite"');
     expect(html).toContain('href="https://example.org"');
+  });
+
+  it('liens internes justes même quand un fichier de l’ordre de lecture manque', async () => {
+    const zip = new JSZip();
+    zip.file('mimetype', 'application/epub+zip');
+    zip.file('META-INF/container.xml', '<?xml version="1.0"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="c.opf" media-type="application/oebps-package+xml"/></rootfiles></container>');
+    zip.file('c.opf', `<?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>T</dc:title></metadata>
+      <manifest><item id="cov" href="cover.xhtml" media-type="application/xhtml+xml"/><item id="a" href="a.xhtml" media-type="application/xhtml+xml"/><item id="b" href="b.xhtml" media-type="application/xhtml+xml"/></manifest>
+      <spine><itemref idref="cov"/><itemref idref="a"/><itemref idref="b"/></spine></package>`);
+    // cover.xhtml est déclaré mais absent de l'archive.
+    zip.file('a.xhtml', '<html xmlns="http://www.w3.org/1999/xhtml"><body><h1>A</h1><p><a href="b.xhtml">vers B</a> <a href="cover.xhtml">vers la couverture</a></p></body></html>');
+    zip.file('b.xhtml', '<html xmlns="http://www.w3.org/1999/xhtml"><body><h1>B</h1><p>Fin.</p></body></html>');
+    const parsed = await parseEpub(await zip.generateAsync({ type: 'uint8array' }), 't.epub');
+    expect(parsed.chapters.map((c) => c.label)).toEqual(['A', 'B']);
+    expect(parsed.chapters[0]!.html).toContain('<a data-chapter="1">vers B</a>');
+    // Lien vers le fichier manquant : il ne mène plus nulle part plutôt qu'au mauvais chapitre.
+    expect(parsed.chapters[0]!.html).toContain('<a>vers la couverture</a>');
   });
 
   it('neutralise scripts, gestionnaires et styles', () => {

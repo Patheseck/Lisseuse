@@ -24,6 +24,7 @@ import { ambianceSheet } from './ambiance-sheet';
 import { addRecall, listRecalls, markPretest, pretestDates, type RecallRecord } from '../storage/learning';
 import { chapterHeadings, chapterRecall, chapterSurveySheet, pretest } from './chapter-practice';
 import { pdfOptions } from './import-flow';
+import { ImportCancelled } from '../book/errors';
 import { add, clear, h } from './dom';
 import { confirmDialog, toast } from './feedback';
 import { speak, stop as stopSpeech, ttsAvailable } from '../native/tts';
@@ -57,6 +58,8 @@ export function readerScreen(bookId: string, navigate: Navigate, focusCardId?: s
   let goal: BookGoal | null = null;
   let goalDismissed = false;
   let bilan: BookBilan | null = null;
+  /** Écran quitté : une ouverture encore en cours ne doit plus rien démarrer (musique, touches, écran allumé). */
+  let destroyed = false;
   const orphans = new Set<string>();
   const resourceUrls = new Map<string, string>();
   const sheets: Sheet[] = [];
@@ -1099,8 +1102,9 @@ export function readerScreen(bookId: string, navigate: Navigate, focusCardId?: s
   }
 
   async function openSettings(): Promise<void> {
+    settings ??= await loadReaderSettings();
     if (!settingsSheet) {
-      settingsSheet = readerSettingsSheet(settings ?? (await loadReaderSettings()), { onChange: applySettings });
+      settingsSheet = readerSettingsSheet({ current: () => settings!, onChange: applySettings });
       sheets.push(settingsSheet);
     }
     settingsSheet.open();
@@ -1143,6 +1147,7 @@ export function readerScreen(bookId: string, navigate: Navigate, focusCardId?: s
   /** Reprend l'ambiance choisie pour ce livre (si elle a des morceaux). */
   async function startBookAmbiance(): Promise<void> {
     const [prefs, chosen] = await Promise.all([loadAmbiancePrefs(), getBookAmbiance(bookId)]);
+    if (destroyed) return;
     ambiance.setVolume(prefs.volume);
     if (chosen) await ambiance.play(chosen);
   }
@@ -1244,22 +1249,25 @@ export function readerScreen(bookId: string, navigate: Navigate, focusCardId?: s
     gesture = null;
     if (g.kind === 'swipe') {
       const dx = e.clientX - g.x;
-      const dir = pager.release(dx, dx / Math.max(1, performance.now() - g.t));
+      const { dir, moved } = pager.release(dx, dx / Math.max(1, performance.now() - g.t));
       if (dir !== 0 && chromeVisible()) setChrome(false);
-      // Glisser au-delà du bord du chapitre : chapitre voisin.
-      if (dir !== 0 && pager.page === (dir === 1 ? pager.pages - 1 : 0) && Math.abs(dx) > scroller.clientWidth * 0.18) {
-        const atEdge = dir === 1 ? pager.offset() >= 1 : pager.offset() <= 0;
-        if (atEdge) turn(dir);
-      }
+      // Glisser franc déjà au bord du chapitre (la page n'a pas pu tourner) : chapitre voisin.
+      if (!moved && dir !== 0 && Math.abs(dx) > scroller.clientWidth * 0.18) turn(dir);
     } else if (g.kind === 'brightness' && settings) {
       window.setTimeout(() => (brightnessBadge.hidden = true), 700);
       saveReaderSettings(settings).catch((err: unknown) => logError('réglages', err));
     }
   };
   scroller.addEventListener('pointerup', endGesture);
+  // Geste interrompu par le système (notification, défilement natif) : la page revient en place.
   scroller.addEventListener('pointercancel', (e) => {
-    if (gesture?.kind === 'swipe') pager.release(0, 0);
-    endGesture(e);
+    if (!gesture || e.pointerId !== gesture.id) return;
+    if (gesture.kind === 'swipe') pager.release(0, 0);
+    else if (gesture.kind === 'brightness' && settings) {
+      brightnessBadge.hidden = true;
+      saveReaderSettings(settings).catch((err: unknown) => logError('réglages', err));
+    }
+    gesture = null;
   });
 
   // Tap : bords = pages, centre = menus. Pas pendant une sélection ni sur un élément interactif.
@@ -1301,9 +1309,15 @@ export function readerScreen(bookId: string, navigate: Navigate, focusCardId?: s
   const clockTimer = window.setInterval(updateStatus, 30_000);
   const resize = new ResizeObserver(() => pager.relayout());
   resize.observe(scroller);
+  /**
+   * Un panneau ou une fenêtre est ouvert (sommaire, réglages, éditeur de fiche, restitution,
+   * confirmation…) : les touches ne tournent pas les pages derrière lui.
+   */
+  const modalOpen = () => sheets.some((s) => s.isOpen) || !!document.querySelector('dialog[open]');
   const removeVolume = onVolumeKey((dir) => {
+    if (modalOpen()) return;
     if (auto) pauseAuto();
-    if (!sheets.some((s) => s.isOpen)) turn(dir);
+    turn(dir);
   });
   void document.fonts?.ready.then(() => pager.relayout());
 
@@ -1312,7 +1326,9 @@ export function readerScreen(bookId: string, navigate: Navigate, focusCardId?: s
     selectionTimer = window.setTimeout(updateSelectionBar, SELECTION_DELAY_MS);
   };
   const onKeyDown = (e: KeyboardEvent) => {
-    if (sheets.some((s) => s.isOpen) || (e.target as Element).closest?.('input, textarea, select')) return;
+    if (modalOpen() || (e.target as Element).closest?.('input, textarea, select')) return;
+    // Espace ou Entrée sur un bouton ou un lien : ils l'activent, la page ne tourne pas.
+    if ((e.key === ' ' || e.key === 'Enter') && (e.target as Element).closest?.('button, a, summary, [role="button"]')) return;
     if (e.key === 'Escape') {
       hideMarkMenu();
       setChrome(!chromeVisible());
@@ -1363,6 +1379,8 @@ export function readerScreen(bookId: string, navigate: Navigate, focusCardId?: s
     goal = await loadGoal(bookId).catch(() => null);
     bilan = await loadBilan(bookId).catch(() => null);
     settings = await loadReaderSettings();
+    const progress = await getProgress(bookId);
+    if (destroyed) return;
     pager.setMode(settings.layout);
     void applyReaderNative(settings);
     bookTitle.textContent = opened.book.title;
@@ -1370,7 +1388,6 @@ export function readerScreen(bookId: string, navigate: Navigate, focusCardId?: s
     content.lang = opened.book.language || 'fr';
     footer.hidden = false;
     toolButtons.hidden = false;
-    const progress = await getProgress(bookId);
     const start = Math.min(Math.max(0, progress?.chapter ?? 0), opened.chapters.length - 1);
     const focusCard = focusCardId ? cards.find((c) => c.id === focusCardId) : undefined;
     if (focusCard?.origin === 'bilan') {
@@ -1391,10 +1408,17 @@ export function readerScreen(bookId: string, navigate: Navigate, focusCardId?: s
     void startBookAmbiance().catch((err: unknown) => logError('ambiance', err));
     await touchBook(bookId);
   })().catch((err: unknown) => {
+    if (destroyed) return;
+    clear(content);
+    if (err instanceof ImportCancelled) {
+      // PDF protégé dont le mot de passe n'a pas été saisi : rien d'anormal.
+      bookTitle.textContent = 'PDF protégé';
+      content.append(h('p', { className: 'error-box', 'data-testid': 'reader-error' }, 'Ce PDF est protégé par un mot de passe : sans lui, il ne peut pas être ouvert. Reviens à la bibliothèque et rouvre-le pour le saisir.'));
+      return;
+    }
     logError('ouverture', err);
     bookTitle.textContent = 'Livre illisible';
-    clear(content);
-    content.append(h('p', { className: 'error-box' }, `Impossible d’ouvrir ce livre : ${errorMessage(err)}`));
+    content.append(h('p', { className: 'error-box', 'data-testid': 'reader-error' }, `Impossible d’ouvrir ce livre : ${errorMessage(err)}`));
     toast('Ce livre n’a pas pu être ouvert.', 'error');
   });
 
@@ -1409,6 +1433,7 @@ export function readerScreen(bookId: string, navigate: Navigate, focusCardId?: s
       return false;
     },
     destroy() {
+      destroyed = true;
       stopAuto();
       ambiance.stop();
       ambianceSheetRef?.dispose();

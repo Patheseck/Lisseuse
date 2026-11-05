@@ -161,6 +161,35 @@ test.describe('Étape 2 — lecteur complet', () => {
     await touchDrag(page, [0.6, 0.5], [0.55, 0.5]);
     await expect(page.getByTestId('status-page')).toHaveText(/^1 \//);
 
+    // Geste interrompu par le système : rien ne tourne, même avec une position finale lointaine.
+    await page.locator('.reader-scroll').evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      const fire = (type: string, x: number) => el.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: 9, pointerType: 'touch', isPrimary: true, clientX: x, clientY: r.top + r.height / 2 }));
+      fire('pointerdown', r.left + r.width * 0.8);
+      fire('pointermove', r.left + r.width * 0.5);
+      fire('pointercancel', 0);
+    });
+    await expect(page.getByTestId('status-page')).toHaveText(/^1 \//);
+
+    // Jusqu'à la dernière page du chapitre : elle s'affiche, sans sauter au chapitre suivant.
+    const total = Number((await page.getByTestId('status-page').textContent())!.split('/')[1]);
+    for (let p = 2; p <= total; p++) {
+      await touchDrag(page, [0.8, 0.5], [0.2, 0.52]);
+      await expect(page.getByTestId('status-page')).toHaveText(new RegExp(`^${p} /`));
+      await expect(page.getByTestId('reader-chapter')).toHaveText('Les étapes');
+    }
+    // Un glisser de plus, au bord : le chapitre suivant ; et retour à la dernière page de celui-ci.
+    await touchDrag(page, [0.8, 0.5], [0.2, 0.52]);
+    await expect(page.getByTestId('reader-chapter')).toHaveText('Conclusion');
+    await touchDrag(page, [0.2, 0.5], [0.8, 0.52]);
+    await expect(page.getByTestId('reader-chapter')).toHaveText('Les étapes');
+    await expect(page.getByTestId('status-page')).toHaveText(new RegExp(`^${total} /`));
+    for (let p = total - 1; p >= 1; p--) {
+      await touchDrag(page, [0.2, 0.5], [0.8, 0.52]);
+      await expect(page.getByTestId('status-page')).toHaveText(new RegExp(`^${p} /`));
+    }
+    await expect(page.getByTestId('reader-chapter')).toHaveText('Les étapes');
+
     // Glisser vers le bas sur le bord gauche : moins de lumière (voile plus opaque).
     await touchDrag(page, [0.05, 0.3], [0.05, 0.7], 200);
     const dim = await page.locator('html').evaluate((el) => Number(el.style.getPropertyValue('--dim')));
@@ -189,6 +218,51 @@ test.describe('Étape 2 — lecteur complet', () => {
     await bar.getByTestId('search-selection').click();
     await expect(page.getByTestId('search-input')).toHaveValue('glucose');
     await expect(page.getByTestId('search-results').locator('li')).toHaveCount(1);
+  });
+
+  test('« Aa » reprend la luminosité réglée d’un geste au lieu de l’écraser', async ({ page }) => {
+    await page.getByTestId('next-chapter').click();
+    // « Aa » ouvert une première fois (il gardait alors sa propre copie des réglages).
+    await page.evaluate(() => (document.querySelector('[data-testid=open-settings]') as HTMLButtonElement).click());
+    await page.keyboard.press('Escape');
+    await hideChrome(page);
+    await touchDrag(page, [0.05, 0.3], [0.05, 0.7], 200);
+    const dim = () => page.locator('html').evaluate((el) => Number(el.style.getPropertyValue('--dim')));
+    const after = await dim();
+    expect(after).toBeGreaterThan(0.2);
+    await page.evaluate(() => (document.querySelector('[data-testid=open-settings]') as HTMLButtonElement).click());
+    const sheet = page.getByTestId('settings-sheet');
+    await sheet.getByRole('button', { name: 'Agrandir le texte' }).click();
+    expect(await dim()).toBeCloseTo(after, 2);
+    const slider = Number(await sheet.getByTestId('range-Luminosité').inputValue());
+    expect(slider).toBeLessThan(0.8);
+    await page.keyboard.press('Escape');
+    // Enregistrée : la même luminosité au retour dans le livre.
+    await page.reload();
+    await page.getByTestId('continue-reading').click();
+    await expect(page.getByTestId('reader-chapter')).toHaveText('Les étapes');
+    await expect.poll(dim).toBeCloseTo(after, 2);
+  });
+
+  test('derrière une fenêtre ouverte, les touches ne tournent pas les pages', async ({ page }) => {
+    await page.getByTestId('next-chapter').click();
+    await hideChrome(page);
+    await expect(page.getByTestId('status-page')).toHaveText(/^1 \//);
+    await selectText(page, 'Phrase de remplissage', 'chapitre.');
+    await page.getByTestId('card-from-selection').click();
+    const editor = page.getByTestId('card-editor');
+    await expect(editor).toBeVisible();
+    await editor.getByRole('button', { name: 'Pourquoi… ?' }).focus();
+    await page.keyboard.press('ArrowRight');
+    await page.keyboard.press('PageDown');
+    await expect(page.getByTestId('status-page')).toHaveText(/^1 \//);
+    await page.keyboard.press('Escape');
+    await expect(editor).toBeHidden();
+    await expect(page.getByTestId('status-page')).toHaveText(/^1 \//);
+    await expect(page.getByTestId('reader-chapter')).toHaveText('Les étapes');
+    // Fenêtre fermée : les flèches tournent de nouveau les pages.
+    await page.keyboard.press('ArrowRight');
+    await expect(page.getByTestId('status-page')).toHaveText(/^2 \//);
   });
 
   test('un tap pour annuler la sélection ne tourne pas la page', async ({ page }) => {

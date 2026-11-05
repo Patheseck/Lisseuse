@@ -13,7 +13,8 @@ export type StoreName = 'books' | 'chapters' | 'progress' | 'settings' | 'cards'
 let dbPromise: Promise<IDBDatabase> | null = null;
 
 export function openDb(): Promise<IDBDatabase> {
-  dbPromise ??= new Promise<IDBDatabase>((resolve, reject) => {
+  if (dbPromise) return dbPromise;
+  const opening: Promise<IDBDatabase> = new Promise<IDBDatabase>((resolve, reject) => {
     if (typeof indexedDB === 'undefined') {
       reject(new Error('Stockage IndexedDB indisponible sur cet appareil.'));
       return;
@@ -43,16 +44,26 @@ export function openDb(): Promise<IDBDatabase> {
     };
     req.onsuccess = () => {
       const db = req.result;
-      db.onversionchange = () => db.close();
+      // Connexion fermée (nouvelle version ouverte ailleurs, ou fermeture par le système) :
+      // la suivante sera rouverte au lieu de réutiliser une connexion morte.
+      const forget = () => {
+        if (dbPromise === opening) dbPromise = null;
+      };
+      db.onversionchange = () => {
+        db.close();
+        forget();
+      };
+      db.onclose = forget;
       resolve(db);
     };
     req.onerror = () => reject(req.error);
     req.onblocked = () => reject(new Error('Base de données bloquée par un autre onglet.'));
   }).catch((err: unknown) => {
-    dbPromise = null;
+    if (dbPromise === opening) dbPromise = null;
     throw err;
   });
-  return dbPromise;
+  dbPromise = opening;
+  return opening;
 }
 
 /** Ferme la connexion (tests et suppression de la base). */
