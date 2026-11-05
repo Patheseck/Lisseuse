@@ -1,6 +1,7 @@
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import type { TextItem } from 'pdfjs-dist/types/src/display/api';
 import workerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
+import { logError } from '../core/errors';
 import { detectLanguage, normalizeLanguage } from '../core/language';
 import { DrmError, textSample } from './epub';
 import { ImportCancelled, ImportError, ScannedPdfError } from './errors';
@@ -18,12 +19,52 @@ export interface PdfOptions {
   onProgress?: (done: number, total: number) => void;
   /** Mot de passe d'un PDF protégé (`retry` : le précédent était faux) ; null pour abandonner. */
   askPassword?: (retry: boolean) => Promise<string | null>;
+  /**
+   * Dessin de secours, si le texte des pages ne s'affiche pas sur l'appareil : chaque lettre est
+   * tracée comme une forme (sans police chargée dans la WebView), sans accélération graphique.
+   */
+  safeRendering?: boolean;
+  /** Mot de passe déjà donné pour ce PDF (réouverture), sinon demandé par `askPassword`. */
+  password?: string;
+}
+
+/** Adresse d'un dossier de ressources de pdf.js livré avec l'app (voir vite.config.ts). */
+function resourceUrl(dir: string): string | undefined {
+  return typeof document !== 'undefined' ? new URL(`pdfjs/${dir}/`, document.baseURI).href : undefined;
 }
 
 type PdfJs = typeof import('pdfjs-dist/legacy/build/pdf.mjs');
 let library: Promise<PdfJs> | null = null;
 
+/**
+ * pdf.js lit le texte des pages (recherche, texte adapté) en parcourant un flux avec `for await`,
+ * que les WebView antérieures à Chrome 124 ne connaissent pas. Le minimum de pdf.js est Chrome 119
+ * (où en reste Android 7) ; sa version « legacy » complète déjà le JavaScript, et la taille des
+ * pages (CSS round(), Chrome 125) est traitée à la construction (vite.config.ts).
+ */
+function polyfillForPdfJs(): void {
+  const proto = globalThis.ReadableStream?.prototype;
+  if (!proto || Symbol.asyncIterator in proto) return;
+  Object.defineProperty(proto, Symbol.asyncIterator, {
+    configurable: true,
+    writable: true,
+    async *value(this: ReadableStream) {
+      const reader = this.getReader();
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) return;
+          yield value;
+        }
+      } finally {
+        reader.releaseLock();
+      }
+    },
+  });
+}
+
 export function loadPdfJs(): Promise<PdfJs> {
+  polyfillForPdfJs();
   library ??= import('pdfjs-dist/legacy/build/pdf.mjs').then((pdfjs) => {
     pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
     return pdfjs;
@@ -137,7 +178,9 @@ async function renderCover(doc: PDFDocumentProxy, illustratedOnly = true): Promi
     if (illustratedOnly && inked / (data.length / 16) < 0.2) return null;
     if (!inked) return null; // page blanche
     return await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.85));
-  } catch {
+  } catch (err) {
+    // Sans couverture, le livre s'importe quand même ; l'échec est noté (diagnostic).
+    logError('couverture pdf', err);
     return null;
   }
 }
@@ -146,6 +189,8 @@ export interface OpenedPdf {
   doc: PDFDocumentProxy;
   /** Libère le document et le worker de pdf.js. */
   close(): void;
+  /** Mot de passe qui a ouvert le PDF (gardé en mémoire le temps de la lecture, pour le rouvrir). */
+  password?: string;
 }
 
 /**
@@ -154,15 +199,26 @@ export interface OpenedPdf {
  */
 export async function openPdf(data: Uint8Array, source: Blob, options: PdfOptions = {}): Promise<OpenedPdf> {
   const pdfjs = await loadPdfJs();
+  const safe = options.safeRendering === true;
+  // Réglages de la visionneuse de pdf.js sur Android (Firefox, et les liseuses qui l'utilisent) :
+  // polices standard livrées avec l'app plutôt que celles du système, dessin accéléré par le
+  // processeur graphique, décodeurs d'images fournis. L'app lit elle-même ces fichiers.
   const task = pdfjs.getDocument({
     data,
+    password: options.password,
     enableXfa: false,
-    useSystemFonts: true,
-    cMapUrl: typeof document !== 'undefined' ? new URL('pdfjs/cmaps/', document.baseURI).href : undefined,
+    useSystemFonts: false,
+    standardFontDataUrl: resourceUrl('standard_fonts'),
+    cMapUrl: resourceUrl('cmaps'),
     cMapPacked: true,
+    wasmUrl: resourceUrl('wasm'),
+    useWorkerFetch: false,
+    enableHWA: !safe,
+    disableFontFace: safe ? true : undefined,
     verbosity: pdfjs.VerbosityLevel.ERRORS,
   });
   let cancelled = false;
+  let password = options.password;
   task.onPassword = (update: (password: string) => void, reason: number) => {
     const ask = options.askPassword;
     if (!ask) {
@@ -170,11 +226,14 @@ export async function openPdf(data: Uint8Array, source: Blob, options: PdfOption
       void task.destroy();
       return;
     }
-    void ask(reason === pdfjs.PasswordResponses.INCORRECT_PASSWORD).then((password) => {
-      if (password === null) {
+    void ask(reason === pdfjs.PasswordResponses.INCORRECT_PASSWORD).then((given) => {
+      if (given === null) {
         cancelled = true;
         void task.destroy();
-      } else update(password);
+      } else {
+        password = given;
+        update(given);
+      }
     }, () => {
       cancelled = true;
       void task.destroy();
@@ -196,7 +255,7 @@ export async function openPdf(data: Uint8Array, source: Blob, options: PdfOption
     if ((err as Error)?.name === 'InvalidPDFException' || /invalid pdf/i.test(message)) throw new ImportError('Ce fichier PDF est abîmé ou incomplet.');
     throw err;
   }
-  return { doc, close: () => void task.destroy() };
+  return { doc, close: () => void task.destroy(), password };
 }
 
 async function readMeta(doc: PDFDocumentProxy, fileName: string): Promise<{ title: string; author: string | null }> {

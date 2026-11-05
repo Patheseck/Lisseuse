@@ -25,7 +25,8 @@ Pour fonctionner, Liseuse enregistre dans la mémoire privée de l'application, 
 - ta progression de lecture, tes statistiques et tes réglages ;
 - les morceaux de musique que tu ajoutes aux ambiances de lecture (ils ne font pas partie des
   sauvegardes) ;
-- un journal technique des erreurs, consultable dans « Mes données », qui n'est envoyé à personne.
+- un journal technique des erreurs, consultable dans « Mes données », qui n'est envoyé à personne
+  (pour un PDF mal affiché, il note aussi la version du navigateur intégré et la densité de l'écran).
 
 Ces données ne sont accessibles qu'à l'application. Désinstaller Liseuse les efface : pense à
 exporter une sauvegarde avant.

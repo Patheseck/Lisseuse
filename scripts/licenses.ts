@@ -85,6 +85,25 @@ const NATIVE = [
   'Guava ListenableFuture — © The Guava Authors',
 ];
 
+/**
+ * Ressources de pdf.js livrées avec l'app (voir vite.config.ts), à côté de la bibliothèque : elles
+ * ont leurs propres licences, fournies dans le paquet pdfjs-dist.
+ */
+const PDFJS_EXTRAS: [file: string, title: string][] = [
+  ['standard_fonts/LICENSE_FOXIT', 'Polices standard Foxit (projet PDFium) — BSD 3 clauses'],
+  ['standard_fonts/LICENSE_LIBERATION', 'Polices Liberation Sans (Red Hat) — GPL 2 avec exception pour les polices'],
+  ['wasm/LICENSE_OPENJPEG', 'OpenJPEG, décodeur JPEG 2000 — BSD 2 clauses'],
+  ['wasm/LICENSE_PDFJS_OPENJPEG', 'Adaptation d’OpenJPEG pour pdf.js (Mozilla) — BSD 2 clauses'],
+  ['wasm/LICENSE_JBIG2', 'Décodeur JBIG2 (projet PDFium) — BSD 3 clauses'],
+  ['wasm/LICENSE_PDFJS_JBIG2', 'Adaptation du décodeur JBIG2 pour pdf.js (Mozilla) — Apache 2.0'],
+];
+
+function pdfjsExtras(root: string): { title: string; text: string }[] {
+  const dir = findPackage('pdfjs-dist', root);
+  if (!dir) return [];
+  return PDFJS_EXTRAS.filter(([file]) => existsSync(join(dir, file))).map(([file, title]) => ({ title, text: readFileSync(join(dir, file), 'utf8').trim() }));
+}
+
 function apacheText(root: string): string {
   // Le texte complet de la licence Apache 2.0 est fourni par DOMPurify (double licence).
   const dir = findPackage('dompurify', root);
@@ -97,6 +116,7 @@ function apacheText(root: string): string {
 export function collectLicenses(root: string): string {
   const app = readJson(join(root, 'package.json'));
   const packages = productionPackages(root);
+  const extras = pdfjsExtras(root);
   const line = '='.repeat(60);
   return [
     `Liseuse ${String(app.version)} — logiciels libres utilisés`,
@@ -107,6 +127,9 @@ export function collectLicenses(root: string): string {
     'Bibliothèques de l’application (JavaScript et polices de caractères)',
     ...packages.map((p) => `- ${p.name} ${p.version} — ${p.license}`),
     '',
+    'Ressources de pdf.js livrées avec l’app (polices standard des PDF, décodeurs d’images)',
+    ...extras.map((e) => `- ${e.title}`),
+    '',
     'Bibliothèques Android (code natif), sous licence Apache 2.0',
     ...NATIVE.map((n) => `- ${n}`),
     '',
@@ -114,6 +137,7 @@ export function collectLicenses(root: string): string {
     'Textes des licences',
     line,
     ...packages.flatMap((p) => ['', `--- ${p.name} ${p.version} (${p.license}) ---`, '', p.text || `Licence ${p.license} (texte non fourni par le paquet).`]),
+    ...extras.flatMap((e) => ['', `--- ${e.title} ---`, '', e.text]),
     '',
     '--- Bibliothèques Android : Apache License 2.0 ---',
     '',

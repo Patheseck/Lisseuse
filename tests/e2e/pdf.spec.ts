@@ -24,13 +24,31 @@ const BOOK: BookSpec = {
 const pdf = (spec: Partial<BookSpec> = {}) => Buffer.from(makePdf(typesetBook({ ...BOOK, ...spec })));
 const click = (page: Page, testId: string) => page.evaluate((id) => (document.querySelector(`[data-testid=${id}]`) as HTMLButtonElement).click(), testId);
 
-/** PDF ouvert en pages originales : la visionneuse a dessiné sa première page. */
+/** Pixels encrés de la page la plus encrée parmi celles dessinées, ou de la page `n` (0 : blanche). */
+const inkedPixels = (page: Page, n?: number) => page.evaluate((n) => {
+  let most = 0;
+  for (const canvas of document.querySelectorAll<HTMLCanvasElement>(`.pdfViewer .page${n ? `[data-page-number="${n}"]` : ''} canvas`)) {
+    if (!canvas.width || !canvas.height) continue;
+    const { data } = canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height);
+    let ink = 0;
+    for (let i = 0; i < data.length; i += 16) if (Math.abs(data[i]! - data[0]!) > 60) ink++;
+    most = Math.max(most, ink);
+  }
+  return most;
+}, n);
+
+/** PDF ouvert en pages originales : la visionneuse a dessiné sa première page, texte compris. */
 async function pagesShown(page: Page): Promise<number> {
   await expect(page.getByTestId('pdf-viewer')).toBeVisible();
   await expect(page.locator('.pdfViewer .page canvas').first()).toBeAttached();
+  // Pages à leur taille (pas de hauteur nulle), et dessinées.
+  expect(await page.locator('.pdfViewer .page').first().evaluate((el) => el.getBoundingClientRect().height)).toBeGreaterThan(100);
+  await expect.poll(() => inkedPixels(page), { message: 'page dessinée (pas blanche)', timeout: 10000 }).toBeGreaterThan(150);
   const label = await page.getByTestId('pdf-page').textContent();
   return Number(label!.match(/sur (\d+)/)![1]);
 }
+
+const journal = (page: Page) => page.evaluate(() => (JSON.parse(localStorage.getItem('liseuse:v6:errors') ?? '[]') as { message: string }[]).map((e) => e.message));
 
 /** Bascule en texte adapté (réglages d'affichage du PDF). */
 async function toText(page: Page): Promise<void> {
@@ -71,6 +89,50 @@ test.describe('PDF en pages originales', () => {
     await click(page, 'back');
     await expect(page.getByTestId('book-meta')).toContainText(`PDF · ${total} pages`);
     await expect(page.getByTestId('book-item').locator('img.book-cover')).toHaveCount(1);
+    // Rien d'anormal au journal d'erreurs.
+    expect(await journal(page)).toEqual([]);
+  });
+
+  test('ressources de pdf.js livrées avec l’app : polices standard, décodeurs d’images, licences', async ({ page }) => {
+    const files = ['standard_fonts/FoxitSerif.pfb', 'standard_fonts/LiberationSans-Regular.ttf', 'wasm/openjpeg.wasm', 'wasm/openjpeg_nowasm_fallback.js', 'wasm/jbig2.wasm', 'wasm/jbig2_nowasm_fallback.js', 'cmaps/UniJIS-UCS2-H.bcmap'];
+    const status = await page.evaluate((list) => Promise.all(list.map(async (f) => (await fetch(`pdfjs/${f}`)).status)), files);
+    expect(status).toEqual(files.map(() => 200));
+    const licenses = await page.evaluate(async () => (await fetch('licenses.txt')).text());
+    expect(licenses).toContain('Polices Liberation Sans (Red Hat)');
+    expect(licenses).toContain('OpenJPEG, décodeur JPEG 2000');
+  });
+
+  test('WebView sans la fonction CSS round() (Chrome 119 à 124, Android 7) : les pages gardent leur taille', async ({ page }) => {
+    // pdf.js dimensionne les pages avec round() : sans elle, elles auraient une hauteur nulle.
+    await page.addInitScript({ content: 'const supports = CSS.supports.bind(CSS); CSS.supports = (...args) => !args.join(" ").includes("round(") && supports(...args);' });
+    await page.reload();
+    await importFile(page, 'sommeil.pdf', 'application/pdf', pdf());
+    await pagesShown(page);
+    const style = await page.locator('.pdfViewer .page').first().getAttribute('style');
+    expect(style).toContain('height: calc(var(--total-scale-factor) * ');
+    expect(style).not.toContain('round(');
+    await expect(page.locator('.pdfViewer .page').first().locator('.textLayer')).toHaveAttribute('style', /width: calc\(var\(--total-scale-factor\)/);
+  });
+
+  test('texte que la WebView ne dessine pas (pages blanches vues sur un téléphone) : dessin de secours, noté au journal', async ({ page }) => {
+    // Le texte des pages n'est pas dessiné avec les polices du PDF ; les lettres tracées, si.
+    await page.addInitScript({ content: 'CanvasRenderingContext2D.prototype.fillText = () => {}; CanvasRenderingContext2D.prototype.strokeText = () => {};' });
+    await page.reload();
+    await importFile(page, 'sommeil.pdf', 'application/pdf', pdf());
+    // La première page de texte est vérifiée : sans texte visible, le PDF est rouvert en dessin de
+    // secours, au même endroit, et ses pages s'affichent.
+    await pagesShown(page);
+    // La page de titre (du texte seulement) montre son texte.
+    await expect.poll(() => inkedPixels(page, 1), { timeout: 10000 }).toBeGreaterThan(150);
+    await expect.poll(() => journal(page)).toEqual([expect.stringMatching(/^Texte de la page 1 invisible \(Chrome \d+, écran ×[\d.]+\) : dessin de secours activé\.$/)]);
+    await expect(page.locator('.pdfViewer .page').first().locator('.textLayer')).toContainText('Le Sommeil et la Mémoire');
+    // Gardé sur cet appareil : le PDF suivant s'ouvre directement en dessin de secours.
+    await click(page, 'back');
+    await page.getByTestId('book-item').getByRole('button').first().click();
+    await pagesShown(page);
+    await page.waitForTimeout(500);
+    expect(await journal(page)).toHaveLength(1);
+    errors.length = 0; // l'incident est noté en console volontairement
   });
 
   test('navigation : suite, aller à la page, sommaire du PDF, signets ; la page lue est gardée', async ({ page }) => {

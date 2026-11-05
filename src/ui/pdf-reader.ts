@@ -60,6 +60,87 @@ export function themePageColors(prefs: Pick<PdfViewPrefs, 'colors'>): { backgrou
   return { background, foreground };
 }
 
+/**
+ * Pixels (RGBA) du canevas sous une ligne de la couche de texte : la ligne est-elle dessinée ? Des
+ * lettres dessinées mêlent fond et encre ; une zone uniforme n'en a pas (quels que soient les
+ * couleurs du thème et le lissage des lettres).
+ */
+export function regionHasInk(data: ArrayLike<number>): boolean {
+  let min = Infinity;
+  let max = -Infinity;
+  for (let i = 0; i + 2 < data.length; i += 4) {
+    const v = data[i]! + data[i + 1]! + data[i + 2]!;
+    if (v < min) min = v;
+    if (v > max) max = v;
+    if (max - min > 96) return true;
+  }
+  return false;
+}
+
+/** Une page affichée par la visionneuse de pdf.js (ce qu'en lit la vérification du dessin). */
+interface RenderedPage {
+  id: number;
+  div: HTMLElement;
+  canvas?: HTMLCanvasElement | null;
+}
+
+/**
+ * Le texte de la page est-il dessiné sur son canevas ? On regarde, autour de quelques lignes de la
+ * couche de texte (invisible, parfois un peu décalée des lettres), si le canevas porte des lettres.
+ * null : rien à vérifier (page sans texte).
+ */
+function pageTextInked(page: RenderedPage): boolean | null {
+  const canvas = page.canvas;
+  if (!canvas?.width || !canvas.isConnected) return null;
+  const box = canvas.getBoundingClientRect();
+  const ctx = canvas.getContext('2d');
+  if (!ctx || !box.width || !box.height) return null;
+  const sx = canvas.width / box.width;
+  const sy = canvas.height / box.height;
+  let checked = 0;
+  for (const span of page.div.querySelectorAll<HTMLElement>('.textLayer span')) {
+    if ((span.textContent ?? '').trim().length < 2) continue;
+    const r = span.getBoundingClientRect();
+    if (r.width < 2 || r.height < 2) continue;
+    // La ligne, et une demi-ligne au-dessus et au-dessous.
+    const x = Math.max(0, Math.floor((r.left - box.left) * sx));
+    const y = Math.max(0, Math.floor((r.top - r.height / 2 - box.top) * sy));
+    const w = Math.min(canvas.width - x, Math.ceil(r.width * sx), 480);
+    const hgt = Math.min(canvas.height - y, Math.ceil(r.height * 2 * sy), 160);
+    if (w < 4 || hgt < 4) continue;
+    if (regionHasInk(ctx.getImageData(x, y, w, hgt).data)) return true;
+    if (++checked >= 8) break;
+  }
+  return checked ? false : null;
+}
+
+/** Navigateur de la WebView et densité de l'écran, pour le journal d'erreurs. */
+function deviceLabel(): string {
+  const chrome = navigator.userAgent.match(/Chrome\/(\d+)/)?.[1];
+  return `${chrome ? `Chrome ${chrome}` : 'navigateur inconnu'}, écran ×${Math.round(window.devicePixelRatio * 100) / 100}`;
+}
+
+// Dessin de secours (voir openPdf) : gardé pour les PDF suivants sur cet appareil, jusqu'à la
+// prochaine version de l'app (qui vérifie à nouveau). Propre à l'appareil : hors sauvegarde.
+const SAFE_RENDERING_KEY = 'liseuse:v6:pdf-safe-rendering';
+function loadSafeRendering(): boolean {
+  try {
+    return localStorage.getItem(SAFE_RENDERING_KEY) === __APP_VERSION__;
+  } catch {
+    return false;
+  }
+}
+function saveSafeRendering(): void {
+  try {
+    localStorage.setItem(SAFE_RENDERING_KEY, __APP_VERSION__);
+  } catch {
+    // stockage indisponible : le dessin de secours vaut pour cette lecture
+  }
+}
+
+/** Délai au-delà duquel aucune page dessinée signale un blocage du dessin. */
+const RENDER_WATCHDOG_MS = 20_000;
+
 export function pdfReaderScreen(bookId: string, navigate: Navigate): Screen {
   let book: BookRecord | null = null;
   let opened: OpenedPdf | null = null;
@@ -74,6 +155,13 @@ export function pdfReaderScreen(bookId: string, navigate: Navigate): Screen {
   let destroyed = false;
   let saveTimer: number | undefined;
   let restored = false;
+  // Vérification du dessin (voir checkRendering) : dessin de secours, page de texte vérifiée,
+  // incidents déjà notés au journal.
+  let safeRendering = loadSafeRendering();
+  let verified = false;
+  let rendered = false;
+  let renderErrorLogged = false;
+  let watchdog: number | undefined;
   const cleanup: (() => void)[] = [];
   const sheets: Sheet[] = [];
 
@@ -262,13 +350,85 @@ export function pdfReaderScreen(bookId: string, navigate: Navigate): Screen {
     });
     bus.on('pagechanging', () => onMove());
     bus.on('scalechanging', () => refreshSnap());
+    bus.on('pagerendered', ({ pageNumber, error }: { pageNumber: number; error: unknown }) => {
+      if (viewer !== v) return;
+      rendered = true;
+      if (error && !renderErrorLogged) {
+        renderErrorLogged = true;
+        logError('affichage pdf', `Page ${pageNumber} non dessinée (${deviceLabel()}) : ${errorMessage(error)}`);
+      }
+    });
+    bus.on('textlayerrendered', ({ source }: { source: RenderedPage }) => {
+      if (viewer === v) checkRendering(source);
+    });
     bus.on('updatefindmatchescount', ({ matchesCount }: { matchesCount: { current: number; total: number } }) => showCount(matchesCount));
     bus.on('updatefindcontrolstate', ({ state, matchesCount }: { state: number; matchesCount: { current: number; total: number } }) => {
       if (state === 1) findCount.textContent = 'Introuvable';
       else if (matchesCount) showCount(matchesCount);
     });
+    // Rien de dessiné longtemps après l'ouverture : le dessin est bloqué (noté, puis secours).
+    verified = false;
+    rendered = false;
+    window.clearTimeout(watchdog);
+    const watch = () => {
+      watchdog = window.setTimeout(() => {
+        if (viewer !== v || destroyed || rendered) return;
+        // App en arrière-plan : le dessin attend son retour.
+        if (document.hidden) return watch();
+        logError('affichage pdf', `Aucune page dessinée après ${RENDER_WATCHDOG_MS / 1000} s (${deviceLabel()}${safeRendering ? ', dessin de secours' : ''}).`);
+        void reopenSafely();
+      }, RENDER_WATCHDOG_MS);
+    };
+    watch();
     v.setDocument(opened.doc);
     linkService.setDocument(opened.doc, null);
+  }
+
+  // ---------- Vérification du dessin ----------
+  // Sur certains téléphones, la WebView pourrait ne pas dessiner le texte des pages (polices,
+  // accélération graphique) : la première page de texte affichée est vérifiée. Sans texte visible,
+  // le PDF est rouvert en dessin de secours, et l'incident est noté au journal (« Mes données »).
+  function checkRendering(page: RenderedPage): void {
+    if (verified || destroyed) return;
+    let inked: boolean | null;
+    try {
+      inked = pageTextInked(page);
+    } catch (err) {
+      verified = true;
+      logError('affichage pdf', err);
+      return;
+    }
+    if (inked === null) return; // page sans texte : la suivante sera vérifiée
+    verified = true;
+    if (inked) return;
+    if (!safeRendering) {
+      logError('affichage pdf', `Texte de la page ${page.id} invisible (${deviceLabel()}) : dessin de secours activé.`);
+      void reopenSafely();
+      return;
+    }
+    logError('affichage pdf', `Texte de la page ${page.id} invisible, même en dessin de secours (${deviceLabel()}).`);
+    toast('Le texte de ce PDF ne s’affiche pas sur cet appareil. Essaie le mode « Texte adapté » (bouton Aa).', 'error', 8000);
+  }
+
+  /** Rouvre le PDF en dessin de secours, au même endroit (et pour les PDF suivants). */
+  async function reopenSafely(): Promise<void> {
+    if (!book || !opened || destroyed || safeRendering) return;
+    safeRendering = true;
+    saveSafeRendering();
+    const at = position();
+    const previous = opened;
+    try {
+      const pdf = await openPdf(new Uint8Array(await book.file.arrayBuffer()), book.file, { safeRendering: true, ...(previous.password !== undefined ? { password: previous.password } : {}) });
+      if (destroyed || opened !== previous) {
+        pdf.close();
+        return;
+      }
+      opened = pdf;
+      buildViewer(at);
+      previous.close();
+    } catch (err) {
+      logError('affichage pdf', err);
+    }
   }
 
   // ---------- Recherche ----------
@@ -559,7 +719,7 @@ export function pdfReaderScreen(bookId: string, navigate: Navigate): Screen {
     void setCustomSelectionMenu(false);
     showMessage('Ouverture du PDF…');
     const [pdf, viewerLib] = await Promise.all([
-      openPdf(new Uint8Array(await book.file.arrayBuffer()), book.file, pdfOptions((_, text) => text && message.replaceChildren(text), 'Ouverture du PDF')),
+      openPdf(new Uint8Array(await book.file.arrayBuffer()), book.file, { ...pdfOptions((_, text) => text && message.replaceChildren(text), 'Ouverture du PDF'), safeRendering }),
       loadPdfViewer(),
     ]);
     if (destroyed) {
@@ -631,6 +791,7 @@ export function pdfReaderScreen(bookId: string, navigate: Navigate): Screen {
       if (saveTimer !== undefined) persist();
       window.clearTimeout(tapTimer);
       window.clearTimeout(findTimer);
+      window.clearTimeout(watchdog);
       ambiance.stop();
       ambianceRef?.dispose();
       viewer?.setDocument(null as never);

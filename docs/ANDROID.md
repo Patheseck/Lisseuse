@@ -81,7 +81,7 @@ Pour ouvrir le projet dans Android Studio : `npm run android:sync` puis `npx cap
 | Fonction | Fonctionnement |
 |---|---|
 | Ouvrir un livre depuis un gestionnaire de fichiers | « Ouvrir avec → Liseuse » importe le livre et l'ouvre (EPUB, PDF, Markdown, texte, y compris les fichiers reçus sans type précis ; un livre protégé par DRM ou un PDF scanné est refusé avec une explication) |
-| Livres PDF | lus en pages originales (visionneuse de pdf.js, sur le téléphone, sans Internet) : zoom à deux doigts, page par page ou défilement, touches de volume ; en option, « texte adapté » (le PDF converti en livre) ; un PDF protégé par mot de passe le demande à chaque ouverture, sans le garder |
+| Livres PDF | lus en pages originales (visionneuse de pdf.js, sur le téléphone, sans Internet) : zoom à deux doigts, page par page ou défilement, touches de volume ; en option, « texte adapté » (le PDF converti en livre) ; un PDF protégé par mot de passe le demande à chaque ouverture, sans le garder. Demande une WebView Android de version 119 au moins (celle d'Android 7 à jour) ; voir « Note technique : PDF » |
 | Exporter une sauvegarde | menu de partage d'Android (Drive, e-mail, Fichiers…) |
 | Écouter un chapitre | synthèse vocale du téléphone, à partir du paragraphe visible |
 | Rappel quotidien | notification locale à l'heure choisie (Ma mémoire → Réglages) |
@@ -95,6 +95,23 @@ Pour ouvrir le projet dans Android Studio : `npm run android:sync` puis `npx cap
 | Barres système | icônes claires sur un thème sombre ; fond de fenêtre de la couleur du thème |
 | Lecture à voix haute | dans la langue du livre (déclarée par l'EPUB, ou devinée pour un texte) |
 | Musique d'ambiance | bouton ♪ : une ambiance par livre (16 au choix), avec tes MP3 ; s'arrête quand l'écran s'éteint ou qu'on quitte le livre, et reprend au retour là où elle en était (même morceau, même seconde, même après un redémarrage de l'app) |
+
+## Note technique : PDF
+
+- La visionneuse de pdf.js est réglée comme sur Android chez Firefox : polices standard des PDF
+  (Times, Helvetica…) livrées avec l'app plutôt que celles du système, décodeurs d'images JPEG 2000
+  et JBIG2 (livres numérisés) livrés aussi (`pdfjs/` dans l'app, voir `vite.config.ts`), dessin
+  accéléré par le processeur graphique.
+- WebView de Chrome 119 à 124 (Android 7 en reste à 119) : pdf.js dimensionne les pages avec la
+  fonction CSS `round()` (Chrome 125) ; sans elle, les pages auraient une hauteur nulle (écran
+  blanc). La construction remplace l'arrondi par un simple calcul là où il manque, et l'app ajoute
+  le parcours de flux `for await` (Chrome 124) dont pdf.js a besoin pour lire le texte des pages.
+  En dessous de Chrome 119, pdf.js ne fonctionne pas (son worker utilise `Promise.withResolvers`).
+- À l'ouverture d'un PDF, la première page de texte est vérifiée : si ses lettres ne sont pas
+  dessinées, le PDF est rouvert en dessin de secours (lettres tracées une à une, sans police chargée
+  ni accélération graphique), gardé pour les PDF suivants jusqu'à la prochaine version. L'incident,
+  une page non dessinée ou un dessin bloqué, est noté au journal d'erreurs (« Mes données ») avec la
+  version de la WebView, pour le diagnostic.
 
 ## Note technique : CSP et Capacitor
 
