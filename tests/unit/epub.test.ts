@@ -1,0 +1,132 @@
+import JSZip from 'jszip';
+import { describe, expect, it } from 'vitest';
+import { DrmError, EpubError, parseEpub, resolvePath } from '../../src/book/epub';
+import { detectFormat, parseBookFile } from '../../src/book/import';
+import './pdf-worker';
+import { makeEpub2, makeEpub3, makeProtectedEpub } from '../fixtures/make-epub';
+
+describe('resolvePath', () => {
+  it('résout les chemins relatifs', () => {
+    expect(resolvePath('OEBPS/text/ch1.xhtml', '../images/a.png')).toBe('OEBPS/images/a.png');
+    expect(resolvePath('ch1.xhtml', './b.xhtml')).toBe('b.xhtml');
+    expect(resolvePath('a/b.xhtml', 'https://x.org/y')).toBe('https://x.org/y');
+  });
+});
+
+describe('parseEpub — EPUB 3', async () => {
+  const book = await parseEpub(await makeEpub3(), 'test.epub');
+
+  it('lit les métadonnées', () => {
+    expect(book.title).toBe('Le Livre de Test');
+    expect(book.author).toBe('Ada Lovelace');
+    expect(book.cover?.type).toBe('image/png');
+  });
+
+  it('suit l’ordre de lecture et les libellés du sommaire', () => {
+    expect(book.chapters.map((c) => c.label)).toEqual(['Premier chapitre', 'Deuxième chapitre', 'Annexe sans entrée de sommaire']);
+  });
+
+  it('extrait les images comme ressources (chemins encodés compris)', () => {
+    expect(Object.keys(book.resources)).toEqual(['OEBPS/images/pic 1.png']);
+    expect(book.chapters[0]!.html).toContain('data-res="OEBPS/images/pic 1.png"');
+    expect(book.chapters[0]!.html).not.toMatch(/<img[^>]+src=/);
+  });
+
+  it('convertit les liens internes et garde les ancres', () => {
+    const html = book.chapters[0]!.html;
+    expect(html).toContain('data-chapter="1"');
+    expect(html).toContain('data-anchor="suite"');
+    expect(book.chapters[1]!.html).toContain('data-anchor-id="suite"');
+    expect(html).toContain('href="https://example.org"');
+  });
+
+  it('liens internes justes même quand un fichier de l’ordre de lecture manque', async () => {
+    const zip = new JSZip();
+    zip.file('mimetype', 'application/epub+zip');
+    zip.file('META-INF/container.xml', '<?xml version="1.0"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="c.opf" media-type="application/oebps-package+xml"/></rootfiles></container>');
+    zip.file('c.opf', `<?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>T</dc:title></metadata>
+      <manifest><item id="cov" href="cover.xhtml" media-type="application/xhtml+xml"/><item id="a" href="a.xhtml" media-type="application/xhtml+xml"/><item id="b" href="b.xhtml" media-type="application/xhtml+xml"/></manifest>
+      <spine><itemref idref="cov"/><itemref idref="a"/><itemref idref="b"/></spine></package>`);
+    // cover.xhtml est déclaré mais absent de l'archive.
+    zip.file('a.xhtml', '<html xmlns="http://www.w3.org/1999/xhtml"><body><h1>A</h1><p><a href="b.xhtml">vers B</a> <a href="cover.xhtml">vers la couverture</a></p></body></html>');
+    zip.file('b.xhtml', '<html xmlns="http://www.w3.org/1999/xhtml"><body><h1>B</h1><p>Fin.</p></body></html>');
+    const parsed = await parseEpub(await zip.generateAsync({ type: 'uint8array' }), 't.epub');
+    expect(parsed.chapters.map((c) => c.label)).toEqual(['A', 'B']);
+    expect(parsed.chapters[0]!.html).toContain('<a data-chapter="1">vers B</a>');
+    // Lien vers le fichier manquant : il ne mène plus nulle part plutôt qu'au mauvais chapitre.
+    expect(parsed.chapters[0]!.html).toContain('<a>vers la couverture</a>');
+  });
+
+  it('neutralise scripts, gestionnaires et styles', () => {
+    const html = book.chapters[0]!.html;
+    expect(html).not.toMatch(/<script|onclick|style=/);
+    expect(html).toContain('Paragraphe piégé');
+  });
+});
+
+describe('parseEpub — EPUB 2', () => {
+  it('lit le sommaire NCX, la couverture meta et le XHTML mal formé', async () => {
+    const book = await parseEpub(await makeEpub2(), 'ancien.epub');
+    expect(book.title).toBe('Ancien Format');
+    expect(book.author).toBeNull();
+    expect(book.cover).not.toBeNull();
+    expect(book.chapters.map((c) => c.label)).toEqual(['Chapitre A', 'Chapitre B']);
+    expect(book.chapters[0]!.html).toContain('Texte A');
+  });
+});
+
+describe('erreurs', () => {
+  it('refuse un fichier qui n’est pas une archive', async () => {
+    await expect(parseEpub(new TextEncoder().encode('pas un zip'), 'x.epub')).rejects.toBeInstanceOf(EpubError);
+  });
+
+  it('détecte le format par le contenu', () => {
+    expect(detectFormat('livre.bin', Uint8Array.of(0x50, 0x4b, 3, 4))).toBe('epub');
+    expect(detectFormat('notes.md', Uint8Array.of(0x23, 0x20))).toBe('md');
+    expect(detectFormat('image.png', Uint8Array.of(0x89, 0x50))).toBeNull();
+    // PDF : à sa signature, même précédée de quelques octets ou sans la bonne extension.
+    expect(detectFormat('cours.bin', new TextEncoder().encode('%PDF-1.7\n'))).toBe('pdf');
+    expect(detectFormat('cours.pdf', new TextEncoder().encode('\n\n%PDF-1.4\n'))).toBe('pdf');
+    expect(detectFormat('cours.pdf', new TextEncoder().encode(`${'x'.repeat(300)}%PDF-1.4\n`))).toBe('pdf');
+    // Un texte qui parle du format PDF reste un texte.
+    expect(detectFormat('notes.md', new TextEncoder().encode('# Mes notes\n\nLe fichier commence par %PDF-1.7.'))).toBe('md');
+  });
+
+  it('donne le même identifiant au même fichier', async () => {
+    const bytes = await makeEpub2();
+    const a = await parseBookFile(new Blob([bytes as BlobPart]), 'a.epub');
+    const b = await parseBookFile(new Blob([bytes as BlobPart]), 'b.epub');
+    expect(a.id).toMatch(/^[0-9a-f]{64}$/);
+    expect(a.id).toBe(b.id);
+  });
+});
+
+describe('livres protégés (DRM)', () => {
+  it.each([
+    ['adobe', 'Adobe'],
+    ['lcp', 'Readium LCP'],
+    ['apple', 'Apple'],
+    ['encrypted', 'inconnu'],
+  ] as const)('refuse un EPUB %s avec un message clair', async (kind, vendor) => {
+    const err = await parseEpub(await makeProtectedEpub(kind), 'drm.epub').catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(DrmError);
+    expect((err as DrmError).vendor).toBe(vendor);
+    expect((err as DrmError).message).toContain('DRM');
+  });
+
+  it('accepte l’obfuscation des polices, qui laisse le texte lisible', async () => {
+    const book = await parseEpub(await makeProtectedEpub('fonts'), 'polices.epub');
+    expect(book.chapters[0]!.html).toContain('readable');
+    expect(book.language).toBe('en-GB');
+  });
+});
+
+describe('fichiers qui ne sont pas des livres', () => {
+  it('refuse un PDF abîmé et un binaire, accepte un texte Latin-1', async () => {
+    await expect(parseBookFile(new Blob(['%PDF-1.7 ...']), 'doc.pdf')).rejects.toThrow('Ce fichier PDF est abîmé ou incomplet.');
+    await expect(parseBookFile(new Blob([new Uint8Array([0x41, 0, 0x42, 0x43])]), 'image.txt')).rejects.toThrow('pas un texte lisible');
+    const latin = new Uint8Array([0x23, 0x20, 0x43, 0x61, 0x66, 0xe9, 0x0a]); // « # Café » en Latin-1
+    const { parsed } = await parseBookFile(new Blob([latin]), 'ancien.txt');
+    expect(parsed.chapters[0]!.label).toBe('Café');
+  });
+});
