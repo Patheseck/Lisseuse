@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { convertPdfText, FRONT_LABEL, PDF_CHUNK_WORDS, unreadableRatio, type PdfItem, type PdfOutlineEntry, type PdfPageText } from '../../src/book/pdf-text';
+import { convertPdfText, FRONT_LABEL, isOcrJunk, PDF_CHUNK_WORDS, unreadableRatio, type PdfItem, type PdfOutlineEntry, type PdfPageText } from '../../src/book/pdf-text';
 
 // Pages construites à la main : une entrée par morceau de texte, comme pdf.js les rend.
 const item = (str: string, x: number, y: number, size = 11, font = 'corps'): PdfItem => ({ str, x, y, width: str.length * size * 0.46, size, font });
@@ -165,6 +165,25 @@ describe('PDF : chapitres', () => {
     expect(res.chapters[1]!.html).toContain('<h3>Une section</h3>');
   });
 
+  it('une grande lettre seule (« I », « V ») est un numéro de chapitre, pas une lettrine', () => {
+    // Numéro centré au-dessus du texte (et non à sa gauche, à sa hauteur) : il reste un titre.
+    const numbered = (n: string, text: string) => page(item(n, 200, 470, 40), ...body([`>${text}`, ...CONTEXT], 420));
+    const res = html([numbered('I', 'Le premier.'), numbered('II', 'Le deuxième.'), numbered('V', 'Le cinquième.')]);
+    expect(res.chapters.map((c) => c.label)).toEqual(['I', 'II', 'V']);
+    expect(res.chapters[0]!.html.split('\n').slice(0, 2)).toEqual(['<h2>I</h2>', '<p>Le premier.</p>']);
+  });
+
+  it('le nom de l’auteur à côté du titre répété n’ouvre pas non plus les chapitres', () => {
+    // Couverture : titre et auteur de même taille, lus comme un seul titre ; puis le faux-titre.
+    const pages = [page(item('KNOCK', 150, 400, 30), item('Jules Romains', 130, 360, 30)), page(item('KNOCK', 150, 400, 30)), chapterPage('Introduction', 'Un.', 16), chapterPage('Acte premier', 'Deux.', 16)];
+    expect(html(pages).chapters.map((c) => c.label)).toEqual([FRONT_LABEL, 'Introduction', 'Acte premier']);
+  });
+
+  it('ni une réplique (« — Oui… ») ni une adresse web ne sont des titres', () => {
+    const pages = [page(item('— Nenni. — M’y voici donc ?', 50, 470, 16), ...body(CONTEXT, 440)), page(item('http://www.archive.org/details/livre', 50, 470, 16), ...body(CONTEXT, 440))];
+    expect(html(pages).chapters.map((c) => c.html).join('\n')).not.toMatch(/<h\d>/);
+  });
+
   it('le titre du livre répété (couverture, page de titre) n’ouvre pas les chapitres', async () => {
     const pages = [page(item('Le Grand Livre', 60, 400, 28)), page(item('Le Grand Livre', 60, 400, 28), ...body(CONTEXT, 300)), chapterPage('Premier chapitre', 'Un.', 16), chapterPage('Second chapitre', 'Deux.', 16)];
     expect(html(pages).chapters.map((c) => c.label)).toEqual([FRONT_LABEL, 'Premier chapitre', 'Second chapitre']);
@@ -206,6 +225,67 @@ describe('PDF : chapitres', () => {
 
   it('un PDF sans texte ne donne aucun chapitre', () => {
     expect(html([page(), page()])).toEqual({ chapters: [], words: 0, structure: 'pages' });
+  });
+});
+
+describe('PDF : poèmes et mots coupés', () => {
+  it('les vers d’un poème gardent leurs retours à la ligne ; une phrase finie ferme la strophe', () => {
+    const verses = ['La Cigale, ayant chanté', 'Tout l’été,', 'Se trouva fort dépourvue', 'Quand la bise fut venue :', 'Pas un seul petit morceau', 'De mouche ou de vermisseau.', 'Elle alla crier famine', 'Chez la Fourmi sa voisine.'];
+    const out = all([page(...verses.map((v, i) => item(v, 70, 500 - i * 14)))]);
+    expect(out.split('\n')).toEqual([
+      '<p>La Cigale, ayant chanté<br> Tout l’été,<br> Se trouva fort dépourvue<br> Quand la bise fut venue :</p>',
+      '<p>Pas un seul petit morceau<br> De mouche ou de vermisseau.</p>',
+      '<p>Elle alla crier famine<br> Chez la Fourmi sa voisine.</p>',
+    ]);
+    // Le texte lu (recherche, surlignage, voix) garde les mots séparés.
+    const doc = new DOMParser().parseFromString(out, 'text/html');
+    expect(doc.body.textContent).toContain('chanté Tout l’été, Se trouva');
+  });
+
+  it('la prose justifiée garde ses paragraphes d’un seul tenant', () => {
+    expect(all([page(...body(CONTEXT))])).not.toContain('<br>');
+  });
+
+  it('un mot coupé en fin de ligne : le paragraphe continue, même après un écart ou un retrait', () => {
+    const out = all([page(...body(CONTEXT, 560), item('Ses flâneries et ses longues ran-', 50, 486), item('données dans les quartiers voisins.', 58, 466))]);
+    expect(out.split('\n').at(-1)).toBe('<p>Ses flâneries et ses longues randonnées dans les quartiers voisins.</p>');
+  });
+});
+
+describe('PDF scanné (texte reconnu par OCR)', () => {
+  const ocr = (pages: PdfPageText[], outline: PdfOutlineEntry[] = []) => convertPdfText(pages, outline, 'Livre', { ocr: true });
+
+  it('reconnaît les lignes de bruit tirées des illustrations, et garde le vrai texte même mal reconnu', () => {
+    // Vu sur un vrai livre scanné : logo d'éditeur, couverture, cachet de bibliothèque, ornements.
+    for (const junk of ['À oo x 4', '— “ “ ( 4 ’ Ÿ', 'si, RE j d FTHRE', "J } ee L '", 'ft', '-', '1 *o } a', ': " ) LI . M / 5', 'Ed Fe', 'Î', 'x .', 'Ù Fa F', '+=', '&', 'Rss', 'QU Le', '3 3333 08928 7979', 'U dVof OTTAWA', 'ti^fS^^^f^^J^^^',
+      '..... KTIQATsb Srsrorri et bis }}) cet po0s oaisottleDent. PLU io sl ts sûo ni']) {
+      expect(isOcrJunk(junk), junk).toBe(true);
+    }
+    for (const text of ['Honnête.', 'Sans histoires.', 'Pourquoi ?', 'Ah !', 'Oui.', '— Non.', 'Il y a un an', 'ACTE II', 'XII', 'Roman', 'Du même auteur', '* * *', 'Le Baobab fou, roman,',
+      'Lo Mais aussi l’appréhepsion de mauvaises nouvelles, surtout de déceéz_ Je suis si loin des mieñs,', '(\\ À dernière RSS NE fit une fausse couchee\\S CON Elle R dit beaucoup SES',
+      'Elle ne mangeait pas beaucou Elle ne faisait rien beaucoup. P-one à AN Met auf des enfants']) {
+      expect(isOcrJunk(text), text).toBe(false);
+    }
+  });
+
+  it('retire le bruit, garde le texte ; les signes parasites en début de ligne disparaissent', () => {
+    const out = ocr([page(...body(['À oo x 4', 'J } ee L \'', '| J’espère qu’elle a pris ce qu’il y a de meilleur.', '#1 Dans une cuisine où les odeurs du pays se reconstituaient.'], 500))]).chapters.map((c) => c.html).join('\n');
+    expect(out).toBe('<p>J’espère qu’elle a pris ce qu’il y a de meilleur.</p>\n<p>Dans une cuisine où les odeurs du pays se reconstituaient.</p>');
+  });
+
+  it('tailles irrégulières : les lignes restent dans leur paragraphe, les titres d’un même style forment un niveau', () => {
+    // Chaque ligne reconnue a sa propre taille (10 à 11,6 pt), et chaque titre la sienne (15 à 17 pt).
+    const sizes = [10.4, 11.2, 10, 11.6, 10.6, 10.2];
+    const chapter = (title: string, size: number, words: string) => page(
+      item(title, 60, 500, size),
+      ...[`>Le texte reconnu du chapitre ${words} occupe toute la ligne ici`, `et la suivante aussi (${words}), avec des tailles différentes`, 'selon les lettres de chaque mot que le logiciel a lus', `jusqu’à la fin du paragraphe : ${words}.`, `>Un second paragraphe (${words}) commence après le retrait`, `et se termine sur cette ligne (${words}).`].map((l, i) => {
+        const indent = l.startsWith('>');
+        return item(indent ? l.slice(1) : l, indent ? 65 : 50, 460 - i * 14, sizes[i]!);
+      }),
+    );
+    const res = ocr([chapter('LA CIGALE ET LA FOURMI', 15.3, 'un'), chapter('LE CORBEAU ET LE RENARD', 16.9, 'deux'), chapter('LE MEUNIER, SON FILS ET L’ÂNE', 14.4, 'trois')]);
+    expect(res.chapters.map((c) => c.label)).toEqual(['LA CIGALE ET LA FOURMI', 'LE CORBEAU ET LE RENARD', 'LE MEUNIER, SON FILS ET L’ÂNE']);
+    expect(res.chapters[1]!.html.split('\n').filter((l) => l.startsWith('<p>'))).toHaveLength(2);
   });
 });
 

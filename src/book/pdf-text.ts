@@ -11,6 +11,10 @@ import type { Chapter } from './types';
 // on répare les mots coupés en fin de ligne, puis on découpe en chapitres : d'après les signets
 // du PDF, sinon d'après les titres (plus grands que le texte), sinon par tranches de pages.
 //
+// Livre scanné (texte reconnu par OCR, invisible sur l'image des pages) : les tailles de texte
+// varient d'un mot à l'autre et des lignes de bruit viennent des illustrations ; la conversion
+// est alors plus tolérante sur les tailles, plus exigeante sur les titres, et retire ce bruit.
+//
 // Ce module ne dépend pas de pdf.js : il reçoit les morceaux de texte déjà extraits, ce qui
 // permet de le tester avec des pages construites à la main.
 
@@ -41,6 +45,18 @@ export interface PdfOutlineEntry {
 }
 
 /** Taille visée d'une tranche de pages quand le PDF n'a ni signets ni titres. */
+export interface ConvertOptions {
+  /** Livre scanné dont le texte vient d'une reconnaissance de caractères (OCR). */
+  ocr?: boolean;
+}
+
+/**
+ * Version de la conversion : un texte adapté plus ancien est refait à l'ouverture, si aucune
+ * donnée (fiche, signet, question…) n'y est encore posée. 2 (6.9.2) : livres scannés (OCR),
+ * grandes lettres seules (« I », « V »), vers et retours à la ligne.
+ */
+export const PDF_TEXT_VERSION = 2;
+
 export const PDF_CHUNK_WORDS = 5_000;
 /** Libellé du texte placé avant le premier chapitre (page de titre, préface sans signet…). */
 export const FRONT_LABEL = 'Début du livre';
@@ -48,6 +64,8 @@ export const FRONT_LABEL = 'Début du livre';
 interface Span {
   text: string;
   sup?: boolean;
+  /** Retour à la ligne gardé (vers d'un poème, d'une fable). */
+  br?: boolean;
 }
 
 interface Line {
@@ -98,14 +116,77 @@ const CHAPTER_WORD = /^(?:chapitre|chapter|cap[ií]tulo|capitolo|kapitel|partie|
 const COMPOUND_TAILS = new Set(['être', 'ce', 'ci', 'là', 'même', 'mêmes', 'il', 'ils', 'elle', 'elles', 'on', 'je', 'tu', 'nous', 'vous', 'dire', 'uns', 'unes']);
 const HYPHEN_END = /([\p{L}’'-]*?)([\p{L}]+)[-\u00AD\u2010\u2011]$/u;
 
+// ---------- Bruit de reconnaissance (OCR) ----------
+
+/** Mots d'une ou deux lettres courants (français, anglais, langues voisines) : pas du bruit. */
+const SHORT_WORDS = new Set(('à a y ô o ah oh eh hé ha ho de le la du un il je tu on en et ou où si ne se ce me te sa ma ta ni eu lu vu dû su bu né ai as au es nu va vs ' +
+  'i an at be by do go he if in is it me my no of ok or so to up us we ' +
+  'el lo al da di yo mi tu su es ja zu im am um er es du wo').split(' '));
+/** Signes que l'OCR tire des illustrations, rares dans un texte. */
+const JUNK_SIGNS = /[\^{}|\\~*<>_=+#@[\]¤¦§¬]/;
+const VOWEL = /[aeiouyàâäéèêëîïôöùûüÿœæ]/i;
+const ROMAN_NUMBER = new RegExp(`^(?=.)${ROMAN}$`, 'i');
+/** Ligne d'ornements entre deux scènes (« * * * », « ⁂ ») : gardée. */
+const ORNAMENT = /^\s*(?:[*•·◆◇❦⁂]\s*){1,5}$/;
+
+/** Mot reconnu suspect : signes parasites, lettres et chiffres mêlés, casse incohérente, mot court inconnu. */
+function suspiciousToken(token: string): boolean {
+  if (JUNK_SIGNS.test(token)) return true;
+  const word = token.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '');
+  if (!word) return false; // ponctuation seule (« ? », « — ») : neutre
+  if (/^\d+([.,]\d+)?$/.test(word)) return false;
+  if (/\p{L}/u.test(word) && /\d/.test(word)) return true;
+  const letters = word.replace(/[^\p{L}]/gu, '');
+  if (!letters) return false;
+  if (/\p{Ll}\p{Lu}/u.test(word) || /\p{Lu}{2,}\p{Ll}/u.test(word)) return true;
+  // Chiffre romain en capitales (« IV », « XII ») : pas du bruit.
+  if (/^[IVXLCDM]+$/.test(letters) && ROMAN_NUMBER.test(letters)) return false;
+  if (letters.length <= 2) return !SHORT_WORDS.has(letters.toLowerCase());
+  // Sans voyelle (« Rss », « sl ») : du bruit, sauf sigle en capitales.
+  return !VOWEL.test(letters) && letters !== letters.toUpperCase();
+}
+
+/**
+ * Ligne de bruit d'un livre scanné (illustration, cachet, code-barres lus comme du texte) :
+ * presque pas de lettres, ou surtout des « mots » suspects.
+ */
+export function isOcrJunk(text: string): boolean {
+  const chars = text.replace(/\s+/g, '');
+  const letters = (chars.match(/\p{L}/gu) ?? []).length;
+  if (letters < 2) return !ORNAMENT.test(text);
+  if ((letters + (chars.match(/\d/g) ?? []).length) / chars.length < 0.5) return true;
+  const tokens = text.split(/\s+/).filter((t) => /[\p{L}\p{N}]/u.test(t) || JUNK_SIGNS.test(t));
+  if (!tokens.length) return true;
+  const suspicious = tokens.filter(suspiciousToken).length / tokens.length;
+  return suspicious >= (tokens.length <= 6 ? 0.5 : 0.4);
+}
+
+/** Signes parasites en début ou fin de ligne (« | J'espère », « #1 Dans… ») : retirés. */
+const stripJunkEdges = (text: string) => text.replace(/^(?:[\^{}|\\~*<>_=+#@[\]¤¦¬]+\d*\s+)+/, '').replace(/(?:\s+[\^{}|\\~*<>_=+#@[\]¤¦¬]+)+$/, '');
+
+/** Titre plausible : ni adresse web, ni réplique de dialogue ; pour un scan, de vrais mots. */
+function plausibleHeading(text: string, ocr: boolean): boolean {
+  const t = text.trim();
+  if (/https?:\/\/|www\.|@/.test(t) || /^(?:[—–]|-\s)/.test(t)) return false;
+  if (!ocr) return true;
+  if (isOcrJunk(t) || words(t) > 12 || /[,;]$/.test(t)) return false;
+  // Un seul mot sans majuscule (« iwfn ») : du bruit plutôt qu'un titre.
+  if (!/\s/.test(t) && !/^[\p{Lu}\d]/u.test(t)) return false;
+  const chars = t.replace(/\s+/g, '');
+  if ((chars.match(/\p{L}/gu) ?? []).length / chars.length < 0.6) return false;
+  return /\p{L}{4,}/u.test(t) || ROMAN_NUMBER.test(t.replace(/[.)]$/, '')) || CHAPTER_WORD.test(t);
+}
+
 // ---------- 1. Lignes ----------
 
-function buildLines(page: PdfPageText, index: number): Line[] {
+function buildLines(page: PdfPageText, index: number, ocr = false): Line[] {
   const lines: Line[] = [];
-  let cur: (Line & { space: boolean; last: PdfItem }) | null = null;
+  let cur: (Line & { space: boolean; last: PdfItem; sizeSum: number; sizeWeight: number }) | null = null;
   const finish = () => {
     if (!cur) return;
-    const { space: _s, last: _l, ...line } = cur;
+    const { space: _s, last: _l, sizeSum, sizeWeight, ...line } = cur;
+    // Scan : chaque mot reconnu a sa propre taille ; la ligne prend leur moyenne.
+    if (ocr && sizeWeight) line.size = sizeSum / sizeWeight;
     if (lineText(line.spans).trim()) lines.push(line);
     cur = null;
   };
@@ -121,13 +202,13 @@ function buildLines(page: PdfPageText, index: number): Line[] {
       const dy = item.y - cur.y;
       const tolerance = 0.35 * Math.max(item.size, cur.size);
       const sameLine = Math.abs(dy) <= tolerance;
-      const sup = !sameLine && item.size < cur.size * 0.8 && dy > 0 && dy < cur.size * 0.8 && item.x >= cur.right - cur.size;
+      const sup = !ocr && !sameLine && item.size < cur.size * 0.8 && dy > 0 && dy < cur.size * 0.8 && item.x >= cur.right - cur.size;
       // Grand écart horizontal : une autre colonne sur la même ligne de base.
       const gutter = item.x - cur.right > Math.max(cur.size, item.size) * 3;
       if ((sameLine || sup) && !gutter && item.x >= cur.x - cur.size) {
         const prev = cur.spans.at(-1)!;
         const dropCapJoin = cur.spans.length === 1 && !!cur.dropCap && cur.size >= item.size * 1.8;
-        const isSup = !dropCapJoin && (sup || (item.size < cur.size * 0.75 && dy > cur.size * 0.2));
+        const isSup = !ocr && !dropCapJoin && (sup || (item.size < cur.size * 0.75 && dy > cur.size * 0.2));
         const gap = item.x - cur.right;
         const needSpace = !isSup && !dropCapJoin && (cur.space || gap > 0.2 * Math.min(item.size, cur.size)) && !/\s$/.test(prev.text) && !/^\s/.test(item.str);
         if (isSup) cur.spans.push({ text: item.str.trim(), sup: true });
@@ -148,6 +229,10 @@ function buildLines(page: PdfPageText, index: number): Line[] {
         cur.right = Math.max(cur.right, item.x + item.width);
         cur.space = false;
         cur.last = item;
+        if (!isSup) {
+          cur.sizeSum += item.size * item.str.trim().length;
+          cur.sizeWeight += item.str.trim().length;
+        }
         continue;
       }
       finish();
@@ -155,7 +240,8 @@ function buildLines(page: PdfPageText, index: number): Line[] {
     const single = item.str.trim();
     cur = {
       page: index, spans: [{ text: item.str }], x: item.x, right: item.x + item.width, y: item.y, size: item.size, font: item.font,
-      space: false, last: item, ...(single.length === 1 && /\p{Lu}/u.test(single) ? { dropCap: true } : {}),
+      space: false, last: item, sizeSum: item.size * single.length, sizeWeight: single.length,
+      ...(single.length === 1 && /\p{Lu}/u.test(single) ? { dropCap: true } : {}),
     };
   }
   finish();
@@ -169,6 +255,21 @@ function orderLines(lines: Line[], width: number): Line[] {
   const overlap = right.some((r) => left.some((l) => Math.abs(l.y - r.y) < l.size));
   if (right.length >= 3 && left.length >= 3 && overlap) return lines; // plusieurs colonnes : ordre du fichier
   return lines.map((l, i) => ({ l, i })).sort((a, b) => b.l.y - a.l.y || a.i - b.i).map((e) => e.l);
+}
+
+/** Scan : lignes de bruit retirées, signes parasites ôtés en début et en fin de ligne. */
+function cleanOcrLines(lines: Line[]): Line[] {
+  return lines.flatMap((l) => {
+    const spans = l.spans.map((sp, i) => {
+      let text = sp.text;
+      if (i === 0) text = stripJunkEdges(text);
+      if (i === l.spans.length - 1) text = stripJunkEdges(text);
+      return { ...sp, text };
+    });
+    const text = lineText(spans).trim();
+    // Une majuscule seule (lettrine, numéro de chapitre « V ») est jugée plus loin, d'après sa taille.
+    return text && (l.dropCap || !isOcrJunk(text)) ? [{ ...l, spans }] : [];
+  });
 }
 
 // ---------- 2. Mesures du texte courant ----------
@@ -191,14 +292,14 @@ function mode(values: number[]): number | undefined {
   return best;
 }
 
-function measure(pages: Line[][]): Metrics {
+function measure(pages: Line[][], ocr = false): Metrics {
   const weight = new Map<number, number>();
   for (const l of pages.flat()) {
     const k = round(l.size);
     weight.set(k, (weight.get(k) ?? 0) + lineText(l.spans).length);
   }
   const body = [...weight.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 11;
-  const isBody = (l: Line) => Math.abs(l.size - body) <= Math.max(0.6, body * 0.06);
+  const isBody = (l: Line) => Math.abs(l.size - body) <= Math.max(0.6, body * (ocr ? 0.15 : 0.06));
   const gaps: number[] = [];
   const left = new Map<number, number>();
   const right = new Map<number, number>();
@@ -347,6 +448,11 @@ function joinSpans(prev: Span[], next: Span[], lex: Lexicon): Span[] {
   return [...out, ...rest.map((s) => ({ ...s }))];
 }
 
+/** Titre reconnu à sa formulation (« Chapitre 3 », « Épilogue »), seul sur sa ligne. */
+function chapterPattern(text: string): boolean {
+  return text.length <= 70 && CHAPTER_WORD.test(text) && !TOC_LINE.test(text) && !/\s\d{1,4}$/.test(text.replace(/^\S+\s+\S+/, '')) && !SENTENCE_END.test(text.replace(/[.»"”’)\]]$/, '')) && words(text) <= 10;
+}
+
 /** Ligne centrée (titre, citation, astérisques) : autant de blanc des deux côtés, bien plus qu'un alinéa. */
 function isCentered(l: Line, m: Metrics, width: number): boolean {
   const left = m.left.get(l.page) ?? 0;
@@ -356,22 +462,48 @@ function isCentered(l: Line, m: Metrics, width: number): boolean {
   return leftGap > m.body * 2 && rightGap > m.body * 2 && Math.abs(leftGap - rightGap) < Math.max(m.body, (right - left) * 0.08);
 }
 
-function startsParagraph(a: Line, b: Line, m: Metrics, width: number): boolean {
+function startsParagraph(a: Line, b: Line, m: Metrics, width: number, ocr = false, verse = false): boolean {
   // Un appel de note en fin de ligne ne compte pas : « …consolide.¹ » finit bien une phrase.
   const textA = lineText(a.spans.filter((s) => !s.sup)).trim();
   const textB = lineText(b.spans).trim();
-  if (Math.abs(round(a.size) - round(b.size)) >= 1) return true;
+  // Mot coupé en fin de ligne et suite en minuscule : le paragraphe continue. Sur un scan (lignes
+  // un peu penchées, marges et écarts irréguliers), une ligne qui commence en minuscule aussi.
+  const cut = /\p{L}[-\u00AD\u2010\u2011]$/u.test(textA) && /^\p{Ll}/u.test(textB);
+  if (cut || (ocr && /^\p{Ll}/u.test(textB))) return false;
+  // Changement de corps ; sur un scan, la taille reconnue varie d'une ligne à l'autre : seul un net écart compte.
+  if (ocr ? Math.abs(a.size - b.size) > 0.25 * Math.min(a.size, b.size) : Math.abs(round(a.size) - round(b.size)) >= 1) return true;
   if (a.page === b.page && a.y > b.y && a.y - b.y > m.gap * 1.45) return true;
   if (BULLET.test(textB) || SCENE_BREAK.test(textB) || SCENE_BREAK.test(textA) || TOC_LINE.test(textA)) return true;
   if (isCentered(a, m, width) || isCentered(b, m, width)) return true;
   const indent = m.body * 0.6;
   const indentA = a.x - (m.left.get(a.page) ?? a.x) > indent;
   const indentB = b.x - (m.left.get(b.page) ?? b.x) > indent;
-  if (indentB && !indentA) return true;
+  // Dans un poème, des vers en retrait (rimes, refrains) ne commencent pas un paragraphe ; une
+  // phrase finie ferme la strophe (les vers ont tous à peu près la même longueur).
+  if (indentB && !indentA && !verse) return true;
   const left = m.left.get(a.page) ?? a.x;
   const right = m.right.get(a.page) ?? a.right;
   const short = a.right < right - (right - left) * 0.12;
+  // Ligne courte qui a la forme d'un titre (« Chapitre premier ») : le texte suivant n'en fait pas partie.
+  if ((short || verse) && chapterPattern(textA)) return true;
+  if (verse) return SENTENCE_END.test(textA);
   return short && SENTENCE_END.test(textA);
+}
+
+/**
+ * Page en vers (poèmes, fables, pièces en vers) : des lignes courtes qui, presque toutes,
+ * commencent par une majuscule. Leurs retours à la ligne sont gardés.
+ */
+function isVersePage(lines: Line[], m: Metrics): boolean {
+  const kept = lines.filter((l) => (lineText(l.spans).match(/\p{L}/gu) ?? []).length >= 3);
+  if (kept.length < 8) return false;
+  const texts = kept.map((l) => lineText(l.spans).trim());
+  const capital = texts.filter((t) => /^[«"“—–-]?\s*\p{Lu}/u.test(t)).length;
+  const lengths = texts.map((t) => t.length).sort((x, y) => x - y);
+  // Des fins de ligne irrégulières : la prose justifiée, elle, finit au même bord.
+  const right = m.right.get(kept[0]!.page);
+  const aligned = right === undefined ? 0 : kept.filter((l) => Math.abs(l.right - right) < m.body * 0.5).length / kept.length;
+  return capital / texts.length >= 0.8 && (lengths[Math.floor(lengths.length / 2)] ?? Infinity) <= 60 && aligned < 0.4;
 }
 
 // ---------- 5. Blocs : titres et paragraphes ----------
@@ -385,46 +517,82 @@ function tooLong(block: Block, prev: Line): boolean {
   return n > 1500 || (n > 300 && SENTENCE_END.test(lineText(prev.spans).trim()));
 }
 
-function buildBlocks(pages: Line[][], m: Metrics, widths: number[], lex: Lexicon): Block[] {
+function buildBlocks(pages: Line[][], m: Metrics, widths: number[], lex: Lexicon, ocr = false): Block[] {
   const blocks: Block[] = [];
+  const verse = new Set(pages.flatMap((lines, p) => (isVersePage(lines, m) ? [p] : [])));
   let prev: Line | null = null;
-  let pendingDropCap = '';
+  let dropCap: Line | null = null;
+  const place = (line: Line) => {
+    const text = lineText(line.spans).trim();
+    const heading = line.size >= m.body * (ocr ? 1.25 : 1.15) && text.length <= 200 && plausibleHeading(text, ocr);
+    const last = blocks.at(-1);
+    if (heading) {
+      // Titre sur plusieurs lignes : même corps, lignes rapprochées.
+      const sameSize = Math.abs((last?.size ?? 0) - line.size) < (ocr ? line.size * 0.15 : 0.6);
+      if (last?.kind === 'h' && prev && last.page === line.page && sameSize && prev.y - line.y <= line.size * 1.9) {
+        last.spans = joinSpans(last.spans, line.spans, lex);
+      } else blocks.push({ kind: 'h', page: line.page, y: line.y, size: line.size, spans: line.spans.map((s) => ({ ...s })) });
+    } else if (last?.kind === 'p' && prev && !startsParagraph(prev, line, m, widths[line.page] ?? 0, ocr, verse.has(prev.page) && verse.has(line.page)) && !tooLong(last, prev)) {
+      // Vers suivant (majuscule en tête) : retour à la ligne gardé ; sinon la ligne continue la phrase.
+      const newVerse = verse.has(prev.page) && verse.has(line.page) && /^[«"“—–-]?\s*\p{Lu}/u.test(text) && !/[-\u00AD\u2010\u2011]$/.test(lineText(prev.spans).trim());
+      last.spans = newVerse ? [...last.spans, { text: ' ', br: true }, ...line.spans.map((sp) => ({ ...sp }))] : joinSpans(last.spans, line.spans, lex);
+    } else {
+      blocks.push({ kind: 'p', page: line.page, y: line.y, size: line.size, spans: line.spans.map((s) => ({ ...s })) });
+    }
+    prev = line;
+  };
   for (const lines of pages) {
     for (const line of lines) {
       const text = lineText(line.spans).trim();
+      // Scan : une lettre seule de taille ordinaire est du bruit.
+      if (ocr && text.length === 1 && line.size < m.body * 1.8) continue;
       if (line.dropCap && text.length === 1 && line.size >= m.body * 1.8) {
-        pendingDropCap = text;
+        if (dropCap && (!ocr || plausibleHeading(lineText(dropCap.spans), true))) place(dropCap);
+        dropCap = line;
         continue;
       }
-      if (pendingDropCap) {
-        line.spans[0] = { ...line.spans[0]!, text: pendingDropCap + line.spans[0]!.text.replace(/^\s+/, '') };
-        pendingDropCap = '';
+      if (dropCap) {
+        // Lettrine : le reste du mot suit à sa droite, à sa hauteur. Sinon, c'est une grande lettre
+        // seule (numéro de chapitre « I », « V »…), qui reste un titre.
+        const dc = dropCap;
+        dropCap = null;
+        const besides = line.page === dc.page && line.x >= dc.right - dc.size * 0.3 && line.y <= dc.y + dc.size * 1.1 && line.y >= dc.y - dc.size * 0.6;
+        if (besides) line.spans[0] = { ...line.spans[0]!, text: lineText(dc.spans).trim() + line.spans[0]!.text.replace(/^\s+/, '') };
+        else if (!ocr || plausibleHeading(lineText(dc.spans), true)) place(dc);
       }
-      const heading = line.size >= m.body * 1.15 && text.length <= 200;
-      const last = blocks.at(-1);
-      if (heading) {
-        // Titre sur plusieurs lignes : même corps, lignes rapprochées.
-        if (last?.kind === 'h' && prev && last.page === line.page && Math.abs(last.size - line.size) < 0.6 && prev.y - line.y <= line.size * 1.9) {
-          last.spans = joinSpans(last.spans, line.spans, lex);
-        } else blocks.push({ kind: 'h', page: line.page, y: line.y, size: line.size, spans: line.spans.map((s) => ({ ...s })) });
-      } else if (last?.kind === 'p' && prev && !startsParagraph(prev, line, m, widths[line.page] ?? 0) && !tooLong(last, prev)) {
-        last.spans = joinSpans(last.spans, line.spans, lex);
-      } else {
-        blocks.push({ kind: 'p', page: line.page, y: line.y, size: line.size, spans: line.spans.map((s) => ({ ...s })) });
-      }
-      prev = line;
+      place(line);
     }
   }
+  if (dropCap && (!ocr || plausibleHeading(lineText(dropCap.spans), true))) place(dropCap);
   // Titres reconnus à leur formulation : « Chapitre 3 », « Prologue »… seuls sur leur ligne.
   for (const b of blocks) {
-    if (b.kind !== 'p') continue;
-    const text = lineText(b.spans).trim();
-    if (text.length <= 70 && CHAPTER_WORD.test(text) && !TOC_LINE.test(text) && !/\s\d{1,4}$/.test(text.replace(/^\S+\s+\S+/, '')) && !SENTENCE_END.test(text.replace(/[.»"”’)\]]$/, '')) && words(text) <= 10) {
+    if (b.kind === 'p' && chapterPattern(lineText(b.spans).trim())) {
       b.kind = 'h';
       b.pattern = true;
     }
   }
   return blocks;
+}
+
+/**
+ * Scan : la taille reconnue d'un même style de titre varie d'un titre à l'autre (14,4 ; 15,3 ;
+ * 16,9…). Les tailles sont réunies de proche en proche (moins de 20 % d'écart avec la précédente),
+ * pour que les chapitres se reconnaissent à leur style commun ; un style bien plus grand reste à part.
+ */
+function clusterHeadingSizes(blocks: Block[]): void {
+  const heads = blocks.filter((b) => b.kind === 'h' && !b.pattern).sort((a, b) => a.size - b.size);
+  let group: Block[] = [];
+  const close = () => {
+    const sizes = group.map((b) => b.size).sort((a, b) => a - b);
+    const median = sizes[Math.floor(sizes.length / 2)] ?? 0;
+    for (const b of group) b.size = median;
+    group = [];
+  };
+  for (const b of heads) {
+    if (group.length && b.size > group.at(-1)!.size * 1.2) close();
+    group.push(b);
+  }
+  if (group.length) close();
 }
 
 interface HeadingPlan {
@@ -435,17 +603,25 @@ interface HeadingPlan {
 }
 
 /**
- * Tailles de titres classées. Une taille compte pour la structure si elle porte des titres
- * différents sur plusieurs pages (le titre du livre répété sur la couverture et la page de titre
- * n'en est pas une). Comme pour les signets, on descend d'une taille tant que les titres retenus
- * sont moins de trois (deux parties, puis leurs chapitres).
+ * Tailles de titres classées. Une taille compte pour la structure si elle porte, sur plusieurs
+ * pages, au moins deux titres qui ne se répètent pas (le titre du livre répété sur la couverture
+ * et la page de titre n'en est pas une). Comme pour les signets, on descend d'une taille tant que
+ * les titres retenus sont moins de trois (deux parties, puis leurs chapitres).
  */
-function rankHeadings(blocks: Block[]): HeadingPlan {
-  const sized = blocks.filter((b) => b.kind === 'h' && !b.pattern);
+function rankHeadings(blocks: Block[], bookTitle = ''): HeadingPlan {
+  // Pages du début sans aucun texte courant (couverture, page de titre, faux-titre), et le titre
+  // du livre lui-même : ils ne disent rien de la structure du livre.
+  const front = blocks.find((b) => b.kind === 'p')?.page ?? 0;
+  const sized = blocks.filter((b) => b.kind === 'h' && !b.pattern && b.page >= front && !isBookTitle(b, bookTitle));
   const sizes = [...new Set(sized.map((b) => round(b.size)))].sort((a, b) => b - a);
   const structural = new Set(sizes.filter((size) => {
     const at = sized.filter((b) => round(b.size) === size);
-    return new Set(at.map((b) => b.page)).size >= 2 && new Set(at.map((b) => normalizeTitle(lineText(b.spans)))).size >= 2;
+    // Des titres qui ne se répètent pas : le titre du livre (couverture, page de titre, faux-titre)
+    // et le nom de l'auteur à côté ne font pas une structure.
+    const counts = new Map<string, number>();
+    for (const b of at) counts.set(normalizeTitle(lineText(b.spans)), (counts.get(normalizeTitle(lineText(b.spans))) ?? 0) + 1);
+    const unique = at.filter((b) => counts.get(normalizeTitle(lineText(b.spans))) === 1);
+    return new Set(unique.map((b) => b.page)).size >= 2 && unique.length >= 2;
   }));
   let chapterSize: number | null = null;
   let count = 0;
@@ -468,9 +644,13 @@ function rankHeadings(blocks: Block[]): HeadingPlan {
 // ---------- 6. Chapitres ----------
 
 const normalizeTitle = (s: string) => s.toLowerCase().normalize('NFD').replace(/[^\p{L}\p{N}]+/gu, '');
+/** Le titre du livre (page de titre, couverture) : jamais un chapitre. */
+const isBookTitle = (b: Block, bookTitle: string) => !!bookTitle && normalizeTitle(lineText(b.spans)) === normalizeTitle(bookTitle);
 
 function blockHtml(b: Block): string {
-  const inner = b.spans.map((s) => (s.sup ? `<sup>${escapeHtml(s.text)}</sup>` : escapeHtml(s.text))).join('').replace(/\s+/g, ' ').trim();
+  // Après un retour à la ligne, une espace (invisible en début de ligne) sépare les mots du texte
+  // lu par la recherche, les surlignages et la voix.
+  const inner = b.spans.map((s) => (s.br ? '<br>' : s.sup ? `<sup>${escapeHtml(s.text)}</sup>` : escapeHtml(s.text))).join('').replace(/\s+/g, ' ').replace(/ ?<br> ?/g, '<br> ').trim();
   if (!inner) return '';
   if (b.kind === 'h') return `<h${b.level ?? 3}>${inner}</h${b.level ?? 3}>`;
   return `<p>${inner}</p>`;
@@ -523,18 +703,20 @@ function outlineSections(blocks: Block[], outline: PdfOutlineEntry[]): Section[]
   return kept.map((s) => ({ label: s.label, start: s.start, ...(lower && s.level === level && level > 0 ? { depth: 1 } : {}) }));
 }
 
-function headingSections(blocks: Block[], plan: HeadingPlan): Section[] | null {
+function headingSections(blocks: Block[], plan: HeadingPlan, ocr = false, bookTitle = ''): Section[] | null {
   const { chapterSize, structural } = plan;
+  // Scan : un titre de chapitre dont la taille reconnue s'écarte (jusqu'à un quart de plus) reste un chapitre.
+  const sameLevel = (b: Block) => chapterSize !== null && (ocr ? b.size <= chapterSize * 1.25 : round(b.size) === chapterSize);
   const starts = blocks
     .map((b, i) => ({ b, i }))
-    .filter(({ b }) => b.kind === 'h' && (chapterSize !== null ? !b.pattern && structural.has(round(b.size)) && round(b.size) >= chapterSize : b.pattern));
+    .filter(({ b }) => b.kind === 'h' && !isBookTitle(b, bookTitle) && (chapterSize !== null ? !b.pattern && round(b.size) >= chapterSize && (structural.has(round(b.size)) || (ocr && sameLevel(b))) : b.pattern));
   if (starts.length < 2) return null;
   // Des parties (titres plus grands) : leurs chapitres sont décalés dans le sommaire.
-  const parts = chapterSize !== null && starts.some(({ b }) => round(b.size) > chapterSize);
+  const parts = chapterSize !== null && starts.some(({ b }) => round(b.size) > chapterSize && !sameLevel(b));
   const sections = starts.map(({ b, i }) => ({
     label: lineText(b.spans).replace(/\s+/g, ' ').trim().slice(0, 120),
     start: i,
-    ...(parts && round(b.size) === chapterSize ? { depth: 1 } : {}),
+    ...(parts && sameLevel(b) ? { depth: 1 } : {}),
   }));
   // Trop de « chapitres » minuscules (diapositives, fiches) : le découpage par pages vaut mieux.
   const total = blocks.reduce((n, b) => n + words(lineText(b.spans)), 0);
@@ -570,14 +752,19 @@ export interface PdfConversion {
   structure: 'outline' | 'headings' | 'pages';
 }
 
-export function convertPdfText(pages: PdfPageText[], outline: PdfOutlineEntry[], title: string): PdfConversion {
-  const raw = pages.map((p, i) => orderLines(buildLines(p, i), p.width));
-  const metrics = measure(raw);
+export function convertPdfText(pages: PdfPageText[], outline: PdfOutlineEntry[], title: string, options: ConvertOptions = {}): PdfConversion {
+  const ocr = options.ocr === true;
+  const raw = pages.map((p, i) => {
+    const lines = orderLines(buildLines(p, i, ocr), p.width);
+    return ocr ? cleanOcrLines(lines) : lines;
+  });
+  const metrics = measure(raw, ocr);
   const cleaned = removeFurniture(raw, metrics);
   const { pages: flow, notes } = extractNotes(cleaned, metrics);
   const lex = lexicon(flow);
-  const blocks = buildBlocks(flow, metrics, pages.map((p) => p.width), lex).filter((b) => lineText(b.spans).trim());
-  const plan = rankHeadings(blocks);
+  const blocks = buildBlocks(flow, metrics, pages.map((p) => p.width), lex, ocr).filter((b) => lineText(b.spans).trim());
+  if (ocr) clusterHeadingSizes(blocks);
+  const plan = rankHeadings(blocks, title);
   const total = blocks.reduce((n, b) => n + words(lineText(b.spans)), 0);
   if (!blocks.length) return { chapters: [], words: 0, structure: 'pages' };
 
@@ -585,7 +772,7 @@ export function convertPdfText(pages: PdfPageText[], outline: PdfOutlineEntry[],
   let sections = outlineSections(blocks, outline);
   if (!sections) {
     structure = 'headings';
-    sections = headingSections(blocks, plan);
+    sections = headingSections(blocks, plan, ocr, title);
   }
   if (!sections) {
     structure = 'pages';

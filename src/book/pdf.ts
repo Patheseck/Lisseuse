@@ -275,9 +275,9 @@ async function readMeta(doc: PDFDocumentProxy, fileName: string): Promise<{ titl
 export async function readPdfInfo(data: Uint8Array, source: Blob, fileName: string, options: PdfOptions = {}): Promise<ParsedBook> {
   const { doc, close } = await openPdf(data, source, options);
   try {
-    const [{ title, author }, cover] = await Promise.all([readMeta(doc, fileName), renderCover(doc, false)]);
+    const [{ title, author }, cover, ocr] = await Promise.all([readMeta(doc, fileName), renderCover(doc, false), scannedWithOcr(doc)]);
     options.onProgress?.(1, 1);
-    return { format: 'pdf', title, author, chapters: [], resources: {}, cover, language: null, pageCount: doc.numPages };
+    return { format: 'pdf', title, author, chapters: [], resources: {}, cover, language: null, pageCount: doc.numPages, ...(ocr ? { ocr } : {}) };
   } finally {
     close();
   }
@@ -315,9 +315,9 @@ export async function parsePdf(data: Uint8Array, source: Blob, fileName: string,
       page.cleanup();
       options.onProgress?.(i, total);
     }
-    const [outline, { title, author }, cover] = await Promise.all([readOutline(doc, origins), readMeta(doc, fileName), renderCover(doc)]);
+    const [outline, { title, author }, cover, ocr] = await Promise.all([readOutline(doc, origins), readMeta(doc, fileName), renderCover(doc), scannedWithOcr(doc)]);
 
-    const result = convertPdfText(pages, outline, title);
+    const result = convertPdfText(pages, outline, title, { ocr });
     if (result.words < Math.max(20, total * 3)) throw new ScannedPdfError();
     const chapters = result.chapters.map((c) => ({ ...c, html: sanitizeHtml(c.html) }));
     const sample = textSample(chapters);
@@ -325,8 +325,32 @@ export async function parsePdf(data: Uint8Array, source: Blob, fileName: string,
       throw new ImportError('Le texte de ce PDF est illisible : ses polices ne disent pas à quelles lettres correspondent leurs caractères.');
     }
     const language = normalizeLanguage(lang) ?? detectLanguage(sample);
-    return { format: 'pdf', title, author, chapters, resources: {}, cover, language, pageCount: total };
+    return { format: 'pdf', title, author, chapters, resources: {}, cover, language, pageCount: total, ...(ocr ? { ocr } : {}) };
   } finally {
     close();
   }
+}
+
+/**
+ * Livre scanné dont le texte vient d'une reconnaissance de caractères (OCR) : ce texte est posé,
+ * invisible (mode de rendu 3), sur l'image de la page. Trois pages réparties suffisent à le voir.
+ */
+async function scannedWithOcr(doc: PDFDocumentProxy): Promise<boolean> {
+  const { OPS } = await loadPdfJs();
+  const total = doc.numPages;
+  const picks = [...new Set([0.25, 0.5, 0.75].map((f) => Math.min(total, Math.max(1, Math.round(total * f)))))];
+  for (const n of picks) {
+    const page = await doc.getPage(n);
+    try {
+      const { fnArray, argsArray } = await page.getOperatorList();
+      const image = fnArray.some((fn) => fn === OPS.paintImageXObject || fn === OPS.paintInlineImageXObject || fn === OPS.paintImageMaskXObject);
+      const invisible = fnArray.some((fn, i) => fn === OPS.setTextRenderingMode && (argsArray[i] as number[] | undefined)?.[0] === 3);
+      if (image && invisible) return true;
+    } catch {
+      // page illisible : on regarde la suivante
+    } finally {
+      page.cleanup();
+    }
+  }
+  return false;
 }

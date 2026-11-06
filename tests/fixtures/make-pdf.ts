@@ -2,8 +2,9 @@ import { createHash } from 'node:crypto';
 
 // Petits PDF de test, écrits à la main : polices standard (sans incorporation), texte placé
 // ligne par ligne comme le font les logiciels de mise en page, sommaire (signets), en-têtes
-// courants, numéros de page, notes de bas de page, pages « scannées » (image seule), PDF
-// protégé par mot de passe (chiffrement standard RC4 40 bits) ou par un DRM inconnu.
+// courants, numéros de page, notes de bas de page, pages « scannées » (image seule, ou image et
+// texte reconnu par OCR, invisible), PDF protégé par mot de passe (chiffrement standard RC4
+// 40 bits) ou par un DRM inconnu.
 
 export type PdfFont = 'serif' | 'serif-bold' | 'serif-italic' | 'sans';
 const FONTS: Record<PdfFont, [string, string]> = {
@@ -13,7 +14,15 @@ const FONTS: Record<PdfFont, [string, string]> = {
   sans: ['F4', 'Helvetica'],
 };
 
-export interface PdfRun { text: string; x: number; y: number; size: number; font?: PdfFont }
+export interface PdfRun {
+  text: string;
+  x: number;
+  y: number;
+  size: number;
+  font?: PdfFont;
+  /** Texte invisible (mode de rendu 3), comme la couche OCR d'un livre scanné. */
+  invisible?: boolean;
+}
 export interface PdfPage { runs: PdfRun[]; image?: boolean }
 export interface PdfOutlineItem { title: string; page: number; y?: number; children?: PdfOutlineItem[] }
 export interface PdfSpec {
@@ -154,7 +163,7 @@ export function makePdf(spec: PdfSpec): Uint8Array {
     put(pageNum, `<< /Type /Page /Parent ${pagesNum} 0 R /MediaBox [0 0 ${width} ${height}] /Resources << /Font << ${fontRes} >> /XObject << /Im1 ${imageNum} 0 R >> >> /Contents ${contentNum} 0 R >>`);
     const ops: string[] = [];
     if (page.image) ops.push(`q ${width - 60} 0 0 ${height - 60} 30 30 cm /Im1 Do Q`);
-    for (const run of page.runs) ops.push(`BT /${FONTS[run.font ?? 'serif'][0]} ${run.size} Tf 1 0 0 1 ${run.x.toFixed(2)} ${run.y.toFixed(2)} Tm ${literal(winAnsi(run.text))} Tj ET`);
+    for (const run of page.runs) ops.push(`BT${run.invisible ? ' 3 Tr' : ''} /${FONTS[run.font ?? 'serif'][0]} ${run.size.toFixed(2)} Tf 1 0 0 1 ${run.x.toFixed(2)} ${run.y.toFixed(2)} Tm ${literal(winAnsi(run.text))} Tj ET`);
     putStream(contentNum, '', Buffer.from(ops.join('\n'), 'latin1'));
   });
   put(infoNum, `<< ${spec.title ? `/Title ${str(infoNum, textString(spec.title))} ` : ''}${spec.author ? `/Author ${str(infoNum, textString(spec.author))} ` : ''}/Producer ${str(infoNum, textString('Liseuse tests'))} >>`);
@@ -205,8 +214,17 @@ export interface BookSpec {
   plain?: boolean;
   /** Couverture illustrée (une image pleine page) en première page. */
   coverImage?: boolean;
+  /**
+   * Livre scanné avec reconnaissance de caractères : chaque page est une image, le texte est
+   * invisible par-dessus, sa taille et sa position varient d'une ligne à l'autre comme celles
+   * de mots reconnus, et une page de logo et un faux titre (« & ») sont lus comme du bruit.
+   */
+  ocr?: boolean;
   userPassword?: string;
 }
+
+/** Lignes de bruit qu'un OCR tire d'un logo d'éditeur (vues sur un vrai livre scanné). */
+export const OCR_JUNK = ['À oo x 4', '— “ “ ( 4 ’ Ÿ', 'si, RE j d FTHRE', "J } ee L '", 'Ed Fe', 'Ù Fa F', '+='];
 
 const LEFT = 50;
 const TEXT_WIDTH = 320;
@@ -294,6 +312,25 @@ export function typesetBook(spec: BookSpec): PdfSpec {
         }
         y -= LEADING;
       });
+    }
+  }
+  if (spec.ocr) {
+    // Page du logo de l'éditeur, après la page de titre ; faux titre « & » (un ornement) au début du livre.
+    const at = spec.plain ? 0 : 1;
+    pages.splice(at, 0, { runs: OCR_JUNK.map((text, i) => ({ text, x: 120, y: 420 - i * 20, size: BODY })) });
+    for (const o of outline) if (o.page >= at) o.page++;
+    const firstText = pages.find((p, i) => i > 1 && p.runs.length > 2);
+    firstText?.runs.push({ text: '&', x: LEFT, y: 545, size: 26 });
+    let n = 0;
+    for (const p of pages) {
+      p.image = true;
+      for (const run of p.runs) {
+        // Taille et position reconnues, à quelques pour cent près d'une ligne à l'autre.
+        n++;
+        run.size *= 1 + (((n * 37) % 11) - 5) / 60;
+        run.x += ((n * 13) % 5) - 2;
+        run.invisible = true;
+      }
     }
   }
   return {

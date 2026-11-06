@@ -25,6 +25,8 @@ export interface ParsedBook {
   language?: string | null;
   /** PDF : nombre de pages (lu même sans convertir le texte). */
   pageCount?: number;
+  /** PDF scanné : son texte vient d'une reconnaissance de caractères (OCR), des erreurs sont possibles. */
+  ocr?: boolean;
 }
 
 /**

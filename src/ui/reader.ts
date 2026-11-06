@@ -36,6 +36,8 @@ import type { Navigate, Screen } from './screen';
 import type { Sheet } from './sheet';
 
 const SAVE_DELAY_MS = 400;
+/** Livres scannés dont l'avertissement « texte reconnu automatiquement » a été donné pendant cette session. */
+const ocrNoticeShown = new Set<string>();
 const SELECTION_DELAY_MS = 150;
 const FLASH_MS = 2500;
 const WORDS_PER_MINUTE = 230;
@@ -1405,6 +1407,11 @@ export function readerScreen(bookId: string, navigate: Navigate, focusCardId?: s
     if (opened.book.format === 'pdf') {
       // PDF : retour aux pages originales à un geste.
       toolButtons.prepend(h('button', { type: 'button', className: 'icon-btn', 'aria-label': 'Pages originales du PDF', 'data-testid': 'pdf-to-pages', onclick: () => void switchToPages() }, icon('page')));
+      // Livre scanné : son texte vient d'une reconnaissance de caractères ; on le dit, une fois par session.
+      if (opened.book.ocr && !ocrNoticeShown.has(bookId)) {
+        ocrNoticeShown.add(bookId);
+        toast('Livre scanné : ce texte a été reconnu automatiquement (OCR) et peut contenir des erreurs. Les pages originales restent fidèles.', 'info', 8000);
+      }
       // Arrivée depuis les pages originales : l'endroit équivalent du livre.
       if (progress?.jump !== undefined && opened.chapters.length) {
         const at = progress.jump * opened.chapters.length;

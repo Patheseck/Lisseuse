@@ -4,7 +4,7 @@ import { DrmError } from '../../src/book/epub';
 import { ImportCancelled, ImportError, ScannedPdfError } from '../../src/book/errors';
 import { parseBookFile } from '../../src/book/import';
 import { cleanAuthor, cleanTitle, parsePdf, readPdfInfo } from '../../src/book/pdf';
-import { filler, makePdf, typesetBook, type BookSpec } from '../fixtures/make-pdf';
+import { filler, makePdf, OCR_JUNK, typesetBook, type BookSpec } from '../fixtures/make-pdf';
 
 const BOOK: BookSpec = {
   title: 'Le Sommeil et la Mémoire',
@@ -70,6 +70,38 @@ describe('lecture d’un PDF', () => {
     await parse(bytes(), 'livre.pdf', { onProgress: (done: number, total: number) => seen.push([done, total]) });
     expect(seen.at(-1)).toEqual([seen.length, seen.length]);
     expect(seen.length).toBeGreaterThanOrEqual(3);
+  });
+});
+
+describe('PDF scannés avec reconnaissance de caractères (OCR)', () => {
+  const ocrBook: BookSpec = {
+    ...BOOK,
+    outline: false,
+    chapters: [
+      { title: 'Chapitre 1 — Dormir', paragraphs: ['Pendant le sommeil profond, le cerveau rejoue longuement les souvenirs de la journée passée et les range avec soin pour le lendemain matin.', `Ensuite ${filler(300, 1)}`] },
+      { title: 'Chapitre 2 — Rêver', paragraphs: [`Puis ${filler(300, 2)}`] },
+      { title: 'Chapitre 3 — Réviser', paragraphs: [`Enfin ${filler(300, 3)}`] },
+    ],
+  };
+  const scan = () => makePdf(typesetBook({ ...ocrBook, ocr: true }));
+
+  it('reconnu à son texte invisible posé sur l’image des pages, dès l’import', async () => {
+    const data = scan();
+    expect((await readPdfInfo(data.slice(), new Blob([data as BlobPart]), 'scan.pdf')).ocr).toBe(true);
+    expect((await parse(data)).ocr).toBe(true);
+    const digital = bytes();
+    expect((await readPdfInfo(digital.slice(), new Blob([digital as BlobPart]), 'livre.pdf')).ocr).toBeUndefined();
+    expect((await parse(digital)).ocr).toBeUndefined();
+  });
+
+  it('texte adapté : bruit des illustrations retiré, vrais chapitres, paragraphes recollés malgré les tailles irrégulières', async () => {
+    const book = await parse(scan());
+    expect(book.chapters.map((c) => c.label)).toEqual(['Début du livre', 'Chapitre 1 — Dormir', 'Chapitre 2 — Rêver', 'Chapitre 3 — Réviser']);
+    const html = book.chapters.map((c) => c.html).join('\n');
+    for (const junk of [...OCR_JUNK, '&amp;']) expect(html).not.toContain(junk.replace(/'/g, '&#39;'));
+    expect(html).not.toMatch(/<p>&amp;<\/p>|<h\d>&amp;/);
+    // Le premier paragraphe court sur trois lignes de tailles reconnues différentes : il reste entier.
+    expect(book.chapters[1]!.html).toContain('<p>Pendant le sommeil profond, le cerveau rejoue longuement les souvenirs de la journée passée et les range avec soin pour le lendemain matin.</p>');
   });
 });
 

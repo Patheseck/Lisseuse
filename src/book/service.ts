@@ -2,6 +2,7 @@ import { detectLanguage } from '../core/language';
 import { logError } from '../core/errors';
 import { decodeText, parseBookFile } from './import';
 import { parsePdf, type PdfOptions } from './pdf';
+import { PDF_TEXT_VERSION } from './pdf-text';
 import { LAYOUT_VERSION, layoutChapters } from './layout';
 import { parseEpub, readEpubLanguage, textSample } from './epub';
 import { parseLegacy } from './legacy';
@@ -9,7 +10,8 @@ import { parseMarkdown } from './markdown';
 import { PARSER_VERSION, type Chapter, type ParsedBook } from './types';
 import { promisify, tx } from '../storage/db';
 import { getBook, getChapterCache, putChapterCache, saveBook, updateBook, type BookRecord } from '../storage/library';
-import { layoutHintKey } from '../storage/method';
+import { listCards } from '../storage/cards';
+import { bilanKey, bookmarksKey, focusKey, goalKey, guideKey, layoutHintKey } from '../storage/method';
 import { upgradeLayout } from '../storage/relayout';
 import { getSetting } from '../storage/settings';
 
@@ -44,6 +46,17 @@ export async function importBook(file: File, options: PdfOptions = {}): Promise<
 }
 
 /**
+ * Données posées sur le texte adapté d'un livre (fiches, signets, questions directrices, chapitres
+ * choisis, rappels, objectif, bilan) : tant qu'il y en a, ce texte n'est pas reconverti.
+ */
+async function hasTextData(bookId: string): Promise<boolean> {
+  if ((await listCards(bookId)).length) return true;
+  const keys = [`recall:${bookId}`, `pretest:${bookId}`, guideKey(bookId), focusKey(bookId), bookmarksKey(bookId), goalKey(bookId), bilanKey(bookId)];
+  const values = await Promise.all(keys.map((k) => getSetting(k)));
+  return values.some((v) => v !== undefined && v !== null && (Array.isArray(v) ? v.length > 0 : typeof v !== 'object' || Object.keys(v).length > 0));
+}
+
+/**
  * Charge un livre pour la lecture. Un livre enregistré avec un ancien découpage est migré
  * (chapitres et données) ; le cache des chapitres est reconstruit au besoin depuis le fichier
  * (pour un PDF, `options` suit la lecture des pages et demande le mot de passe).
@@ -54,24 +67,26 @@ export async function openBook(id: string, options: PdfOptions = {}): Promise<Op
   const cache = await getChapterCache(id);
   let opened: OpenedBook;
   let parsed: ParsedBook | null = null;
+  // Texte adapté d'un PDF converti par une version plus ancienne : refait s'il est encore vierge.
+  const staleText = book.format === 'pdf' && !!cache && (cache.pdfText ?? 1) < PDF_TEXT_VERSION && !(await hasTextData(id));
 
   if ((book.layout ?? 0) < LAYOUT_VERSION) {
     const base = cache && (cache.layout ?? 0) === 0 ? cache : (parsed = await parseStoredBook(book, options));
     const upgraded = await upgradeLayout(book, base.chapters, base.resources);
     opened = { book: upgraded.book, chapters: upgraded.chapters, resources: base.resources };
-  } else if (cache && (cache.layout ?? 0) === book.layout) {
+  } else if (cache && (cache.layout ?? 0) === book.layout && !staleText) {
     opened = { book, chapters: cache.chapters, resources: cache.resources };
   } else {
     parsed = await parseStoredBook(book, options);
     const chapters = layoutChapters(parsed.chapters, book, book.layout ?? 0);
-    await putChapterCache({ bookId: id, parserVersion: PARSER_VERSION, layout: book.layout ?? 0, chapters, resources: parsed.resources });
+    await putChapterCache({ bookId: id, parserVersion: PARSER_VERSION, layout: book.layout ?? 0, chapters, resources: parsed.resources, ...(book.format === 'pdf' ? { pdfText: PDF_TEXT_VERSION } : {}) });
     opened = { book, chapters, resources: parsed.resources };
   }
 
   // PDF converti à la demande (« texte adapté ») : le livre connaît désormais ses chapitres et sa langue.
   if (opened.book.format === 'pdf' && parsed) {
     const labels = opened.chapters.map((c) => c.label);
-    const patch = { chapterCount: labels.length, chapterLabels: labels, language: parsed.language ?? null, ...(parsed.pageCount ? { pageCount: parsed.pageCount } : {}) };
+    const patch = { chapterCount: labels.length, chapterLabels: labels, language: parsed.language ?? null, ocr: parsed.ocr === true, ...(parsed.pageCount ? { pageCount: parsed.pageCount } : {}) };
     opened = { ...opened, book: { ...opened.book, ...patch } };
     await updateBook(id, patch).catch((err: unknown) => logError('pdf', err));
   }

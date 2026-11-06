@@ -595,7 +595,9 @@ export function pdfReaderScreen(bookId: string, navigate: Navigate): Screen {
     add(settingsSheet.body,
       h('h3', { className: 'settings-group' }, 'Lecture'),
       segmented<'pages' | 'text'>('Mode de lecture', 'pdf-mode', [['pages', 'Pages originales'], ['text', 'Texte adapté']], 'pages', (mode) => mode === 'text' && void switchToText()),
-      h('p', { className: 'hint' }, 'Texte adapté : le PDF devient un livre qui se réagence (taille du texte, thèmes), avec surlignage, fiches et méthode.'),
+      h('p', { className: 'hint', 'data-testid': 'pdf-mode-hint' }, book?.ocr
+        ? 'Texte adapté : le PDF devient un livre qui se réagence, avec surlignage, fiches et méthode. Ce livre est scanné : son texte vient d’une reconnaissance automatique (OCR) et peut contenir des erreurs.'
+        : 'Texte adapté : le PDF devient un livre qui se réagence (taille du texte, thèmes), avec surlignage, fiches et méthode.'),
       segmented<PdfViewPrefs['scroll']>('Défilement', 'pdf-scroll', [['vertical', 'Continu'], ['pages', 'Page par page']], prefs.scroll, (scroll) => updatePrefs({ scroll })),
       h('div', { className: 'setting' },
         h('span', { className: 'setting-label' }, 'Zoom'),

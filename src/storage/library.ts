@@ -32,6 +32,8 @@ export interface BookRecord {
    * méthode s'appuient sur le texte adapté ; les pages s'affichent telles qu'imprimées.
    */
   pdfView?: 'pages' | 'text';
+  /** PDF scanné : son texte vient d'une reconnaissance de caractères (OCR), des erreurs sont possibles. */
+  ocr?: boolean;
 }
 
 /** Ce livre se lit en pages originales (PDF non converti, ou mode « pages » choisi). */
@@ -44,6 +46,8 @@ export interface ChapterCache {
   parserVersion: number;
   /** Version du découpage des chapitres en cache (absente : 0). */
   layout?: number;
+  /** PDF : version de la conversion du texte (book/pdf-text.ts ; absente : 1). */
+  pdfText?: number;
   chapters: Chapter[];
   resources: Record<string, Blob>;
 }
@@ -92,6 +96,7 @@ export async function saveBook(id: string, parsed: ParsedBook, file: Blob, fileN
       language: pagesOnly ? (existing?.language ?? null) : (parsed.language ?? null),
       ...(parsed.pageCount ?? existing?.pageCount ? { pageCount: parsed.pageCount ?? existing?.pageCount } : {}),
       ...(existing?.pdfView ? { pdfView: existing.pdfView } : {}),
+      ...(parsed.ocr ?? existing?.ocr ? { ocr: true } : {}),
     };
     books.put(book);
     if (!pagesOnly) t.objectStore('chapters').put({ bookId: id, parserVersion: PARSER_VERSION, layout, chapters: parsed.chapters, resources: parsed.resources } satisfies ChapterCache);
@@ -109,7 +114,7 @@ export async function listBooks(): Promise<BookRecord[]> {
 }
 
 /** Met à jour quelques champs d'un livre (langue détectée…). */
-export async function updateBook(id: string, patch: Partial<Pick<BookRecord, 'language' | 'title' | 'author' | 'chapterCount' | 'chapterLabels' | 'pageCount' | 'pdfView'>>): Promise<void> {
+export async function updateBook(id: string, patch: Partial<Pick<BookRecord, 'language' | 'title' | 'author' | 'chapterCount' | 'chapterLabels' | 'pageCount' | 'pdfView' | 'ocr'>>): Promise<void> {
   await tx(['books'], 'readwrite', async (t) => {
     const store = t.objectStore('books');
     const book = (await promisify(store.get(id))) as BookRecord | undefined;

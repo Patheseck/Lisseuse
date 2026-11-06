@@ -91,6 +91,26 @@ describe('sauvegarde', () => {
     expect((await getBook(book.id))!.chapterLabels).toEqual(['Début du livre', 'Un', 'Deux']);
   });
 
+  it('PDF converti par une version plus ancienne : texte adapté refait s’il est vierge, gardé dès qu’une fiche y est posée', async () => {
+    const pdf = makePdf(typesetBook({ title: 'Vieux', author: 'A', outline: true, chapters: [{ title: 'Un', paragraphs: [filler(200, 1)] }, { title: 'Deux', paragraphs: [filler(200, 2)] }] }));
+    const { book } = await importBook(new File([pdf as BlobPart], 'vieux.pdf', { type: 'application/pdf' }));
+    await openBook(book.id);
+    expect((await getChapterCache(book.id))!.pdfText).toBe(2);
+    // Cache d'une conversion d'avant (sans version), avec ses défauts.
+    const old = async () => {
+      const cache = (await getChapterCache(book.id))!;
+      await tx(['chapters'], 'readwrite', (t) => t.objectStore('chapters').put({ ...cache, pdfText: undefined, chapters: [{ label: 'Rss', html: '<p>Ancien texte</p>' }] }));
+    };
+    await old();
+    const fresh = await openBook(book.id);
+    expect(fresh.chapters.map((c) => c.label)).toEqual(['Début du livre', 'Un', 'Deux']);
+    expect((await getChapterCache(book.id))!.pdfText).toBe(2);
+    // Une fiche posée sur l'ancien texte : il reste tel quel (la fiche ne perd pas sa place).
+    await old();
+    await putCard(newCard(book.id, 0, anchorFromOffsets('Ancien texte', 0, 6)));
+    expect((await openBook(book.id)).chapters.map((c) => c.label)).toEqual(['Rss']);
+  });
+
   it('sans les livres : signale ceux à réimporter, garde les fiches', async () => {
     await seed();
     const { blob } = await exportBackup({ includeBooks: false });

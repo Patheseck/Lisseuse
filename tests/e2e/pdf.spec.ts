@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { filler, makePdf, typesetBook, type BookSpec } from '../fixtures/make-pdf';
+import { filler, makePdf, OCR_JUNK, typesetBook, type BookSpec } from '../fixtures/make-pdf';
 import { importFile, selectText, watchErrors } from './helpers';
 
 const BOOK: BookSpec = {
@@ -42,7 +42,7 @@ async function pagesShown(page: Page): Promise<number> {
   await expect(page.getByTestId('pdf-viewer')).toBeVisible();
   await expect(page.locator('.pdfViewer .page canvas').first()).toBeAttached();
   // Pages à leur taille (pas de hauteur nulle), et dessinées.
-  expect(await page.locator('.pdfViewer .page').first().evaluate((el) => el.getBoundingClientRect().height)).toBeGreaterThan(100);
+  await expect.poll(() => page.locator('.pdfViewer .page').first().evaluate((el) => el.getBoundingClientRect().height), { message: 'page à sa taille' }).toBeGreaterThan(100);
   await expect.poll(() => inkedPixels(page), { message: 'page dessinée (pas blanche)', timeout: 10000 }).toBeGreaterThan(150);
   const label = await page.getByTestId('pdf-page').textContent();
   return Number(label!.match(/sur (\d+)/)![1]);
@@ -352,6 +352,24 @@ test.describe('PDF en texte adapté', () => {
     await click(page, 'pdf-to-pages');
     await pagesShown(page);
     await expect(page.getByTestId('status-page')).toHaveText(new RegExp(`^[2-3] / ${total}$`));
+  });
+
+  test('livre scanné (texte reconnu par OCR) : signalé, bruit des illustrations retiré, vrais chapitres', async ({ page }) => {
+    await importFile(page, 'scan.pdf', 'application/pdf', pdf({ ocr: true, outline: false }));
+    // Ses pages (des images) se lisent telles quelles ; l'affichage prévient que son texte vient d'un OCR.
+    await pagesShown(page);
+    await click(page, 'open-settings');
+    await expect(page.getByTestId('pdf-mode-hint')).toContainText('Ce livre est scanné');
+    await page.getByTestId('settings-sheet').locator('label[for="pdf-mode-text"]').click();
+    await expect(page.getByTestId('reader-chapter')).toHaveText(/\S/, { timeout: 15000 });
+    await expect(page.getByTestId('toast').last()).toContainText('Livre scanné : ce texte a été reconnu automatiquement (OCR)');
+    expect(await tocLabels(page)).toEqual(['Début du livre', 'Chapitre 1 — Dormir', 'Chapitre 2 — Rêver']);
+    const content = page.getByTestId('reader-content');
+    await expect(content).toContainText('Le Sommeil et la Mémoire');
+    for (const junk of OCR_JUNK) await expect(content).not.toContainText(junk);
+    await click(page, 'next-chapter');
+    await expect(content.locator('h2')).toHaveText('Chapitre 1 — Dormir');
+    await expect(content).not.toContainText('&');
   });
 
   test('sans signets : les titres, plus grands que le texte, font les chapitres', async ({ page }) => {
