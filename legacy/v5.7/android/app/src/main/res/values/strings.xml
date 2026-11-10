@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Liseuse Mnemotechnique</string>
+    <string name="title_activity_main">Liseuse Mnemotechnique</string>
+    <string name="package_name">com.patheseck.liseuse</string>
+    <string name="custom_url_scheme">com.patheseck.liseuse</string>
+</resources>
