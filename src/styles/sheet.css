@@ -133,6 +133,8 @@
 .data-section { display: grid; gap: 0.6rem; padding-top: 0.9rem; border-top: 1px solid var(--border); }
 .data-section h3 { margin: 0; font-size: 0.95rem; }
 .data-section summary { cursor: pointer; min-height: 32px; color: var(--muted); }
+/* Sauvegarde automatique : paragraphes espacés par la grille seule. */
+.auto-backup > p { margin: 0; }
 .check { display: flex; align-items: flex-start; gap: 0.6rem; min-height: 44px; cursor: pointer; }
 .check input { width: 20px; height: 20px; margin-top: 2px; accent-color: var(--accent); flex: 0 0 auto; }
 .check span { display: grid; gap: 0.1rem; }

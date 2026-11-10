@@ -121,6 +121,40 @@ describe('sauvegarde', () => {
     expect(await listAllCards()).toHaveLength(1);
   });
 
+  it('restaurée sans les livres puis sauvegardée de nouveau : les livres à réimporter restent décrits', async () => {
+    const id = await seed();
+    const original = (await getBook(id))!;
+    const { blob } = await exportBackup({ includeBooks: false });
+    await wipeAll();
+    await restoreBackup(await readBackup(await blob.text(), async () => null));
+    // Nouvelle sauvegarde avant d'avoir réimporté le livre (sauvegarde automatique, par exemple).
+    const second = await collectBackup(false);
+    expect(second.books).toHaveLength(1);
+    expect(second.books[0]).toMatchObject({ id, title: original.title, layout: original.layout, chapterCount: original.chapterCount });
+    expect(second.books[0]!.file).toBeUndefined();
+    expect(second.settings.map((s) => s.key)).not.toContain('absent-books');
+    // Elle se restaure à son tour avec la liste des livres à réimporter.
+    await wipeAll();
+    const report = await restoreBackup(await readBackup(JSON.stringify(second), async () => null));
+    expect(report.missingBooks).toEqual(['cours']);
+    expect(await listAllCards()).toHaveLength(1);
+    // Réimporté : décrit une seule fois, par le livre lui-même.
+    await importBook(new File([MD], 'cours.md', { type: 'text/markdown' }));
+    expect((await collectBackup(false)).books.map((b) => b.id)).toEqual([id]);
+  });
+
+  it('un livre absent dont plus rien ne dépend n’est plus repris', async () => {
+    const id = await seed();
+    const { blob } = await exportBackup({ includeBooks: false });
+    await wipeAll();
+    await restoreBackup(await readBackup(await blob.text(), async () => null));
+    await tx(['cards', 'progress'], 'readwrite', (t) => {
+      t.objectStore('cards').clear();
+      t.objectStore('progress').clear();
+    });
+    expect((await collectBackup(false)).books.map((b) => b.id)).not.toContain(id);
+  });
+
   it('fusion : rien n’est dupliqué ni écrasé, la fiche la plus récente gagne', async () => {
     await seed();
     const { blob } = await exportBackup({ includeBooks: true });

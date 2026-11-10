@@ -1,10 +1,10 @@
 # Politique de confidentialité de Liseuse
 
-*Dernière mise à jour : 4 novembre 2026*
+*Dernière mise à jour : 10 novembre 2026*
 
 Liseuse est une application de lecture et d'apprentissage qui fonctionne **entièrement hors ligne**.
 Cette page décrit, simplement et complètement, ce que l'application fait de tes données : rien ne
-quitte ton appareil sans une action de ta part.
+quitte ton appareil sans que tu l'aies décidé.
 
 ## Données collectées
 
@@ -35,8 +35,25 @@ exporter une sauvegarde avant.
 
 Une sauvegarde est un fichier que **tu** exportes, à l'endroit que **tu** choisis (stockage du
 téléphone, Google Drive, e-mail…) grâce au menu de partage d'Android. Tu peux la chiffrer avec un
-mot de passe (AES-256) : sans ce mot de passe, son contenu est illisible. Liseuse n'envoie jamais
-de sauvegarde d'elle-même.
+mot de passe (AES-256) : sans ce mot de passe, son contenu est illisible.
+
+**Sauvegarde automatique (facultative).** Dans « Mes données », tu peux choisir une fois, avec le
+sélecteur de fichiers d'Android, un emplacement dans ton Google Drive (ou ailleurs). Liseuse y
+tient alors à jour **un seul fichier** de sauvegarde (tes fiches, révisions, progression, notes et
+réglages, et la liste de tes livres, sans leurs fichiers) : elle le réécrit quand tu quittes
+l'application, si quelque chose a changé.
+
+- Liseuse n'a de droit que sur ce fichier : elle ne voit ni ne lit rien d'autre de ton Drive, et
+  ne demande ni ton compte Google ni ton mot de passe.
+- Liseuse ne se connecte toujours à aucun serveur : c'est l'application Google Drive du téléphone
+  qui envoie le fichier en ligne (plus tard si tu es hors connexion), selon les règles de
+  confidentialité de Google.
+- Si tu la chiffres, le mot de passe est gardé dans la mémoire privée de Liseuse sur l'appareil,
+  pour les sauvegardes suivantes ; il n'est jamais écrit dans la sauvegarde.
+- « Arrêter la sauvegarde automatique » rend le droit sur ce fichier ; le fichier déjà enregistré
+  reste dans ton Drive, où tu peux le supprimer.
+
+Sans cette option, Liseuse n'écrit jamais de sauvegarde d'elle-même.
 
 ## Applis de musique
 
@@ -53,7 +70,8 @@ Liseuse ne leur transmet rien d'autre que les mots de la recherche (par exemple 
 | Vibreur | Une légère vibration au changement de chapitre. |
 
 Liseuse n'accède ni à tes contacts, ni à ta position, ni à ton appareil photo, ni à ton micro.
-Les fichiers ne sont lus que lorsque tu les choisis toi-même (importation, « Ouvrir avec »).
+Les fichiers ne sont lus que lorsque tu les choisis toi-même (importation, « Ouvrir avec »,
+fichier de sauvegarde).
 
 ## Enfants
 

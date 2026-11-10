@@ -1,5 +1,6 @@
 import { errorMessage, logError, readErrors } from '../core/errors';
 import { saveFile } from '../native/files';
+import { backupFileSupported } from '../native/backup-file';
 import { exportBackup, readBackup, restoreBackup } from '../storage/backup';
 import { loadMojorTable, saveMojorTable } from '../storage/settings';
 import { normalizeMojorTable } from '../core/mnemonic';
@@ -8,6 +9,7 @@ import { h } from './dom';
 import { infoDialog, passwordDialog, toast, withBusy } from './feedback';
 import { createSheet, type Sheet } from './sheet';
 import { aboutSheet } from './about';
+import { autoBackupSection, type RestoredBackup } from './auto-backup-section';
 
 /** Affiche le bilan d'une migration ou d'une restauration. */
 export function showImportReport(title: string, intro: string, r: ImportReport): Promise<void> {
@@ -46,22 +48,29 @@ export function dataSheet(onRestored: () => void): Sheet {
     }
   }
 
-  async function doRestore(file: File): Promise<void> {
+  /** Restaure le texte d'une sauvegarde (fichier choisi, ou Google Drive) ; null si ce n'est pas fait. */
+  async function restoreText(text: string): Promise<RestoredBackup | null> {
+    let password: string | null = null;
     try {
-      const parsed = await readBackup(await file.text(), () => passwordDialog({ title: 'Sauvegarde chiffrée', message: 'Saisis le mot de passe choisi lors de l’export.', confirmLabel: 'Déchiffrer' }));
+      const parsed = await readBackup(text, async () => (password = await passwordDialog({ title: 'Sauvegarde chiffrée', message: 'Saisis le mot de passe choisi lors de la sauvegarde.', confirmLabel: 'Déchiffrer' })));
       sheet.close();
       const report = await withBusy('Restauration en cours…', () => restoreBackup(parsed));
       onRestored();
       await showImportReport('Restauration terminée', parsed.kind === 'v5' ? 'Sauvegarde de la V5 reprise :' : 'Ajouté depuis la sauvegarde :', report);
+      return { kind: parsed.kind, includesBooks: parsed.kind === 'v6' && parsed.data.includesBooks === true, ...(password ? { password } : {}) };
     } catch (err) {
       logError('restauration', err);
       toast(`Restauration impossible : ${errorMessage(err)}`, 'error', 6000);
+      return null;
     }
   }
   fileInput.addEventListener('change', () => {
     const file = fileInput.files?.[0];
     fileInput.value = '';
-    if (file) void doRestore(file);
+    if (file) void file.text().then(restoreText, (err: unknown) => {
+      logError('restauration', err);
+      toast(`Restauration impossible : ${errorMessage(err)}`, 'error', 6000);
+    });
   });
 
   const mojorInput = h('input', { type: 'file', accept: 'application/json,.json', className: 'visually-hidden', tabindex: '-1', 'aria-hidden': 'true', 'data-testid': 'mojor-input' });
@@ -93,11 +102,15 @@ export function dataSheet(onRestored: () => void): Sheet {
     usage.textContent = `Espace occupé par Liseuse sur l’appareil : ${used < 1_048_576 ? '< 1' : Math.round(used / 1_048_576)} Mo.`;
     usage.hidden = false;
   }).catch(() => undefined);
+  const auto = backupFileSupported();
   sheet.body.append(
-    h('p', { className: 'hint' }, 'Tes livres et tes fiches restent uniquement sur cet appareil. Exporte une sauvegarde de temps en temps pour ne rien perdre.'),
+    h('p', { className: 'hint' }, auto
+      ? 'Tes livres et tes fiches restent sur cet appareil. Active la sauvegarde automatique sur Google Drive pour ne rien perdre, même en changeant de téléphone.'
+      : 'Tes livres et tes fiches restent uniquement sur cet appareil. Exporte une sauvegarde de temps en temps pour ne rien perdre.'),
     usage,
+    ...(auto ? [autoBackupSection(restoreText)] : []),
     h('section', { className: 'data-section' },
-      h('h3', {}, 'Sauvegarder'),
+      h('h3', {}, auto ? 'Exporter une sauvegarde' : 'Sauvegarder'),
       h('label', { className: 'check', for: 'backup-books' }, includeBooks, h('span', {}, 'Inclure les fichiers des livres', h('small', {}, 'Fichier plus lourd, mais tout se restaure d’un coup.'))),
       h('label', { className: 'check', for: 'backup-encrypt' }, encrypt, h('span', {}, 'Chiffrer avec un mot de passe')),
       h('button', { type: 'button', className: 'btn btn-primary', 'data-testid': 'export-backup', onclick: () => void doExport() }, 'Exporter une sauvegarde'),

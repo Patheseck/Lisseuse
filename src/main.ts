@@ -24,7 +24,9 @@ import { applyReaderSettings, loadReaderSettings } from './storage/settings';
 import { migrateDeviceIfNeeded, type ImportReport } from './storage/migrate-v5';
 import { showImportReport } from './ui/data-sheet';
 import { App } from '@capacitor/app';
+import { autoBackupDeps } from './native/backup-file';
 import { listenForOpenedFiles } from './native/open-file';
+import { loadAutoBackup, runAutoBackup } from './storage/auto-backup';
 import { isNative } from './native/platform';
 import { applyReminder, loadReminder } from './native/reminder';
 import { watchSystemBars } from './native/system-bars';
@@ -115,6 +117,28 @@ async function setupNative(): Promise<void> {
   });
   // Reprogramme le rappel (Android peut l'avoir perdu après une mise à jour de l'app).
   await loadReminder().then((r) => applyReminder(r)).catch((err: unknown) => logError('rappel', err));
+  watchAutoBackup();
+}
+
+/**
+ * Sauvegarde automatique (Google Drive) : quand on quitte l'app, et peu après le lancement pour ce
+ * que la séance précédente n'a pas eu le temps d'écrire. Un échec est noté (« Mes données ») et
+ * signalé au lancement suivant.
+ */
+function watchAutoBackup(): void {
+  const backup = (notify: boolean) => runAutoBackup('auto', autoBackupDeps).catch((err: unknown) => {
+    logError('sauvegarde automatique', err);
+    if (notify) toast('La sauvegarde automatique sur Google Drive a échoué : voir « Mes données ».', 'error', 7000);
+  });
+  void App.addListener('appStateChange', ({ isActive }) => {
+    if (!isActive) void backup(false);
+  });
+  window.setTimeout(() => {
+    void loadAutoBackup().then((config) => {
+      if (config?.lost) toast('La sauvegarde automatique ne trouve plus son fichier : choisis de nouveau l’emplacement dans « Mes données ».', 'error', 8000);
+      else if (config) void backup(true);
+    }).catch((err: unknown) => logError('sauvegarde automatique', err));
+  }, 15_000);
 }
 
 void start();

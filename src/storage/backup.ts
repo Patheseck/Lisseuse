@@ -15,8 +15,22 @@ import { isV5Backup, snapshotFromV5Backup, type V5Snapshot } from './v5';
 
 export const BACKUP_FORMAT = 6;
 const PBKDF2_ITERATIONS = 600_000;
-/** Réglages propres à l'appareil, jamais exportés. */
-const LOCAL_ONLY_SETTINGS = new Set(['migration-v5']);
+/**
+ * Livres d'une sauvegarde restaurée sans leur fichier : leur description (titre, découpage des
+ * chapitres) repart dans les sauvegardes suivantes tant qu'ils ne sont pas réimportés, pour que
+ * leurs fiches restent bien rangées et leurs titres listés à la prochaine restauration.
+ */
+const ABSENT_BOOKS_KEY = 'absent-books';
+/**
+ * Réglages propres à l'appareil, jamais exportés ni remplacés par une restauration : reprise de la
+ * V5, sauvegarde automatique (emplacement du fichier et mot de passe, voir auto-backup.ts), livres
+ * absents (repris dans la liste des livres de la sauvegarde).
+ */
+const LOCAL_ONLY_SETTINGS = new Set(['migration-v5', 'auto-backup', ABSENT_BOOKS_KEY]);
+
+function absentBooks(value: unknown): BackupBook[] {
+  return Array.isArray(value) ? value.filter((b): b is BackupBook => !!b && typeof (b as BackupBook).id === 'string') : [];
+}
 
 interface EncodedBlob {
   type: string;
@@ -108,6 +122,12 @@ export async function collectBackup(includeBooks: boolean): Promise<BackupV6> {
       ...(includeBooks && cover ? { cover: await encodeBlob(cover) } : {}),
     });
   }
+  // Livres pas encore réimportés depuis une restauration, tant que des fiches ou une progression s'y rapportent.
+  const present = new Set(books.map((b) => b.id));
+  const referenced = new Set([...cards.map((c) => c.bookId), ...progress.map((p) => p.bookId)]);
+  for (const b of absentBooks(settings.find((s) => s.key === ABSENT_BOOKS_KEY)?.value)) {
+    if (!present.has(b.id) && referenced.has(b.id)) encodedBooks.push(b);
+  }
   return {
     app: 'liseuse',
     format: BACKUP_FORMAT,
@@ -170,19 +190,24 @@ export async function restoreBackup(parsed: ParsedBackup): Promise<ImportReport>
   const backup = parsed.data;
   const report = emptyReport();
 
-  const [books, cards, reviews, progress, settings] = await tx(['books', 'cards', 'reviews', 'progress', 'settings'], 'readonly', async (t) => [
+  const [books, cards, reviews, progress, settings, absentSetting] = await tx(['books', 'cards', 'reviews', 'progress', 'settings'], 'readonly', async (t) => [
     new Set((await promisify(t.objectStore('books').getAllKeys())) as string[]),
     new Map(((await promisify(t.objectStore('cards').getAll())) as CardRecord[]).map((c) => [c.id, c])),
     new Set(((await promisify(t.objectStore('reviews').getAll())) as ReviewRecord[]).map((r) => `${r.cardId}|${r.at}`)),
     new Map(((await promisify(t.objectStore('progress').getAll())) as ProgressRecord[]).map((p) => [p.bookId, p])),
     new Set((await promisify(t.objectStore('settings').getAllKeys())) as string[]),
+    (await promisify(t.objectStore('settings').get(ABSENT_BOOKS_KEY))) as { value: unknown } | undefined,
   ] as const);
+  const absent = new Map(absentBooks(absentSetting?.value).map((b) => [b.id, b]));
+  const absentBefore = absent.size;
 
   // Livres : ajoutés seulement s'ils manquent ; jamais écrasés.
   for (const b of backup.books) {
     if (!b || typeof b.id !== 'string' || books.has(b.id)) continue;
     if (!b.file) {
       report.missingBooks.push(b.title || 'Sans titre');
+      const { file: _f, cover: _c, ...meta } = b;
+      if (!absent.has(b.id)) absent.set(b.id, meta);
       continue;
     }
     try {
@@ -264,6 +289,7 @@ export async function restoreBackup(parsed: ParsedBackup): Promise<ImportReport>
   for (const [bookId, layout] of hints) {
     if (!settings.has(layoutHintKey(bookId)) && !settingsToPut.some((s) => s.key === layoutHintKey(bookId))) settingsToPut.push({ key: layoutHintKey(bookId), value: layout });
   }
+  if (absent.size > absentBefore) settingsToPut.push({ key: ABSENT_BOOKS_KEY, value: [...absent.values()] });
 
   await tx(['cards', 'reviews', 'progress', 'settings'], 'readwrite', (t) => {
     cardsToPut.forEach((c) => t.objectStore('cards').put(c));

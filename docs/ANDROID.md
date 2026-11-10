@@ -82,6 +82,7 @@ Pour ouvrir le projet dans Android Studio : `npm run android:sync` puis `npx cap
 |---|---|
 | Ouvrir un livre depuis un gestionnaire de fichiers | « Ouvrir avec → Liseuse » importe le livre et l'ouvre (EPUB, PDF, Markdown, texte, y compris les fichiers reçus sans type précis ; un livre protégé par DRM ou un PDF scanné est refusé avec une explication) |
 | Livres PDF | lus en pages originales (visionneuse de pdf.js, sur le téléphone, sans Internet) : zoom à deux doigts, page par page ou défilement, touches de volume ; en option, « texte adapté » (le PDF converti en livre) ; un PDF protégé par mot de passe le demande à chaque ouverture, sans le garder. Demande une WebView Android de version 119 au moins (celle d'Android 7 à jour) ; voir « Note technique : PDF » |
+| Sauvegarde automatique sur Google Drive | « Mes données » : un fichier choisi une fois dans le sélecteur d'Android (☰ → Drive → dossier → Enregistrer), réécrit en quittant l'app si quelque chose a changé (au plus toutes les 2 min) : fiches, révisions, progression, notes, réglages et liste des livres, sans les fichiers des livres ; chiffrement en option ; « Restaurer une sauvegarde de Google Drive » sur un nouveau téléphone, qui peut ensuite continuer dans le même fichier. Voir « Note technique : sauvegarde Google Drive » |
 | Exporter une sauvegarde | menu de partage d'Android (Drive, e-mail, Fichiers…) |
 | Écouter un chapitre | synthèse vocale du téléphone, à partir du paragraphe visible |
 | Rappel quotidien | notification locale à l'heure choisie (Ma mémoire → Réglages) |
@@ -112,6 +113,35 @@ Pour ouvrir le projet dans Android Studio : `npm run android:sync` puis `npx cap
   ni accélération graphique), gardé pour les PDF suivants jusqu'à la prochaine version. L'incident,
   une page non dessinée ou un dessin bloqué, est noté au journal d'erreurs (« Mes données ») avec la
   version de la WebView, pour le diagnostic.
+
+## Note technique : sauvegarde Google Drive
+
+- Pas d'API Google ni de compte à relier : le fichier est créé avec le sélecteur de documents
+  d'Android (`ACTION_CREATE_DOCUMENT`, ou `ACTION_OPEN_DOCUMENT` pour reprendre une sauvegarde
+  existante), et l'app garde le droit d'y écrire (`takePersistableUriPermission`). C'est le
+  fournisseur de documents de l'app Google Drive qui envoie le fichier en ligne : Liseuse reste
+  sans permission Internet. Tout emplacement du sélecteur qui accepte l'écriture durable convient
+  (Drive, stockage du téléphone, autre cloud).
+- Code : `android/app/src/main/java/…/BackupFilePlugin.java` (sélecteur, droits, écriture en
+  remplaçant le contenu, mode `wt`), `src/native/backup-file.ts`, `src/storage/auto-backup.ts`
+  (quand sauvegarder), `src/ui/auto-backup-section.ts` (« Mes données »).
+- La sauvegarde est préparée dans le cache de l'app puis copiée dans le fichier par un fil
+  d'exécution à part. Elle part quand l'app passe en arrière-plan (et 15 s après son ouverture,
+  pour rattraper une sortie brutale), seulement si les données ont changé (empreinte SHA-256), au
+  plus toutes les deux minutes.
+- Les fichiers des livres n'en font pas partie : une bibliothèque de plusieurs centaines de Mo,
+  passée en mémoire et envoyée en arrière-plan à chaque fois, ferait fermer l'app par Android et
+  consommerait les données mobiles. La liste des livres y est, y compris ceux d'une restauration
+  pas encore réimportés : en les réimportant, on retrouve leurs fiches. L'export manuel, lui, peut
+  inclure les livres.
+- Après une restauration depuis Drive, la sauvegarde automatique reprend dans le même fichier,
+  avec le même mot de passe ; si le fichier restauré est un export complet (avec les livres), il est
+  gardé tel quel et la suite va dans un nouveau fichier.
+- Le réglage (adresse du fichier, mot de passe éventuel) est propre à l'appareil : il n'est jamais
+  exporté et une restauration ne le remplace pas. Si le fichier est supprimé ou ses droits retirés,
+  la sauvegarde automatique s'arrête et « Mes données » demande de choisir de nouveau l'emplacement.
+- À vérifier sur un vrai téléphone (l'émulateur de test n'a pas l'app Google Drive) : création du
+  fichier dans Drive, réécriture après une lecture, restauration sur un autre appareil.
 
 ## Note technique : CSP et Capacitor
 

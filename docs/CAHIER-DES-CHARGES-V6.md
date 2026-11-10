@@ -24,7 +24,7 @@ d'apprentissage hors ligne, simple, fiable, fondée sur la recherche** (voir
 | Fiches | Créées depuis une sélection, surlignage persistant (y compris sélection sur plusieurs éléments), édition, suppression |
 | Révision | FSRS-6 (ts-fsrs), rappel écrit/dicté avant correction, 4 boutons Encore / Difficile / Bien / Facile |
 | Mnémotechnique | Table Mojor (import JSON), association image/lieu/action optionnelle sur une fiche, coach d'encodage |
-| Données | Sauvegarde / restauration **par fusion**, avec option « inclure les livres » ; chiffrement optionnel (AES-GCM) |
+| Données | Sauvegarde / restauration **par fusion**, avec option « inclure les livres » ; chiffrement optionnel (AES-GCM) ; sur Android, sauvegarde automatique dans un fichier choisi une fois dans Google Drive (sélecteur de documents d'Android, sans API Google ni permission Internet), refaite en quittant l'app si les données ont changé (sans les fichiers des livres), et restauration depuis Drive |
 | Accessibilité | Lecture audio (synthèse vocale native), navigation clavier, contrastes AA |
 
 ### 2.2 Ajoutées (fondées sur la recherche)
@@ -115,7 +115,7 @@ Une seule base IndexedDB `liseuse` (fin de `localStorage` pour les données impo
 | `cards` | id, bookId, chapitre, passage, ancre de surlignage, type, question, réponse, étapes, aide-mémoire, état FSRS, dates |
 | `reviews` | journal : fiche, date, note, confiance, durée, réponse écrite, état FSRS avant/après |
 | `progress` | bookId → chapitre, position, pourcentage |
-| `settings` | préférences de lecture, rappel, table Mojor |
+| `settings` | préférences de lecture, rappel, table Mojor ; `auto-backup` (fichier de la sauvegarde automatique, mot de passe éventuel) reste propre à l'appareil : jamais exporté, jamais remplacé par une restauration |
 
 Chaque enregistrement porte un `schemaVersion` ; les migrations sont testées.
 

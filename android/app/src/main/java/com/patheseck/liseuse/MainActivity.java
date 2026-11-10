@@ -13,6 +13,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(ReaderNativePlugin.class);
+        registerPlugin(BackupFilePlugin.class);
         super.onCreate(savedInstanceState);
     }
 
