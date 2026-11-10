@@ -113,6 +113,74 @@ describe('section « Sauvegarde automatique (Google Drive) »', () => {
     expect(byTestId<HTMLInputElement>('auto-backup-encrypt')!.checked).toBe(false);
   });
 
+  it('double appui sur « Choisir » : un seul sélecteur', async () => {
+    let pick!: (info: typeof DRIVE_FILE) => void;
+    native.create.mockImplementation(() => new Promise((resolve) => (pick = resolve)));
+    mount();
+    await vi.waitFor(() => expect(byTestId('auto-backup-choose')).not.toBeNull());
+    byTestId('auto-backup-choose')!.click();
+    byTestId('auto-backup-choose')!.click();
+    await vi.waitFor(() => expect(native.create).toHaveBeenCalledTimes(1));
+    pick(DRIVE_FILE);
+    await vi.waitFor(() => expect(writes).toHaveLength(1));
+    expect(native.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('fichier existant choisi pour être remplacé : son contenu est d’abord ajouté au téléphone, puis il est tenu à jour', async () => {
+    native.create.mockResolvedValue({ ...DRIVE_FILE, size: 4096 });
+    native.read.mockResolvedValue('{"encrypted":true}');
+    const { restore } = mount(vi.fn(async () => ({ kind: 'v6' as const, includesBooks: false, password: 'lune-et-soleil' })));
+    await click('auto-backup-choose');
+    await vi.waitFor(() => expect(document.querySelector('dialog[open]')?.textContent).toContain('« Liseuse - sauvegarde.json » contient déjà des données.'));
+    expect(writes).toEqual([]);
+    await answer('ok');
+    await vi.waitFor(() => expect(writes).toHaveLength(1));
+    expect(restore).toHaveBeenCalledWith('{"encrypted":true}');
+    expect(native.read).toHaveBeenCalledWith(DRIVE_FILE.uri);
+    expect(JSON.parse(writes[0]!.text)).toMatchObject({ encrypted: true });
+    expect(await loadAutoBackup()).toMatchObject({ uri: DRIVE_FILE.uri, password: 'lune-et-soleil' });
+  });
+
+  it('fichier existant : refusé, illisible ou d’une autre sorte, il n’est jamais écrasé', async () => {
+    native.create.mockResolvedValue({ ...DRIVE_FILE, size: 4096 });
+    // Refusé.
+    mount();
+    await click('auto-backup-choose');
+    await answer('cancel');
+    await vi.waitFor(() => expect(native.release).toHaveBeenCalledWith(DRIVE_FILE.uri));
+    expect(toasts()).toEqual([]);
+    // Pas une sauvegarde de Liseuse (ou mot de passe inconnu) : la restauration échoue.
+    native.read.mockResolvedValue('du texte');
+    document.querySelector('[data-testid="auto-backup"]')!.remove();
+    const failing = mount(vi.fn(async () => null));
+    await click('auto-backup-choose');
+    await answer('ok');
+    await vi.waitFor(() => expect(toasts()).toContain('Ce fichier n’a pas été remplacé. Choisis un autre nom de fichier.'));
+    expect(failing.restore).toHaveBeenCalledWith('du texte');
+    expect(native.release).toHaveBeenCalledTimes(2);
+    // Sauvegarde de la V5 : jamais remplacée.
+    failing.section.remove();
+    const v5 = mount(vi.fn(async () => ({ kind: 'v5' as const, includesBooks: false })));
+    await click('auto-backup-choose');
+    await answer('ok');
+    await vi.waitFor(() => expect(native.release).toHaveBeenCalledTimes(3));
+    expect(v5.restore).toHaveBeenCalled();
+    expect(writes).toEqual([]);
+    expect(await loadAutoBackup()).toBeNull();
+  });
+
+  it('fichier existant en changeant d’emplacement : le mot de passe déjà choisi sur ce téléphone est gardé', async () => {
+    await saveAutoBackup({ ...CONFIG, uri: 'content://com.google.android.apps.docs.storage/document/acc%3D1%3Bdoc%3D5', password: 'mot-de-passe-actuel' });
+    native.create.mockResolvedValue({ ...DRIVE_FILE, size: 4096 });
+    native.read.mockResolvedValue('{"app":"liseuse"}');
+    mount();
+    await click('auto-backup-change');
+    await answer('ok');
+    await vi.waitFor(() => expect(writes).toHaveLength(1));
+    expect(JSON.parse(await decrypt(JSON.parse(writes[0]!.text), 'mot-de-passe-actuel'))).toMatchObject({ app: 'liseuse' });
+    expect(await loadAutoBackup()).toMatchObject({ uri: DRIVE_FILE.uri, password: 'mot-de-passe-actuel' });
+  });
+
   it('sélecteur fermé sans choisir : rien ne change, pas de message d’erreur', async () => {
     native.create.mockRejectedValue(Object.assign(new Error('Aucun emplacement choisi.'), { code: 'CANCELLED' }));
     mount();

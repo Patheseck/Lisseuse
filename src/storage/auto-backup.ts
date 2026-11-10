@@ -13,6 +13,11 @@ import { getSetting, putSetting } from './settings';
 export const AUTO_BACKUP_KEY = 'auto-backup';
 /** Écart minimal entre deux sauvegardes automatiques (allers-retours rapides entre applis). */
 export const AUTO_GAP_MS = 2 * 60_000;
+/**
+ * Écriture abandonnée au-delà de ce délai (emplacement qui ne répond plus) : ni la file des
+ * sauvegardes ni l'écran « Sauvegarde en cours… » ne restent bloqués. Elle sera refaite plus tard.
+ */
+export const WRITE_TIMEOUT_MS = 60_000;
 
 export interface AutoBackup {
   /** Fichier choisi (adresse donnée par le sélecteur d'Android). */
@@ -40,6 +45,24 @@ export interface AutoBackupDeps {
   /** Erreur due au fichier lui-même (il faut le choisir de nouveau). */
   lost?(err: unknown): boolean;
   now?(): number;
+  /** Délai d'écriture (tests). */
+  timeoutMs?: number;
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(Object.assign(new Error('Google Drive (ou l’emplacement choisi) ne répond pas ; la sauvegarde sera refaite plus tard.'), { code: 'TIMEOUT' })), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err: unknown) => {
+        clearTimeout(timer);
+        reject(err);
+      },
+    );
+  });
 }
 
 const str = (v: unknown) => (typeof v === 'string' ? v : undefined);
@@ -114,7 +137,7 @@ async function run(reason: 'auto' | 'now', deps: AutoBackupDeps): Promise<AutoBa
   const body = config.password ? JSON.stringify(await encrypt(json, config.password)) : json;
   let written: number | undefined;
   try {
-    ({ written } = await deps.write(config.uri, body));
+    ({ written } = await withTimeout(deps.write(config.uri, body), deps.timeoutMs ?? WRITE_TIMEOUT_MS));
   } catch (err) {
     await record(config.uri, { lastError: errorMessage(err), ...(deps.lost?.(err) ? { lost: true } : {}) });
     throw err;

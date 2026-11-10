@@ -114,6 +114,17 @@ describe('sauvegarde automatique dans un fichier choisi (Google Drive)', () => {
     expect(config.lost).toBeUndefined();
   });
 
+  it('emplacement qui ne répond plus : abandon après le délai, noté, et les sauvegardes suivantes passent', async () => {
+    await seedBook();
+    await saveAutoBackup(DRIVE);
+    const stuck = { write: () => new Promise<{ written: number }>(() => undefined), timeoutMs: 30 };
+    await expect(runAutoBackup('auto', stuck)).rejects.toMatchObject({ code: 'TIMEOUT' });
+    expect(await loadAutoBackup()).toMatchObject({ lastError: 'Google Drive (ou l’emplacement choisi) ne répond pas ; la sauvegarde sera refaite plus tard.' });
+    expect((await loadAutoBackup())!.lost).toBeUndefined();
+    expect(await runAutoBackup('now', fakeFile().deps)).toBe('written');
+    expect((await loadAutoBackup())!.lastError).toBeUndefined();
+  });
+
   it('deux sauvegardes demandées en même temps : l’une après l’autre, une seule écriture', async () => {
     await seedBook();
     await saveAutoBackup(DRIVE);

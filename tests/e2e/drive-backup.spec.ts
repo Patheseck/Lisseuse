@@ -110,6 +110,41 @@ test.describe('sauvegarde automatique sur Google Drive (app Android simulée)', 
     await context.close();
   });
 
+  test('nouveau téléphone qui choisit le fichier existant dans Drive : rien n’est effacé', async ({ page, browser, baseURL }) => {
+    // Téléphone 1 : un livre et sa sauvegarde automatique.
+    await simulateAndroid(page);
+    await page.goto('/');
+    await importFile(page, 'cours.md', 'text/markdown', Buffer.from('# Un\n\nPremier chapitre avec du texte.\n'));
+    await page.getByTestId('back').click();
+    await page.getByTestId('open-data').click();
+    await page.getByTestId('auto-backup-choose').click();
+    await expect(page.getByTestId('auto-backup-status')).toContainText('Dernière sauvegarde');
+    const drive = await driveFiles(page);
+    const [uri] = Object.keys(drive);
+
+    // Téléphone 2, vide : « Choisir l'emplacement », puis le fichier existant (« Remplacer ? » → oui).
+    const context = await browser.newContext({ baseURL });
+    const phone = await context.newPage();
+    const errors = watchErrors(phone);
+    await simulateAndroid(phone, drive, [], [uri!]);
+    await phone.goto('/');
+    await phone.getByTestId('open-data').click();
+    await phone.getByTestId('auto-backup-choose').click();
+    const warning = phone.getByRole('dialog').filter({ hasText: 'Ce fichier existe déjà' });
+    await expect(warning).toContainText('son contenu va d’abord être ajouté à ce téléphone');
+    expect(await writes(phone)).toBe(0);
+    await warning.getByRole('button', { name: 'Continuer' }).click();
+    await expect(phone.getByTestId('info-dialog').getByRole('listitem')).toHaveText(['cours']);
+    await phone.getByTestId('info-ok').click();
+    await expect.poll(() => writes(phone)).toBe(1);
+    // Le fichier garde le livre (à réimporter) et sa progression : il n'a pas été vidé.
+    const kept = JSON.parse((await driveFiles(phone))[uri!]!);
+    expect(kept.books.map((b: { title: string }) => b.title)).toEqual(['cours']);
+    expect(kept.progress).toHaveLength(1);
+    expect(errors).toEqual([]);
+    await context.close();
+  });
+
   test('fichier supprimé de Drive : signalé au lancement suivant, à choisir de nouveau', async ({ page }) => {
     const errors = watchErrors(page);
     await simulateAndroid(page);

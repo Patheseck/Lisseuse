@@ -76,9 +76,17 @@ export const autoBackupDeps = {
   lost: fileLost,
 };
 
+/** Lecture abandonnée au-delà de ce délai (Google Drive doit parfois télécharger le fichier). */
+const READ_TIMEOUT_MS = 120_000;
+
 /** Lit le fichier choisi (restauration). */
 export async function readBackupFile(uri: string): Promise<string> {
-  const res = await fetch(Capacitor.convertFileSrc(uri));
-  if (!res.ok) throw new Error('Le fichier de sauvegarde n’a pas pu être lu.');
-  return res.text();
+  try {
+    const res = await fetch(Capacitor.convertFileSrc(uri), { signal: AbortSignal.timeout(READ_TIMEOUT_MS) });
+    if (!res.ok) throw new Error('Le fichier de sauvegarde n’a pas pu être lu.');
+    return await res.text();
+  } catch (err) {
+    if ((err as { name?: string } | null)?.name === 'TimeoutError') throw new Error('La lecture du fichier a pris trop de temps : vérifie ta connexion (Google Drive doit peut-être le télécharger), puis réessaie.');
+    throw err;
+  }
 }

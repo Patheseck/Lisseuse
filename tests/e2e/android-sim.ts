@@ -11,6 +11,8 @@ export interface FakeAndroid {
   granted: Set<string>;
   /** Fichiers que le sélecteur « choisira » ensuite (pour « Restaurer une sauvegarde de Google Drive »). */
   picks: string[];
+  /** Fichiers existants touchés dans le sélecteur d'enregistrement (« Remplacer ? » → oui), au lieu d'en créer un. */
+  overwrites: string[];
   calls: string[];
   fire(plugin: string, event: string, data: unknown): void;
 }
@@ -22,8 +24,8 @@ declare global {
 }
 
 /** Simule l'app Android dans la page (à appeler avant page.goto). */
-export async function simulateAndroid(page: Page, drive: Record<string, string> = {}, picks: string[] = []): Promise<void> {
-  await page.addInitScript(({ drive, picks, DRIVE }) => {
+export async function simulateAndroid(page: Page, drive: Record<string, string> = {}, picks: string[] = [], overwrites: string[] = []): Promise<void> {
+  await page.addInitScript(({ drive, picks, overwrites, DRIVE }) => {
     const methods: Record<string, string[]> = {
       App: ['addListener', 'removeListener', 'removeAllListeners', 'getLaunchUrl', 'minimizeApp', 'getInfo', 'getState', 'exitApp'],
       SystemBars: ['setStyle', 'show', 'hide', 'setAnimation'],
@@ -43,7 +45,7 @@ export async function simulateAndroid(page: Page, drive: Record<string, string> 
     const granted = new Set<string>();
     let nextDoc = 100;
     const fail = (message: string, code: string) => Object.assign(new Error(message), { code });
-    const info = (uri: string) => ({ uri, provider: DRIVE, name: names.get(uri), readable: granted.has(uri), writable: granted.has(uri), exists: files.has(uri) });
+    const info = (uri: string) => ({ uri, provider: DRIVE, name: names.get(uri), size: new TextEncoder().encode(files.get(uri) ?? '').length, readable: granted.has(uri), writable: granted.has(uri), exists: files.has(uri) });
     const handlers: Record<string, (o: Record<string, string>) => unknown> = {
       'Filesystem.writeFile': ({ path, data }) => {
         cache.set(path!, data!);
@@ -51,6 +53,11 @@ export async function simulateAndroid(page: Page, drive: Record<string, string> 
       },
       'Filesystem.deleteFile': ({ path }) => cache.delete(path!) && {},
       'BackupFile.create': ({ fileName }) => {
+        const existing = android.overwrites.shift();
+        if (existing) {
+          granted.add(existing);
+          return info(existing);
+        }
         const uri = `content://${DRIVE}/document/acc%3D1%3Bdoc%3D${nextDoc++}`;
         files.set(uri, '');
         names.set(uri, fileName!);
@@ -77,6 +84,7 @@ export async function simulateAndroid(page: Page, drive: Record<string, string> 
       files,
       granted,
       picks,
+      overwrites,
       calls: [],
       fire: (plugin, event, data) => (listeners.get(`${plugin}.${event}`) ?? []).forEach((cb) => cb(data)),
     };
@@ -95,7 +103,7 @@ export async function simulateAndroid(page: Page, drive: Record<string, string> 
       // Comme dans la WebView : les adresses content:// sont servies par l'app elle-même.
       convertFileSrc: (path: string) => (path.startsWith('content://') ? `${location.origin}/_capacitor_content_/${path.slice('content://'.length)}` : path),
     };
-  }, { drive, picks, DRIVE });
+  }, { drive, picks, overwrites, DRIVE });
   await page.route('**/_capacitor_content_/**', async (route) => {
     const uri = `content://${new URL(route.request().url()).pathname.replace('/_capacitor_content_/', '')}`;
     const text = await page.evaluate((u) => (window.__android.granted.has(u) ? window.__android.files.get(u) ?? null : null), uri);

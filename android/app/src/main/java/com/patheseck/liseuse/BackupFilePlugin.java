@@ -23,6 +23,8 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * Fichier de sauvegarde choisi une fois par l'utilisateur dans le sélecteur d'Android (Google
@@ -34,6 +36,9 @@ import java.io.OutputStream;
 public class BackupFilePlugin extends Plugin {
 
     private static final int ACCESS = Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION;
+
+    /** Les écritures passent l'une après l'autre : deux copies ne se mêlent jamais dans le même fichier. */
+    private final ExecutorService writer = Executors.newSingleThreadExecutor();
 
     /** Crée le fichier de sauvegarde à l'emplacement choisi. */
     @PluginMethod
@@ -96,7 +101,7 @@ public class BackupFilePlugin extends Plugin {
             call.reject("Fichier non précisé.");
             return;
         }
-        new Thread(() -> {
+        writer.execute(() -> {
             Uri uri = Uri.parse(to);
             String path = Uri.parse(from).getPath();
             try (InputStream in = new FileInputStream(new File(path == null ? from : path))) {
@@ -111,7 +116,7 @@ public class BackupFilePlugin extends Plugin {
             } catch (Exception e) {
                 call.reject("Écriture impossible : " + e.getMessage(), "WRITE_FAILED", e);
             }
-        }).start();
+        });
     }
 
     /** Renonce au fichier (fin de la sauvegarde automatique). */

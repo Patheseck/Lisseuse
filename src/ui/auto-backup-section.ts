@@ -94,8 +94,39 @@ export function autoBackupSection(restore: (text: string) => Promise<RestoredBac
       }
       return;
     }
+    // Fichier existant que le sélecteur propose de remplacer : il n'est jamais écrasé avant que son
+    // contenu ait été ajouté à ce téléphone (sur un nouveau téléphone vide, ce serait tout perdre).
+    if ((info.size ?? 0) > 0) return takeOver(info);
     if (!(await adopt(info, keep))) return render();
     await backupNow();
+  }
+
+  /** Fichier non vide choisi comme emplacement : restauré d'abord (par fusion), puis tenu à jour. */
+  async function takeOver(info: BackupFileInfo): Promise<void> {
+    const ok = await confirmDialog({
+      title: 'Ce fichier existe déjà',
+      message: `« ${info.name ?? FILE_NAME} » contient déjà des données. Pour ne rien perdre, son contenu va d’abord être ajouté à ce téléphone (rien n’y est effacé), puis la sauvegarde automatique continuera dans ce fichier.`,
+      confirmLabel: 'Continuer',
+    });
+    let restored: RestoredBackup | null = null;
+    if (ok) {
+      try {
+        restored = await restore(await withBusy('Lecture de la sauvegarde…', () => readBackupFile(info.uri)));
+      } catch (err) {
+        logError('restauration', err);
+        toast(`Lecture impossible : ${errorMessage(err)}`, 'error', 6000);
+      }
+    }
+    if (restored?.kind !== 'v6') {
+      // Annulé, illisible, mot de passe inconnu, sauvegarde de la V5 ou autre fichier : il reste tel quel.
+      await releaseBackupFile(info.uri).catch(() => undefined);
+      if (ok) toast('Ce fichier n’a pas été remplacé. Choisis un autre nom de fichier.', 'error', 7000);
+      return render();
+    }
+    // Le mot de passe déjà choisi sur ce téléphone l'emporte ; sinon celui du fichier.
+    const current = await loadAutoBackup();
+    const password = current?.password ?? restored.password;
+    if (await adopt(info, password ? { password } : {})) await backupNow();
   }
 
   async function restoreFrom(info: BackupFileInfo, fromConfig: boolean): Promise<void> {
@@ -177,8 +208,19 @@ export function autoBackupSection(restore: (text: string) => Promise<RestoredBac
     await render();
   }
 
+  // Une action à la fois : un double appui n'ouvre pas deux sélecteurs (le second effacerait le premier).
+  let busy = false;
   const button = (label: string, testId: string, onclick: () => Promise<void>, primary = false) =>
-    h('button', { type: 'button', className: primary ? 'btn btn-primary' : 'btn', 'data-testid': testId, onclick: () => void onclick() }, label);
+    h('button', {
+      type: 'button', className: primary ? 'btn btn-primary' : 'btn', 'data-testid': testId,
+      onclick: () => {
+        if (busy) return;
+        busy = true;
+        void onclick().catch((err: unknown) => logError('sauvegarde automatique', err)).finally(() => {
+          busy = false;
+        });
+      },
+    }, label);
   const check = (id: string, checked: boolean, label: string, hint: string, onchange: (value: boolean) => Promise<void>) => {
     const input = h('input', { type: 'checkbox', id, 'data-testid': id, checked });
     input.addEventListener('change', () => void onchange(input.checked));

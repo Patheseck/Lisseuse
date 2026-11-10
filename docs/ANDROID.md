@@ -137,6 +137,14 @@ Pour ouvrir le projet dans Android Studio : `npm run android:sync` puis `npx cap
 - Après une restauration depuis Drive, la sauvegarde automatique reprend dans le même fichier,
   avec le même mot de passe ; si le fichier restauré est un export complet (avec les livres), il est
   gardé tel quel et la suite va dans un nouveau fichier.
+- Si l'on touche, dans le sélecteur, un fichier existant (Android propose alors de le remplacer),
+  il n'est jamais écrasé d'emblée : son contenu est d'abord ajouté au téléphone (restauration par
+  fusion), puis il est tenu à jour. Un fichier qui n'est pas une sauvegarde V6 lisible reste intact.
+- Côté Android, les écritures passent une par une ; côté app, une écriture sans réponse après 60 s
+  est abandonnée (refaite plus tard) et une lecture après 2 min, pour ne jamais laisser l'écran
+  d'attente bloqué.
+- Mesuré (3 000 fiches, 21 000 révisions, processeur ralenti 4 fois) : 1,4 s pour sauvegarder
+  7,4 Mo en quittant l'app, 0,4 s de calcul quand rien n'a changé.
 - Le réglage (adresse du fichier, mot de passe éventuel) est propre à l'appareil : il n'est jamais
   exporté et une restauration ne le remplace pas. Si le fichier est supprimé ou ses droits retirés,
   la sauvegarde automatique s'arrête et « Mes données » demande de choisir de nouveau l'emplacement.
