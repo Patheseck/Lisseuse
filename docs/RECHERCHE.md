@@ -96,11 +96,12 @@ séquences, listes et données brutes, moins pour la compréhension conceptuelle
 **animée** (êtres vivants, actions) améliore la rétention chez les débutants.
 
 **Dans l'app :**
-- Le palais mental et la table Mojor sont **conservés comme aide-mémoire optionnel**
-  rattaché à une fiche, principalement pour les **séquences**.
-- Le coach d'encodage conseille une image concrète, **animée** et en action.
-- Le « parcours du palais » devient un mode de la révision (indice = le lieu), pas un
-  module séparé.
+- La **table de rappel du système majeur** (une image par numéro) est conservée comme
+  aide-mémoire optionnel rattaché à une fiche : un numéro, son image, et une action qui relie
+  l'image à l'idée, principalement pour les **séquences**.
+- Le coach d'encodage conseille une image concrète et une action **vivante**, exagérée.
+- Les lieux (palais mental), personnages et sons ont été retirés en 6.11, au profit de la seule
+  table de rappel de l'utilisateur ; leurs valeurs restent dans les données des fiches.
 
 ## 9. Sommeil et consolidation — ★ (non transposable tel quel)
 

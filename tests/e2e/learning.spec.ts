@@ -114,12 +114,22 @@ test.describe('Étape 5 — apprentissage actif', () => {
     await expect(page.getByTestId('pretest-box')).toBeHidden();
   });
 
-  test('aide-mémoire : table Mojor, coach, indice en révision', async ({ page }) => {
+  test('aide-mémoire : table de rappel (export Memoria), coach, indice en révision', async ({ page }) => {
     await page.goto('/');
     await page.getByTestId('open-data').click();
-    const table = [{ number: 0, word: 'Zorro', verb: 'tranche', place: 'Le balcon' }, { number: 1, word: 'Thé' }];
-    await page.getByTestId('mojor-input').setInputFiles({ name: 'mojor.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(table)) });
-    await expect(page.getByTestId('mojor-status')).toContainText('2 entrées');
+    await expect(page.getByTestId('mojor-status')).toContainText('Aucune table');
+    // Export de Memoria : la table de rappel (numéro dans « number » ou dans « value ») et une table de couleurs, ignorée.
+    const memoria = {
+      tables: [
+        { id: 1, title: null, associations: [{ number: 0, value: null, name: 'Seau' }, { number: 1, value: null, name: 'Dé ' }, { number: null, value: '3', name: 'Mât' }] },
+        { id: 2, title: 'table couleurs ', associations: [{ number: null, value: '10', name: 'Bleu' }] },
+      ],
+    };
+    await page.getByTestId('mojor-input').setInputFiles({ name: 'memoria.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(memoria)) });
+    await expect(page.getByTestId('toast').filter({ hasText: 'Table de rappel importée (Memoria) : 3 images, de 0 à 3.' })).toBeVisible();
+    await expect(page.getByTestId('mojor-status')).toContainText('3 images, de 0 à 3 : il manque 2.');
+    await page.getByTestId('recall-table').locator('summary').click();
+    await expect(page.getByTestId('recall-table').locator('li')).toHaveText(['0 Seau', '1 Dé', '3 Mât']);
     await page.keyboard.press('Escape');
 
     await importFile(page, 'memoire.md', 'text/markdown', Buffer.from(BOOK));
@@ -130,10 +140,15 @@ test.describe('Étape 5 — apprentissage actif', () => {
     await editor.getByTestId('card-answer').fill('Encodage, stockage, récupération.');
     await editor.getByTestId('mnemonic-section').locator('summary').first().click();
     await expect(editor.getByTestId('mn-number')).toHaveValue('0');
-    await expect(editor.getByTestId('mn-word')).toHaveValue('Zorro');
-    await expect(editor.getByTestId('mn-place')).toHaveValue('Le balcon');
-    await expect(editor.getByTestId('mn-coach')).toContainText('vivante');
-    await editor.getByTestId('mn-person').fill('Zorro lui-même');
+    await expect(editor.getByTestId('mn-word')).toHaveValue('Seau');
+    // Lieux, personnages et sons abandonnés.
+    for (const field of ['mn-place', 'mn-person', 'mn-sound']) await expect(editor.getByTestId(field)).toHaveCount(0);
+    await expect(editor.getByTestId('mn-coach')).toContainText('action vivante');
+    // Un autre numéro : son image remplace celle du précédent.
+    await editor.getByTestId('mn-number').fill('3');
+    await editor.getByTestId('mn-number').press('Tab');
+    await expect(editor.getByTestId('mn-word')).toHaveValue('Mât');
+    await editor.getByTestId('mn-verb').fill('se dresse en trois étages');
     await expect(editor.getByTestId('mn-coach')).toContainText('Scène complète');
     await editor.getByTestId('card-save').click();
 
@@ -141,7 +156,7 @@ test.describe('Étape 5 — apprentissage actif', () => {
     await page.getByTestId('start-review').click();
     await expect(page.getByTestId('show-hint-text')).toBeHidden();
     await page.getByTestId('show-hint').click();
-    await expect(page.getByTestId('show-hint-text')).toHaveText('📍 Le balcon · n° 0 · Zorro lui-même · Zorro · tranche');
+    await expect(page.getByTestId('show-hint-text')).toHaveText('n° 3 · Mât · se dresse en trois étages');
   });
 
   test('tableau de bord : 4 indicateurs et réglage des nouvelles fiches', async ({ page }) => {

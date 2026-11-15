@@ -23,7 +23,7 @@ d'apprentissage hors ligne, simple, fiable, fondée sur la recherche** (voir
 | Bibliothèque | Liste avec couverture, progression réelle (%), recherche, suppression (avec nettoyage complet des données liées) |
 | Fiches | Créées depuis une sélection, surlignage persistant (y compris sélection sur plusieurs éléments), édition, suppression |
 | Révision | FSRS-6 (ts-fsrs), rappel écrit/dicté avant correction, 4 boutons Encore / Difficile / Bien / Facile |
-| Mnémotechnique | Table Mojor (import JSON), association image/lieu/action optionnelle sur une fiche, coach d'encodage |
+| Mnémotechnique | Table de rappel du système majeur (import d'un export Memoria, d'une sauvegarde SECK 5D ou d'un JSON ; table et complétude affichées), aide-mémoire optionnel sur une fiche : numéro, image du numéro, action (lieux, personnages et sons abandonnés en 6.11), coach d'encodage |
 | Données | Sauvegarde / restauration **par fusion**, avec option « inclure les livres » ; chiffrement optionnel (AES-GCM) ; sur Android, sauvegarde automatique dans un fichier choisi une fois dans Google Drive (sélecteur de documents d'Android, sans API Google ni permission Internet), refaite en quittant l'app si les données ont changé (sans les fichiers des livres), et restauration depuis Drive |
 | Accessibilité | Lecture audio (synthèse vocale native), navigation clavier, contrastes AA |
 
@@ -74,7 +74,7 @@ src/
     scheduler.ts          enveloppe ts-fsrs (paramètres, file entrelacée, réapprentissage)
     cards.ts              modèle de fiche, validation
     stats.ts              rétention, calibration, régularité
-    mnemonic.ts           table Mojor, coach d'encodage
+    mnemonic.ts           table de rappel (imports, complétude), coach d'encodage
   book/
     epub.ts               lecture EPUB (JSZip), TOC NAV/NCX, couverture
     markdown.ts           Markdown → HTML
@@ -115,7 +115,7 @@ Une seule base IndexedDB `liseuse` (fin de `localStorage` pour les données impo
 | `cards` | id, bookId, chapitre, passage, ancre de surlignage, type, question, réponse, étapes, aide-mémoire, état FSRS, dates |
 | `reviews` | journal : fiche, date, note, confiance, durée, réponse écrite, état FSRS avant/après |
 | `progress` | bookId → chapitre, position, pourcentage |
-| `settings` | préférences de lecture, rappel, table Mojor ; `auto-backup` (fichier de la sauvegarde automatique, mot de passe éventuel) reste propre à l'appareil : jamais exporté, jamais remplacé par une restauration |
+| `settings` | préférences de lecture, rappel, table de rappel (clé `mojor`, nom hérité de la V5) ; `auto-backup` (fichier de la sauvegarde automatique, mot de passe éventuel) reste propre à l'appareil : jamais exporté, jamais remplacé par une restauration |
 
 Chaque enregistrement porte un `schemaVersion` ; les migrations sont testées.
 
@@ -127,7 +127,7 @@ WebView et lit les données V5.7 sur place.
 | V5.7 | V6 |
 |---|---|
 | `liseuse-db` v2 / `books` | `books` (+ calcul du nombre de chapitres) |
-| `liseuse:cards:<id>` | `cards` : passage = `text` ; réponse = `reformulation` sinon `text` ; question générée selon le mode (« Quelle est l'idée de ce passage ? », « Quelles sont les étapes… ? ») et marquée « à reformuler » ; association Mojor conservée |
+| `liseuse:cards:<id>` | `cards` : passage = `text` ; réponse = `reformulation` sinon `text` ; question générée selon le mode (« Quelle est l'idée de ce passage ? », « Quelles sont les étapes… ? ») et marquée « à reformuler » ; association conservée (numéro et image ; lieu, personnage et son restent dans les données sans être affichés) |
 | `review.fsrs` (stabilité, difficulté, échéance, reps, lapses) | état ts-fsrs équivalent (state = Review si reps > 0) |
 | `liseuse:review-log` | `reviews` |
 | `liseuse:progress`, `liseuse:prefs`, `liseuse:mojor` | `progress`, `settings` |

@@ -3,7 +3,7 @@ import { saveFile } from '../native/files';
 import { backupFileSupported } from '../native/backup-file';
 import { exportBackup, readBackup, restoreBackup } from '../storage/backup';
 import { loadMojorTable, saveMojorTable } from '../storage/settings';
-import { normalizeMojorTable } from '../core/mnemonic';
+import { importRecallTable, tableCoverage } from '../core/mnemonic';
 import type { ImportReport } from '../storage/migrate-v5';
 import { h } from './dom';
 import { infoDialog, passwordDialog, toast, withBusy } from './feedback';
@@ -75,22 +75,36 @@ export function dataSheet(onRestored: () => void): Sheet {
 
   const mojorInput = h('input', { type: 'file', accept: 'application/json,.json', className: 'visually-hidden', tabindex: '-1', 'aria-hidden': 'true', 'data-testid': 'mojor-input' });
   const mojorStatus = h('p', { className: 'hint', 'data-testid': 'mojor-status' }, '…');
+  const mojorList = h('details', { className: 'recall-table', 'data-testid': 'recall-table', hidden: true });
+  const numbers = (list: number[]) => (list.length > 12 ? `${list.slice(0, 12).join(', ')} et ${list.length - 12} autres` : list.join(', '));
   const refreshMojor = () => loadMojorTable().then((t) => {
-    mojorStatus.textContent = t.size ? `${t.size} entrées chargées : elles complètent automatiquement l’aide-mémoire d’une fiche.` : 'Aucune table chargée. Fichier JSON : [{ "number": 0, "word": "…", "verb": "…", "place": "…" }, …]';
-  }).catch((err: unknown) => logError('table Mojor', err));
+    const { count, max, missing } = tableCoverage(t);
+    mojorList.hidden = !count;
+    if (!count) {
+      mojorStatus.textContent = 'Aucune table. Importe la tienne : export de Memoria, sauvegarde de SECK 5D, ou fichier JSON [{ "number": 0, "word": "Seau" }, …].';
+      mojorList.replaceChildren();
+      return;
+    }
+    mojorStatus.textContent = `${count} image${count > 1 ? 's' : ''}, de 0 à ${max} : ${missing.length ? `il manque ${numbers(missing)}.` : 'table complète.'} Sur une fiche, le numéro choisi remplit son image.`;
+    mojorList.replaceChildren(
+      h('summary', {}, `Voir la table (${count})`),
+      h('ol', { className: 'recall-grid' }, ...[...t].filter(([, e]) => e.word).sort(([a], [b]) => a - b).map(([n, e]) => h('li', {}, h('b', {}, String(n)), ` ${e.word}`))),
+    );
+  }).catch((err: unknown) => logError('table de rappel', err));
   mojorInput.addEventListener('change', async () => {
     const file = mojorInput.files?.[0];
     mojorInput.value = '';
     if (!file) return;
     try {
-      const table = normalizeMojorTable(JSON.parse(await file.text()));
-      if (!table.size) throw new Error('aucune entrée avec un numéro.');
+      const { table, from } = importRecallTable(JSON.parse(await file.text()));
+      const { count, max } = tableCoverage(table);
+      if (!count) throw new Error('aucune image avec un numéro.');
       await saveMojorTable(table);
       await refreshMojor();
-      toast(`Table Mojor importée : ${table.size} entrées.`);
+      toast(`Table de rappel importée${from ? ` (${from})` : ''} : ${count} image${count > 1 ? 's' : ''}, de 0 à ${max}.`);
     } catch (err) {
-      logError('table Mojor', err);
-      toast(`Table Mojor invalide : ${errorMessage(err)}`, 'error');
+      logError('table de rappel', err);
+      toast(`Table de rappel illisible : ${errorMessage(err)}`, 'error');
     }
   });
   void refreshMojor();
@@ -122,9 +136,10 @@ export function dataSheet(onRestored: () => void): Sheet {
       fileInput,
     ),
     h('section', { className: 'data-section' },
-      h('h3', {}, 'Table Mojor'),
+      h('h3', {}, 'Table de rappel (système majeur)'),
       mojorStatus,
-      h('button', { type: 'button', className: 'btn', 'data-testid': 'import-mojor', onclick: () => mojorInput.click() }, 'Importer une table (JSON)'),
+      mojorList,
+      h('button', { type: 'button', className: 'btn', 'data-testid': 'import-mojor', onclick: () => mojorInput.click() }, 'Importer ma table (Memoria, SECK 5D ou JSON)'),
       mojorInput,
     ),
     h('details', { className: 'data-section' },

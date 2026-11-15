@@ -25,7 +25,7 @@ export function splitSteps(text: string): string[] {
  * Résout avec la fiche à enregistrer, ou null si l'utilisateur annule.
  */
 export interface CardEditorOptions {
-  /** Table Mojor importée (vide si aucune). */
+  /** Table de rappel importée (vide si aucune). */
   mojor?: MojorTable;
   /** Numéro proposé pour un nouvel aide-mémoire (prochain libre). */
   suggestedNumber?: number | null;
@@ -121,19 +121,17 @@ export function editCard(source: CardRecord, options: CardEditorOptions = {}): P
       const input = h('input', { type: 'text', className: 'input', 'aria-label': label, placeholder, 'data-testid': `mn-${key}`, value: initial[key] });
       return { key, input, el: h('label', { className: 'field' }, h('span', { className: 'field-label' }, label), input) };
     };
-    const numberInput = h('input', { type: 'number', className: 'input', min: 0, max: 999, inputmode: 'numeric', 'aria-label': 'Numéro Mojor', 'data-testid': 'mn-number', value: initial.number ?? '' });
+    const numberInput = h('input', { type: 'number', className: 'input', min: 0, max: 999, inputmode: 'numeric', 'aria-label': 'Numéro dans la table de rappel', 'data-testid': 'mn-number', value: initial.number ?? '' });
+    // Lieu, personnage et son sont abandonnés : plus affichés, mais gardés tels quels s'ils existent (fiches de la V5).
     const fields = [
-      field('place', 'Lieu du palais', 'ex. : la porte de ma cuisine'),
-      field('word', 'Image', 'ex. : une lampe géante'),
-      field('verb', 'Action', 'ex. : explose en confettis'),
-      field('person', 'Personnage', 'ex. : mon voisin'),
+      field('word', 'Image du numéro', 'ex. : un seau'),
+      field('verb', 'Action', 'ex. : déborde de lait sur le livre'),
       field('object', 'Objet', ''),
       field('color', 'Couleur', ''),
-      field('sound', 'Son', ''),
     ];
     const coach = h('ul', { className: 'coach', 'aria-live': 'polite', 'data-testid': 'mn-coach' });
     const readMnemonic = (): Mnemonic => {
-      const m = emptyMnemonic();
+      const m: Mnemonic = { ...initial };
       const n = Number.parseInt(numberInput.value, 10);
       m.number = Number.isInteger(n) && n >= 0 ? n : null;
       for (const f of fields) m[f.key] = f.input.value.trim();
@@ -143,8 +141,12 @@ export function editCard(source: CardRecord, options: CardEditorOptions = {}): P
       clear(coach);
       coachTips(readMnemonic(), kind).forEach((t) => coach.append(h('li', {}, t)));
     };
+    // Changer de numéro remplace ce que l'ancien numéro avait rempli, jamais ce que tu as écrit.
+    let shownNumber = initial.number;
     numberInput.addEventListener('change', () => {
-      const filled = fillFromTable(readMnemonic(), mojor);
+      const m = readMnemonic();
+      const filled = fillFromTable(m, mojor, shownNumber);
+      shownNumber = m.number;
       for (const f of fields) f.input.value = filled[f.key];
       refreshCoach();
     });
@@ -152,12 +154,12 @@ export function editCard(source: CardRecord, options: CardEditorOptions = {}): P
     refreshCoach();
     const mnemonicSection = h('details', { className: 'mnemonic', 'data-testid': 'mnemonic-section', open: hasMnemonic(source.mnemonic) },
       h('summary', {}, 'Aide-mémoire (facultatif)'),
-      h('p', { className: 'hint' }, 'Associe la fiche à une image dans un lieu familier (méthode des lieux). Surtout utile pour les listes et les étapes.'),
+      h('p', { className: 'hint' }, 'Donne à la fiche un numéro de ta table de rappel (système majeur), puis imagine une action qui relie l’image de ce numéro à l’idée. Surtout utile pour les listes et les étapes.'),
       h('div', { className: 'mn-grid' },
-        h('label', { className: 'field' }, h('span', { className: 'field-label' }, mojor.size ? `Numéro Mojor (table : ${mojor.size} entrées)` : 'Numéro Mojor'), numberInput),
-        ...fields.slice(0, 4).map((f) => f.el),
+        h('label', { className: 'field' }, h('span', { className: 'field-label' }, mojor.size ? `Numéro (table de rappel : ${mojor.size} images)` : 'Numéro (table de rappel)'), numberInput),
+        ...fields.slice(0, 2).map((f) => f.el),
       ),
-      h('details', { className: 'mn-more' }, h('summary', {}, 'Plus de détails'), h('div', { className: 'mn-grid' }, ...fields.slice(4).map((f) => f.el))),
+      h('details', { className: 'mn-more' }, h('summary', {}, 'Plus de détails'), h('div', { className: 'mn-grid' }, ...fields.slice(2).map((f) => f.el))),
       h('div', { className: 'learning-coach' }, h('strong', {}, 'Coach d’encodage'), coach),
     );
     mnemonicSection.addEventListener('toggle', () => {
