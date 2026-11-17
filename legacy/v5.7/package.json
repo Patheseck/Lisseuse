@@ -1,0 +1,20 @@
+{
+  "name": "liseuse-app",
+  "version": "5.7.0",
+  "description": "Liseuse personnelle d’apprentissage offline-first",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/core": "^8.5.2",
+    "jszip": "^3.10.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.5.2"
+  }
+}

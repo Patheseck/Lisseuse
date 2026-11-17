@@ -1,0 +1,188 @@
+import { expect, test, type Page } from '@playwright/test';
+import { importFile, selectText, watchErrors } from './helpers';
+
+const BOOK = `# Mémoire
+
+La consolidation transforme un souvenir fragile en souvenir durable.
+
+Le sommeil profond favorise la consolidation des apprentissages.
+
+## Les trois étapes
+
+Encodage, stockage, récupération.
+
+# Oubli
+
+La courbe de l'oubli décroît rapidement les premiers jours.
+`;
+
+async function openBook(page: Page): Promise<void> {
+  await page.goto('/');
+  await importFile(page, 'memoire.md', 'text/markdown', Buffer.from(BOOK));
+  await expect(page.getByTestId('reader-chapter')).toHaveText('Mémoire');
+}
+
+async function createCard(page: Page, from: string, to: string, question: string, answer: string): Promise<void> {
+  await selectText(page, from, to);
+  await page.getByTestId('card-from-selection').click();
+  await page.getByTestId('card-question').fill(question);
+  await page.getByTestId('card-answer').fill(answer);
+  await page.getByTestId('card-save').click();
+  await expect(page.getByTestId('card-editor')).toHaveCount(0);
+}
+
+test.describe('Étape 5 — apprentissage actif', () => {
+  let errors: string[];
+  test.beforeEach(async ({ page }) => {
+    errors = watchErrors(page);
+  });
+  test.afterEach(() => {
+    expect(errors, 'aucune erreur JavaScript').toEqual([]);
+  });
+
+  test('restitution de fin de chapitre : minuteur, 3 couches, tri des idées en 3 niveaux', async ({ page }) => {
+    await page.clock.install();
+    await openBook(page);
+    await selectText(page, 'La consolidation', 'durable.');
+    await page.getByTestId('highlight-selection').click();
+    await createCard(page, 'Le sommeil', 'apprentissages.', 'Quel est le rôle du sommeil profond ?', 'Il favorise la consolidation.');
+
+    await page.getByTestId('start-recall').click();
+    const sheet = page.getByTestId('recall-sheet');
+    await expect(sheet.getByTestId('recall-clock')).toHaveText('3:00');
+    await page.clock.runFor(30_000);
+    await expect(sheet.getByTestId('recall-clock')).toHaveText('2:30');
+    await sheet.getByTestId('recall-main').fill('Le sommeil consolide les souvenirs.');
+    await sheet.getByTestId('recall-text').fill('Le sommeil aide à consolider.');
+    await sheet.getByTestId('recall-explain').fill('Pendant la nuit, le cerveau range ce qu’on a appris.');
+    await page.clock.runFor(155_000);
+    await expect(sheet).toContainText('Temps écoulé');
+    await sheet.getByTestId('recall-finish').click();
+    // Deux idées (principale + centrale) : l'étape « Relier tes idées » s'intercale ; on la passe.
+    await sheet.getByTestId('links-continue').click();
+
+    await expect(sheet).toContainText('Le sommeil aide à consolider.');
+    await expect(sheet).toContainText('le cerveau range');
+    const items = sheet.getByTestId('recall-item');
+    await expect(items).toHaveCount(2);
+    // Surlignage « mal compris » : proposé en fiche (décoché ici) ; fiche « retrouvée ».
+    await items.nth(0).getByTestId('recall-level-hard').click();
+    await items.nth(0).getByTestId('recall-make-card').uncheck();
+    await items.nth(1).getByTestId('recall-level-easy').click();
+    await sheet.getByTestId('recall-done').click();
+    await expect(page.getByTestId('toast')).toContainText('1 / 2 idées retrouvées. 1 point à approfondir.');
+    const end = page.getByTestId('chapter-end');
+    await expect(end).toContainText('Dernier rappel : 1 / 2');
+    await expect(end.getByTestId('deepen')).toContainText('La consolidation transforme');
+    await end.getByRole('button', { name: 'Voir le passage' }).click();
+    await expect(page.locator('mark.flash')).toHaveCount(1);
+  });
+
+  test('sans passage marqué, le rappel s’appuie sur les sections du chapitre', async ({ page }) => {
+    await openBook(page);
+    await page.getByTestId('start-recall').click();
+    await page.getByTestId('recall-finish').click();
+    await expect(page.getByTestId('recall-item')).toHaveCount(1);
+    await expect(page.getByTestId('recall-sheet')).toContainText('Les trois étapes');
+  });
+
+  test('pré-questions à la réouverture d’un chapitre qui a des fiches', async ({ page }) => {
+    await openBook(page);
+    await expect(page.getByTestId('pretest-box')).toBeHidden();
+    await page.getByTestId('next-chapter').click();
+    await createCard(page, 'La courbe', 'jours.', 'Comment évolue l’oubli ?', 'Très vite au début.');
+    await page.getByTestId('prev-chapter').click();
+    await page.getByTestId('next-chapter').click();
+
+    const box = page.getByTestId('pretest-box');
+    await expect(box).toContainText('1 question');
+    await box.getByTestId('start-pretest').click();
+    const sheet = page.getByTestId('pretest-sheet');
+    await expect(sheet).toContainText('Comment évolue l’oubli ?');
+    await sheet.getByTestId('pretest-attempt').fill('Lentement ?');
+    await sheet.getByTestId('pretest-reveal').click();
+    await expect(sheet.getByTestId('pretest-answer')).toContainText('Très vite au début.');
+    await sheet.getByTestId('pretest-next').click();
+    await expect(sheet.getByTestId('pretest-done')).toBeVisible();
+    await sheet.getByRole('button', { name: 'Commencer la lecture' }).click();
+    await expect(box).toBeHidden();
+
+    // Déjà fait aujourd'hui : pas reproposé, même après rechargement.
+    await page.reload();
+    await page.getByTestId('book-item').getByRole('button').first().click();
+    await expect(page.getByTestId('reader-chapter')).toHaveText('Oubli');
+    await expect(page.getByTestId('pretest-box')).toBeHidden();
+  });
+
+  test('aide-mémoire : table de rappel (export Memoria), coach, indice en révision', async ({ page }) => {
+    await page.goto('/');
+    await page.getByTestId('open-data').click();
+    await expect(page.getByTestId('mojor-status')).toContainText('Aucune table');
+    // Export de Memoria : la table de rappel (numéro dans « number » ou dans « value ») et une table de couleurs, ignorée.
+    const memoria = {
+      tables: [
+        { id: 1, title: null, associations: [{ number: 0, value: null, name: 'Seau' }, { number: 1, value: null, name: 'Dé ' }, { number: null, value: '3', name: 'Mât' }] },
+        { id: 2, title: 'table couleurs ', associations: [{ number: null, value: '10', name: 'Bleu' }] },
+      ],
+    };
+    await page.getByTestId('mojor-input').setInputFiles({ name: 'memoria.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(memoria)) });
+    await expect(page.getByTestId('toast').filter({ hasText: 'Table de rappel importée (Memoria) : 3 images, de 0 à 3.' })).toBeVisible();
+    await expect(page.getByTestId('mojor-status')).toContainText('3 images, de 0 à 3 : il manque 2.');
+    await page.getByTestId('recall-table').locator('summary').click();
+    await expect(page.getByTestId('recall-table').locator('li')).toHaveText(['0 Seau', '1 Dé', '3 Mât']);
+    await page.keyboard.press('Escape');
+
+    await importFile(page, 'memoire.md', 'text/markdown', Buffer.from(BOOK));
+    await selectText(page, 'Encodage', 'récupération.');
+    await page.getByTestId('card-from-selection').click();
+    const editor = page.getByTestId('card-editor');
+    await editor.getByTestId('card-question').fill('Quelles sont les trois étapes de la mémoire ?');
+    await editor.getByTestId('card-answer').fill('Encodage, stockage, récupération.');
+    await editor.getByTestId('mnemonic-section').locator('summary').first().click();
+    await expect(editor.getByTestId('mn-number')).toHaveValue('0');
+    await expect(editor.getByTestId('mn-word')).toHaveValue('Seau');
+    // Lieux, personnages et sons abandonnés.
+    for (const field of ['mn-place', 'mn-person', 'mn-sound']) await expect(editor.getByTestId(field)).toHaveCount(0);
+    await expect(editor.getByTestId('mn-coach')).toContainText('action vivante');
+    // Un autre numéro : son image remplace celle du précédent.
+    await editor.getByTestId('mn-number').fill('3');
+    await editor.getByTestId('mn-number').press('Tab');
+    await expect(editor.getByTestId('mn-word')).toHaveValue('Mât');
+    await editor.getByTestId('mn-verb').fill('se dresse en trois étages');
+    await expect(editor.getByTestId('mn-coach')).toContainText('Scène complète');
+    await editor.getByTestId('card-save').click();
+
+    await page.getByTestId('back').click();
+    await page.getByTestId('start-review').click();
+    await expect(page.getByTestId('show-hint-text')).toBeHidden();
+    await page.getByTestId('show-hint').click();
+    await expect(page.getByTestId('show-hint-text')).toHaveText('n° 3 · Mât · se dresse en trois étages');
+  });
+
+  test('tableau de bord : 4 indicateurs et réglage des nouvelles fiches', async ({ page }) => {
+    await openBook(page);
+    await createCard(page, 'Le sommeil', 'apprentissages.', 'Quel est le rôle du sommeil ?', 'Consolider.');
+    await page.getByTestId('back').click();
+    await page.getByTestId('start-review').click();
+    await page.getByTestId('confidence-3').click();
+    await page.getByTestId('grade-4').click();
+    await expect(page.getByTestId('review-done')).toBeVisible();
+    await page.getByRole('button', { name: 'Retour à la bibliothèque' }).click();
+
+    await page.getByTestId('open-stats').click();
+    await expect(page.getByTestId('due-today')).toHaveText('0');
+    await expect(page.getByTestId('stat-retention')).toContainText('Pas encore de révision espacée');
+    await expect(page.getByTestId('stat-calibration')).toContainText('100 % · 1');
+    await expect(page.getByTestId('calibration-advice')).toContainText('Encore quelques révisions');
+    await expect(page.getByTestId('active-days')).toHaveText('1');
+    await expect(page.locator('.strip .cell.on')).toHaveCount(1);
+
+    await expect(page.getByTestId('new-per-day')).toHaveText('20');
+    await page.getByRole('button', { name: 'Plus de nouvelles fiches' }).click();
+    await expect(page.getByTestId('new-per-day')).toHaveText('25');
+    await page.waitForTimeout(300);
+    await page.reload();
+    await page.getByTestId('open-stats').click();
+    await expect(page.getByTestId('new-per-day')).toHaveText('25');
+  });
+});

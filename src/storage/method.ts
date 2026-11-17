@@ -1,0 +1,209 @@
+import { normalizeGoal, type BookGoal } from '../core/goal';
+import { normalizeIdeas, normalizeLinks, type IdeaLink } from '../core/ideas';
+import { getSetting, putSetting } from './settings';
+
+// Méthode « Lire, Poser, Récupérer » par chapitre, chapitres choisis et signets.
+// Tout est rangé dans les réglages (donc inclus dans la sauvegarde).
+
+export type Answered = 'yes' | 'partly' | 'no';
+/** Après la restitution : retrouvé facilement, revenu en relisant, mal compris. */
+export type GapLevel = 'easy' | 'reread' | 'hard';
+
+export interface GapItem {
+  label: string;
+  level: GapLevel;
+  /** Passage surligné ou fiche d'origine, s'il y en a un. */
+  cardId?: string;
+}
+
+export interface ChapterGuide {
+  /** Question directrice, posée après l'aperçu du chapitre. */
+  question: string;
+  questionAt: number;
+  answered?: Answered;
+  main?: string;
+  args?: string;
+  explain?: string;
+  restitutedAt?: number;
+  gaps?: GapItem[];
+  /** Fiche créée à partir de la question directrice et de l'idée principale. */
+  cardId?: string;
+  /** Ce que le chapitre apporte à l'objectif du livre, ou action à essayer. */
+  apply?: string;
+  /** Idées centrales (en plus de l'idée principale) et liens entre elles. */
+  ideas?: string[];
+  links?: IdeaLink[];
+  /** Fiche « idées centrales du chapitre ». */
+  ideasCardId?: string;
+}
+
+export interface Bookmark {
+  id: string;
+  chapter: number;
+  offset: number;
+  label: string;
+  at: number;
+}
+
+export const guideKey = (bookId: string) => `guide:${bookId}`;
+export const focusKey = (bookId: string) => `focus:${bookId}`;
+export const bookmarksKey = (bookId: string) => `bookmarks:${bookId}`;
+export const goalKey = (bookId: string) => `goal:${bookId}`;
+export const bilanKey = (bookId: string) => `bilan:${bookId}`;
+/**
+ * Version de découpage des données restaurées d'un livre absent de l'appareil : quand il sera
+ * importé, il le sera dans cette version pour que ses fiches restent à leur place.
+ */
+export const layoutHintKey = (bookId: string) => `layout:${bookId}`;
+/** Clés de réglages propres à un livre (supprimées avec lui). */
+/** Signets d'un PDF lu en pages originales (numéros de page, depuis 0). */
+export const pageMarksKey = (bookId: string) => `pdfmarks:${bookId}`;
+export const bookSettingKeys = (bookId: string) => [`recall:${bookId}`, `pretest:${bookId}`, guideKey(bookId), focusKey(bookId), bookmarksKey(bookId), layoutHintKey(bookId), `ambiance:${bookId}`, goalKey(bookId), bilanKey(bookId), pageMarksKey(bookId)];
+
+const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+
+export async function loadGuides(bookId: string): Promise<Record<string, ChapterGuide>> {
+  const value = await getSetting(guideKey(bookId));
+  if (!isObject(value)) return {};
+  const out: Record<string, ChapterGuide> = {};
+  for (const [k, g] of Object.entries(value)) {
+    if (!isObject(g) || typeof g.question !== 'string') continue;
+    const guide = { ...g } as unknown as ChapterGuide;
+    // Idées et liens : vérifiés un par un (une sauvegarde peut venir d'ailleurs).
+    if ('ideas' in g) guide.ideas = normalizeIdeas(g.ideas);
+    if ('links' in g) guide.links = normalizeLinks(g.links);
+    out[k] = guide;
+  }
+  return out;
+}
+
+export async function saveGuide(bookId: string, chapter: number, guide: ChapterGuide): Promise<void> {
+  await putSetting(guideKey(bookId), { ...(await loadGuides(bookId)), [chapter]: guide });
+}
+
+/** Chapitres choisis pour l'objectif de lecture ; liste vide = tout le livre. */
+export function normalizeFocus(value: unknown, chapterCount: number): number[] {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.filter((n): n is number => Number.isInteger(n) && n >= 0 && n < chapterCount))].sort((a, b) => a - b);
+}
+
+export async function loadFocus(bookId: string, chapterCount: number): Promise<number[]> {
+  return normalizeFocus(await getSetting(focusKey(bookId)), chapterCount);
+}
+
+export async function saveFocus(bookId: string, chapters: number[]): Promise<void> {
+  await putSetting(focusKey(bookId), [...new Set(chapters)].sort((a, b) => a - b));
+}
+
+export async function loadBookmarks(bookId: string): Promise<Bookmark[]> {
+  const value = await getSetting(bookmarksKey(bookId));
+  if (!Array.isArray(value)) return [];
+  return (value as Bookmark[])
+    .filter((b) => isObject(b) && typeof b.id === 'string' && Number.isInteger(b.chapter) && typeof b.offset === 'number')
+    .sort((a, b) => a.chapter - b.chapter || a.offset - b.offset);
+}
+
+export async function saveBookmarks(bookId: string, bookmarks: Bookmark[]): Promise<void> {
+  await putSetting(bookmarksKey(bookId), bookmarks);
+}
+
+// ---------- Objectif du livre ----------
+
+export async function loadGoal(bookId: string): Promise<BookGoal | null> {
+  return normalizeGoal(await getSetting(goalKey(bookId)));
+}
+
+export async function saveGoal(bookId: string, goal: BookGoal): Promise<void> {
+  await putSetting(goalKey(bookId), goal);
+}
+
+// ---------- Bilan du livre ----------
+
+/** Bilan de fin de livre (le « ce que j'ai appris » de K-W-L). */
+export interface BookBilan {
+  /** « De quoi parle vraiment ce livre ? », à comparer avec l'hypothèse de départ. */
+  about: string;
+  ideas: string[];
+  links: IdeaLink[];
+  reached: Answered | null;
+  /** « Et maintenant ? » : ce que l'on va faire de ce livre. */
+  next: string;
+  at: number;
+  aboutCardId?: string;
+  ideasCardId?: string;
+}
+
+export async function loadBilan(bookId: string): Promise<BookBilan | null> {
+  const value = await getSetting(bilanKey(bookId));
+  if (!value || typeof value !== 'object') return null;
+  const b = value as Partial<BookBilan>;
+  return {
+    about: typeof b.about === 'string' ? b.about : '',
+    ideas: normalizeIdeas(b.ideas),
+    links: normalizeLinks(b.links),
+    reached: b.reached === 'yes' || b.reached === 'partly' || b.reached === 'no' ? b.reached : null,
+    next: typeof b.next === 'string' ? b.next : '',
+    at: typeof b.at === 'number' ? b.at : Date.now(),
+    ...(typeof b.aboutCardId === 'string' ? { aboutCardId: b.aboutCardId } : {}),
+    ...(typeof b.ideasCardId === 'string' ? { ideasCardId: b.ideasCardId } : {}),
+  };
+}
+
+export async function saveBilan(bookId: string, bilan: BookBilan): Promise<void> {
+  await putSetting(bilanKey(bookId), bilan);
+}
+
+// ---------- Préférences de la bibliothèque ----------
+
+export type ShelfView = 'grid' | 'list';
+export type ShelfSort = 'recent' | 'title' | 'author' | 'progress';
+export interface ShelfPrefs { view: ShelfView; sort: ShelfSort }
+
+export function normalizeShelf(value: unknown): ShelfPrefs {
+  const v = isObject(value) ? value : {};
+  return {
+    view: v.view === 'list' ? 'list' : 'grid',
+    sort: (['recent', 'title', 'author', 'progress'] as const).includes(v.sort as ShelfSort) ? (v.sort as ShelfSort) : 'recent',
+  };
+}
+
+export async function loadShelf(): Promise<ShelfPrefs> {
+  return normalizeShelf(await getSetting('shelf'));
+}
+
+export async function saveShelf(prefs: ShelfPrefs): Promise<void> {
+  await putSetting('shelf', prefs);
+}
+
+// ---------- PDF en pages originales ----------
+
+export function normalizePageMarks(value: unknown, pageCount = Infinity): number[] {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.filter((n): n is number => Number.isInteger(n) && n >= 0 && n < pageCount))].sort((a, b) => a - b);
+}
+
+export async function loadPageMarks(bookId: string, pageCount?: number): Promise<number[]> {
+  return normalizePageMarks(await getSetting(pageMarksKey(bookId)), pageCount);
+}
+
+export async function savePageMarks(bookId: string, pages: number[]): Promise<void> {
+  await putSetting(pageMarksKey(bookId), normalizePageMarks(pages));
+}
+
+export type PdfScroll = 'vertical' | 'pages';
+export type PdfColors = 'theme' | 'original';
+/** Affichage des PDF en pages originales : défilement continu ou page par page, couleurs des pages. */
+export interface PdfViewPrefs { scroll: PdfScroll; colors: PdfColors }
+
+export function normalizePdfPrefs(value: unknown): PdfViewPrefs {
+  const v = isObject(value) ? value : {};
+  return { scroll: v.scroll === 'pages' ? 'pages' : 'vertical', colors: v.colors === 'original' ? 'original' : 'theme' };
+}
+
+export async function loadPdfPrefs(): Promise<PdfViewPrefs> {
+  return normalizePdfPrefs(await getSetting('pdf-view'));
+}
+
+export async function savePdfPrefs(prefs: PdfViewPrefs): Promise<void> {
+  await putSetting('pdf-view', normalizePdfPrefs(prefs));
+}
