@@ -21,8 +21,9 @@ export function pdfOptions(update: BusyUpdate, verb = 'Lecture du PDF'): PdfOpti
 /** Importe un fichier (sélecteur, glisser-déposer ou « Ouvrir avec ») puis ouvre le livre. */
 export async function importAndOpen(file: File, navigate: Navigate): Promise<void> {
   try {
-    const { book, existed } = await withBusy('Import du livre…', (update) => importBook(file, pdfOptions(update)));
-    if (existed) toast(`« ${book.title} » est déjà dans ta bibliothèque.`);
+    const { book, existed, otherCopy } = await withBusy('Import du livre…', (update) => importBook(file, pdfOptions(update)));
+    if (otherCopy) toast(`« ${book.title} » est déjà dans ta bibliothèque (autre fichier du même livre) : rien n’a été ajouté.`, 'info', 6000);
+    else if (existed) toast(`« ${book.title} » est déjà dans ta bibliothèque.`);
     navigate({ name: 'reader', bookId: book.id });
   } catch (err) {
     if (err instanceof ImportCancelled) {
@@ -74,8 +75,9 @@ export async function importBooks(items: { name: string; read: () => Promise<Fil
       update(i / items.length, label);
       try {
         const file = await item.read();
-        const { book, existed } = await importBook(file, pdfOptions((p, message) => update((i + p) / items.length, message ? `${i + 1} sur ${items.length} · ${message}` : label)));
-        (existed ? outcome.existing : outcome.added).push(book.title);
+        const { book, existed, otherCopy } = await importBook(file, pdfOptions((p, message) => update((i + p) / items.length, message ? `${i + 1} sur ${items.length} · ${message}` : label)));
+        if (existed) outcome.existing.push(otherCopy ? `${book.title} (autre fichier : ${item.name})` : book.title);
+        else outcome.added.push(book.title);
       } catch (err) {
         if (!(err instanceof ImportCancelled)) logError('import', err);
         outcome.failed.push(`${item.name} : ${failureReason(err)}`);

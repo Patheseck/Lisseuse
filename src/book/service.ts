@@ -1,5 +1,6 @@
 import { detectLanguage } from '../core/language';
 import { logError } from '../core/errors';
+import { findSameBook } from './duplicates';
 import { decodeText, parseBookFile } from './import';
 import { parsePdf, type PdfOptions } from './pdf';
 import { PDF_TEXT_VERSION } from './pdf-text';
@@ -9,7 +10,7 @@ import { parseLegacy } from './legacy';
 import { parseMarkdown } from './markdown';
 import { PARSER_VERSION, type Chapter, type ParsedBook } from './types';
 import { promisify, tx } from '../storage/db';
-import { getBook, getChapterCache, putChapterCache, saveBook, updateBook, type BookRecord } from '../storage/library';
+import { getBook, getChapterCache, listBooks, putChapterCache, saveBook, updateBook, type BookRecord } from '../storage/library';
 import { listCards } from '../storage/cards';
 import { bilanKey, bookmarksKey, focusKey, goalKey, guideKey, layoutHintKey } from '../storage/method';
 import { upgradeLayout } from '../storage/relayout';
@@ -29,17 +30,31 @@ export interface OpenedBook {
 async function layoutForNewBook(id: string): Promise<number> {
   const hint = await getSetting(layoutHintKey(id));
   if (typeof hint === 'number') return hint;
+  return (await hasDataFor(id)) ? 0 : LAYOUT_VERSION;
+}
+
+/** Des fiches ou une progression attendent ce livre (sauvegarde restaurée sans son fichier). */
+async function hasDataFor(id: string): Promise<boolean> {
   const [cards, progress] = await tx(['cards', 'progress'], 'readonly', async (t) => [
     await promisify(t.objectStore('cards').index('bookId').count(id)),
     await promisify(t.objectStore('progress').count(id)),
   ]);
-  return cards || progress ? 0 : LAYOUT_VERSION;
+  return cards > 0 || progress > 0;
 }
 
-/** Importe un fichier choisi par l'utilisateur et l'enregistre dans la bibliothèque. */
-export async function importBook(file: File, options: PdfOptions = {}): Promise<{ book: BookRecord; existed: boolean }> {
+/**
+ * Importe un fichier choisi par l'utilisateur et l'enregistre dans la bibliothèque. Jamais de
+ * doublon : un fichier identique (même empreinte) est le livre déjà présent ; un autre fichier du
+ * même livre (même titre, auteur compatible : autre édition, autre format, copie retéléchargée)
+ * n'est pas ajouté non plus (`otherCopy`), sauf s'il est attendu par des fiches restaurées.
+ */
+export async function importBook(file: File, options: PdfOptions = {}): Promise<{ book: BookRecord; existed: boolean; otherCopy?: boolean }> {
   const { id, parsed } = await parseBookFile(file, file.name, options);
   const existing = await getBook(id);
+  if (!existing && !(await hasDataFor(id)) && typeof (await getSetting(layoutHintKey(id))) !== 'number') {
+    const same = findSameBook(parsed, await listBooks());
+    if (same) return { book: same, existed: true, otherCopy: true };
+  }
   const layout = existing ? (existing.layout ?? 0) : await layoutForNewBook(id);
   const chapters = layoutChapters(parsed.chapters, { format: parsed.format, fileName: file.name }, layout);
   return saveBook(id, { ...parsed, chapters }, file, file.name, layout);

@@ -129,6 +129,11 @@
   .library .topbar .btn-primary { margin-inline-end: auto; }
 }
 
+/* Livres en double : lequel garder. */
+.duplicates-banner { padding: 0.7rem 0.9rem; border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: var(--radius); background: var(--panel); font-size: 0.9rem; }
+.duplicates-banner p { margin: 0; }
+.duplicates-banner ul { margin: 0.35rem 0 0; padding-left: 1.1rem; }
+
 /* Barre de l'étagère : tri et vue */
 .shelf-bar { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.4rem; }
 .shelf-title { flex: 1; margin: 0; font-family: var(--font-read); font-size: 1.15rem; font-weight: 600; }
@@ -145,7 +150,8 @@
 .book-grid .book-open { flex-direction: column; align-items: stretch; gap: 0.45rem; padding: 0; width: 100%; }
 .book-grid .cover-wrap { width: 100%; }
 .book-grid .book-cover { width: 100%; height: auto; aspect-ratio: 2 / 3; border-radius: 6px; box-shadow: 0 4px 14px var(--shadow); }
-.book-grid .book-cover-made .made-title { font-size: 0.78rem; }
+/* La corbeille (34 px, en haut à droite) ne cache pas la fin du titre. */
+.book-grid .book-cover-made .made-title { font-size: 0.78rem; padding-right: 30px; }
 .book-grid .book-cover-made .made-author { font-size: 0.62rem; }
 .book-grid .book-info { gap: 0.25rem; }
 .book-grid .book-title { font-size: 0.82rem; line-height: 1.25; }

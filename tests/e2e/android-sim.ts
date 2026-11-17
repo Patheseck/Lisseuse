@@ -16,14 +16,15 @@ export interface FakeAndroid {
   overwrites: string[];
   calls: string[];
   /** Mémoire du téléphone : autorisation « Accès à tous les fichiers », et fichiers (chemin → contenu). */
-  storage: { granted: boolean; grantOnRequest: boolean; files: Map<string, { content: string; modified: number }> };
+  storage: { granted: boolean; grantOnRequest: boolean; files: Map<string, { content: string; base64?: boolean; modified: number }> };
   fire(plugin: string, event: string, data: unknown): void;
 }
 
-/** Fichier posé dans la mémoire du téléphone simulé. */
+/** Fichier posé dans la mémoire du téléphone simulé : texte, ou octets (`bytes`, un PDF par exemple). */
 export interface PhoneFile {
   path: string;
-  content: string;
+  content?: string;
+  bytes?: Uint8Array;
   modified?: number;
 }
 
@@ -107,7 +108,8 @@ export async function simulateAndroid(page: Page, drive: Record<string, string> 
           truncated: false,
           files: found.map(([path, f]) => {
             const parts = path.replace('/storage/emulated/0/', '').split('/');
-            return { path, name: parts.pop(), size: new TextEncoder().encode(f.content).length, modified: f.modified, folder: parts.join('/'), volume: 'interne' };
+            const size = f.base64 ? atob(f.content).length : new TextEncoder().encode(f.content).length;
+            return { path, name: parts.pop(), size, modified: f.modified, folder: parts.join('/'), volume: 'interne' };
           }),
         };
       },
@@ -118,7 +120,7 @@ export async function simulateAndroid(page: Page, drive: Record<string, string> 
       picks,
       overwrites,
       calls: [],
-      storage: { granted: false, grantOnRequest, files: new Map(phoneFiles.map((f) => [f.path, { content: f.content, modified: f.modified ?? Date.parse('2026-11-01T10:00:00Z') }])) },
+      storage: { granted: false, grantOnRequest, files: new Map(phoneFiles.map((f) => [f.path, { content: f.content, base64: f.base64, modified: f.modified ?? Date.parse('2026-11-01T10:00:00Z') }])) },
       fire: (plugin, event, data) => (listeners.get(`${plugin}.${event}`) ?? []).forEach((cb) => cb(data)),
     };
     window.__android = android;
@@ -136,7 +138,7 @@ export async function simulateAndroid(page: Page, drive: Record<string, string> 
       // Comme dans la WebView : les adresses content:// et file:// sont servies par l'app elle-même.
       convertFileSrc: (path: string) => (path.startsWith('content://') ? `${location.origin}/_capacitor_content_/${path.slice('content://'.length)}` : path.startsWith('file://') ? `${location.origin}/_capacitor_file_${path.slice('file://'.length)}` : path),
     };
-  }, { drive, picks, overwrites, phoneFiles: phone.files ?? [], grantOnRequest: phone.grantOnRequest ?? true, DRIVE });
+  }, { drive, picks, overwrites, phoneFiles: (phone.files ?? []).map((f) => (f.bytes ? { path: f.path, content: Buffer.from(f.bytes).toString('base64'), base64: true, modified: f.modified } : { path: f.path, content: f.content ?? '', modified: f.modified })), grantOnRequest: phone.grantOnRequest ?? true, DRIVE });
   await page.route('**/_capacitor_content_/**', async (route) => {
     const uri = `content://${new URL(route.request().url()).pathname.replace('/_capacitor_content_/', '')}`;
     const text = await page.evaluate((u) => (window.__android.granted.has(u) ? window.__android.files.get(u) ?? null : null), uri);
@@ -144,8 +146,8 @@ export async function simulateAndroid(page: Page, drive: Record<string, string> 
   });
   await page.route('**/_capacitor_file_/**', async (route) => {
     const path = decodeURIComponent(new URL(route.request().url()).pathname.replace('/_capacitor_file_', ''));
-    const text = await page.evaluate((p) => (window.__android.storage.granted ? window.__android.storage.files.get(p)?.content ?? null : null), path);
-    await (text === null ? route.fulfill({ status: 404 }) : route.fulfill({ status: 200, contentType: 'application/octet-stream', body: text }));
+    const file = await page.evaluate((p) => (window.__android.storage.granted ? window.__android.storage.files.get(p) ?? null : null), path);
+    await (file === null ? route.fulfill({ status: 404 }) : route.fulfill({ status: 200, contentType: 'application/octet-stream', body: file.base64 ? Buffer.from(file.content, 'base64') : file.content }));
   });
 }
 

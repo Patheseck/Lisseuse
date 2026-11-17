@@ -1,6 +1,7 @@
 import { importAndOpen, importBooks } from './import-flow';
 import { readFoundFile, scanSupported, type FoundFile } from '../native/storage-scan';
 import { BOOK_EXTENSIONS, fileKey, openScanSheet } from './scan-sheet';
+import { duplicateGroups, looksLikeBook } from '../book/duplicates';
 import { errorMessage, logError } from '../core/errors';
 import { planSession } from '../core/session';
 import { isReviewable, listAllCards, listReviews, type CardRecord } from '../storage/cards';
@@ -60,6 +61,7 @@ export function libraryScreen(navigate: Navigate): Screen {
       return;
     }
     const books = await listBooks().catch(() => []);
+    const known = new Set(books.map((b) => fileKey(b.fileName, b.file.size)));
     openScanSheet({
       title: 'Importer des livres',
       testId: 'import-sheet',
@@ -67,7 +69,7 @@ export function libraryScreen(navigate: Navigate): Screen {
       noun: 'livre',
       extensions: BOOK_EXTENSIONS,
       multiple: true,
-      known: new Set(books.map((b) => fileKey(b.fileName, b.file.size))),
+      isKnown: (f) => known.has(fileKey(f.name, f.size)) || looksLikeBook(f.name, books),
       onPick: () => fileInput.click(),
       onImport: importFound,
     }).open();
@@ -244,6 +246,18 @@ export function libraryScreen(navigate: Navigate): Screen {
     return h('div', { className: 'shelf-bar' }, h('h2', { className: 'shelf-title' }, 'Mes livres'), sort, view);
   }
 
+  /** Livres en double (importés avant la 6.12.2, ou restaurés) : lequel garder, et comment supprimer l'autre. */
+  function duplicatesBanner(books: BookRecord[], cards: CardRecord[]): HTMLElement | null {
+    const groups = duplicateGroups(books);
+    if (!groups.length) return null;
+    const format = (b: BookRecord) => (b.format === 'pdf' ? 'PDF' : b.format === 'epub' ? 'EPUB' : 'texte');
+    const count = (b: BookRecord) => cards.filter((c) => c.bookId === b.id).length;
+    return h('section', { className: 'duplicates-banner', 'data-testid': 'duplicates-banner' },
+      h('p', {}, h('strong', {}, groups.length > 1 ? `${groups.length} livres en double` : 'Un livre en double'), ' : garde l’exemplaire où sont tes fiches et supprime l’autre avec la corbeille de sa couverture.'),
+      h('ul', {}, ...groups.map((g) => h('li', {}, `« ${g[0]!.title} » : ${g.map((b) => `${format(b)} (${count(b)} fiche${count(b) > 1 ? 's' : ''})`).join(', ')}`))),
+    );
+  }
+
   function emptyState(): HTMLElement {
     return h('section', { className: 'empty', 'data-testid': 'empty-library' },
       h('h2', {}, 'Ta liseuse d’apprentissage'),
@@ -299,6 +313,8 @@ export function libraryScreen(navigate: Navigate): Screen {
     }
     const banner = reviewBanner(books, cards, reviews, reviewSettings.newPerDay);
     if (banner) body.append(banner);
+    const doubles = duplicatesBanner(books, cards);
+    if (doubles) body.append(doubles);
     // Accès direct aux fiches, sans ouvrir de livre.
     const known = new Set(books.map((b) => b.id));
     const mine = cards.filter((c) => known.has(c.bookId));

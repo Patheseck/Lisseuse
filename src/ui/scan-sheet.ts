@@ -51,8 +51,8 @@ export interface ScanSheetOptions {
   namePattern?: string;
   /** Plusieurs fichiers à la fois (livres), ou un seul (table). */
   multiple: boolean;
-  /** Fichiers déjà importés (clés `fileKey`). */
-  known?: Set<string>;
+  /** Fichier déjà dans la bibliothèque (même fichier, ou autre fichier du même livre). */
+  isKnown?: (f: FoundFile) => boolean;
   /** Ouvre le sélecteur de fichiers d'Android (téléphone, Google Drive…). */
   onPick(): void;
   /** Importe les fichiers choisis ; le panneau est déjà fermé. */
@@ -118,8 +118,17 @@ export function openScanSheet(o: ScanSheetOptions): Sheet {
     }
   }
 
-  function show(files: FoundFile[], truncated: boolean): void {
-    const known = (f: FoundFile) => !!o.known?.has(fileKey(f.name, f.size));
+  function show(found: FoundFile[], truncated: boolean): void {
+    // Copies identiques d'un même fichier (Download et WhatsApp, « livre (1).pdf ») : une seule ligne.
+    const copies = new Map<string, number>();
+    const files = found.filter((f) => {
+      const key = fileKey(f.name.replace(/ \(\d+\)(?=\.[^.]+$)/, ''), f.size);
+      copies.set(key, (copies.get(key) ?? 0) + 1);
+      return copies.get(key) === 1;
+    });
+    const copiesOf = (f: FoundFile) => copies.get(fileKey(f.name.replace(/ \(\d+\)(?=\.[^.]+$)/, ''), f.size)) ?? 1;
+    const describe = (f: FoundFile) => `${describeFound(f)}${copiesOf(f) > 1 ? ` · ${copiesOf(f)} copies identiques` : ''}`;
+    const known = (f: FoundFile) => !!o.isKnown?.(f);
     const knownCount = files.filter(known).length;
     if (!files.length) {
       status.textContent = 'Rien trouvé dans le téléphone. Choisis un fichier, par exemple dans Google Drive.';
@@ -129,7 +138,7 @@ export function openScanSheet(o: ScanSheetOptions): Sheet {
     status.textContent = `${plural(files.length, o.noun)} trouvé${files.length > 1 ? 's' : ''}${knownCount ? `, dont ${knownCount} déjà importé${knownCount > 1 ? 's' : ''}` : ''}.${truncated ? ' Recherche arrêtée avant la fin (trop de fichiers) : s’il manque le tien, choisis-le directement.' : ''}`;
     if (!o.multiple) {
       results.replaceChildren(...files.map((f) => h('button', { type: 'button', className: 'scan-choice', 'data-testid': 'scan-item', onclick: () => void choose([f]) },
-        h('span', { className: 'scan-name' }, f.name), h('small', {}, describeFound(f)))));
+        h('span', { className: 'scan-name' }, f.name), h('small', {}, describe(f)))));
       return;
     }
     const selected = new Set<FoundFile>();
@@ -149,7 +158,7 @@ export function openScanSheet(o: ScanSheetOptions): Sheet {
       });
       if (!already) inputs.push({ f, input });
       return h('label', { className: `check scan-item${already ? ' scan-known' : ''}`, 'data-testid': 'scan-item' }, input,
-        h('span', {}, h('span', { className: 'scan-name' }, f.name), h('small', {}, already ? `${describeFound(f)} · déjà dans ta bibliothèque` : describeFound(f))));
+        h('span', {}, h('span', { className: 'scan-name' }, f.name), h('small', {}, already ? `${describe(f)} · déjà dans ta bibliothèque` : describe(f))));
     });
     const selectAll = button('Tout sélectionner', 'scan-select-all', () => {
       for (const { f, input } of inputs) {
