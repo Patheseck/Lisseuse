@@ -1,12 +1,12 @@
 import { importAndOpen, importBooks } from './import-flow';
 import { readFoundFile, scanSupported, type FoundFile } from '../native/storage-scan';
 import { BOOK_EXTENSIONS, fileKey, openScanSheet } from './scan-sheet';
-import { duplicateGroups, looksLikeBook } from '../book/duplicates';
+import { duplicateGroups, looksLikeBook, planDuplicates, type CopyData } from '../book/duplicates';
 import { errorMessage, logError } from '../core/errors';
 import { planSession } from '../core/session';
 import { isReviewable, listAllCards, listReviews, type CardRecord } from '../storage/cards';
 import { deleteBook, listBooks, listProgress, percentRead, readsPages, type BookRecord, type ProgressRecord } from '../storage/library';
-import { focusKey, goalKey, loadShelf, normalizeFocus, saveShelf, type ShelfPrefs, type ShelfSort } from '../storage/method';
+import { bilanKey, bookmarksKey, focusKey, goalKey, guideKey, loadShelf, normalizeFocus, pageMarksKey, saveShelf, type ShelfPrefs, type ShelfSort } from '../storage/method';
 import { goalSummary, normalizeGoal } from '../core/goal';
 import { listSettings, loadReviewSettings } from '../storage/settings';
 import { icon } from './icons';
@@ -246,15 +246,39 @@ export function libraryScreen(navigate: Navigate): Screen {
     return h('div', { className: 'shelf-bar' }, h('h2', { className: 'shelf-title' }, 'Mes livres'), sort, view);
   }
 
-  /** Livres en double (importés avant la 6.12.2, ou restaurés) : lequel garder, et comment supprimer l'autre. */
-  function duplicatesBanner(books: BookRecord[], cards: CardRecord[]): HTMLElement | null {
-    const groups = duplicateGroups(books);
-    if (!groups.length) return null;
+  /**
+   * Livres en double (importés avant la 6.12.2, ou restaurés) : « Retirer les doublons » garde
+   * l'exemplaire où sont les fiches, les notes ou la lecture la plus avancée, et retire les autres
+   * s'ils n'ont ni fiche ni note. Si plusieurs exemplaires ont des fiches, l'utilisateur choisit.
+   */
+  function duplicatesBanner(books: BookRecord[], data: (b: BookRecord) => CopyData): HTMLElement | null {
+    const plans = planDuplicates(duplicateGroups(books), data);
+    if (!plans.length) return null;
     const format = (b: BookRecord) => (b.format === 'pdf' ? 'PDF' : b.format === 'epub' ? 'EPUB' : 'texte');
-    const count = (b: BookRecord) => cards.filter((c) => c.bookId === b.id).length;
+    const plural = (n: number, word: string) => `${n} ${word}${n > 1 ? 's' : ''}`;
+    const removable = plans.flatMap((p) => p.remove);
+    const conflicts = plans.filter((p) => p.conflicts.length);
+    const remove = async () => {
+      const ok = await confirmDialog({
+        title: 'Retirer les doublons',
+        message: `${removable.length > 1 ? `Ces ${removable.length} exemplaires en double, sans fiche ni note, vont être retirés` : 'Cet exemplaire en double, sans fiche ni note, va être retiré'} : ${removable.map((b) => `« ${b.title} » (${format(b)})`).join(', ')}. L’exemplaire gardé conserve tes fiches, tes notes et ta lecture.`,
+        confirmLabel: 'Retirer',
+      });
+      if (!ok) return;
+      try {
+        for (const book of removable) await deleteBook(book.id);
+        toast(`${plural(removable.length, 'doublon')} retiré${removable.length > 1 ? 's' : ''}.`);
+      } catch (err) {
+        logError('doublons', err);
+        toast(`Doublons non retirés : ${errorMessage(err)}`, 'error');
+      }
+      await render();
+    };
     return h('section', { className: 'duplicates-banner', 'data-testid': 'duplicates-banner' },
-      h('p', {}, h('strong', {}, groups.length > 1 ? `${groups.length} livres en double` : 'Un livre en double'), ' : garde l’exemplaire où sont tes fiches et supprime l’autre avec la corbeille de sa couverture.'),
-      h('ul', {}, ...groups.map((g) => h('li', {}, `« ${g[0]!.title} » : ${g.map((b) => `${format(b)} (${count(b)} fiche${count(b) > 1 ? 's' : ''})`).join(', ')}`))),
+      h('p', {}, h('strong', {}, plans.length > 1 ? `${plans.length} livres en double` : 'Un livre en double'),
+        removable.length ? ' : retire les exemplaires en trop d’un geste ; celui qui a tes fiches, tes notes ou ta lecture la plus avancée est gardé.' : '.'),
+      ...(conflicts.length ? [h('ul', {}, ...conflicts.map((p) => h('li', {}, `« ${p.keep.title} » : chaque exemplaire a des fiches ou des notes (${[p.keep, ...p.conflicts].map((b) => `${format(b)} : ${plural(data(b).cards, 'fiche')}`).join(', ')}). Supprime celui que tu n’utilises plus avec la corbeille de sa couverture : ses fiches partent avec lui.`)))] : []),
+      ...(removable.length ? [h('button', { type: 'button', className: 'btn btn-primary', 'data-testid': 'remove-duplicates', onclick: () => void remove() }, `Retirer les doublons (${removable.length})`)] : []),
     );
   }
 
@@ -294,6 +318,10 @@ export function libraryScreen(navigate: Navigate): Screen {
     }
     const focusValues = new Map(settings.filter((r) => r.key.startsWith('focus:')).map((r) => [r.key, r.value]));
     const focusOf = (b: BookRecord) => normalizeFocus(focusValues.get(focusKey(b.id)), b.chapterCount);
+    // Notes personnelles d'un livre : signets, objectif, bilan, questions, rappels, chapitres choisis.
+    const filled = (v: unknown) => v !== undefined && v !== null && v !== '' && (Array.isArray(v) ? v.length > 0 : typeof v !== 'object' || Object.keys(v).length > 0);
+    const noteValues = new Map(settings.map((r) => [r.key, r.value]));
+    const hasNotes = (id: string) => [`recall:${id}`, `pretest:${id}`, guideKey(id), focusKey(id), bookmarksKey(id), goalKey(id), bilanKey(id), pageMarksKey(id)].some((k) => filled(noteValues.get(k)));
     const list = h('ul', { className: 'book-list' });
     const renderList = () => {
       const q = query.trim().toLowerCase();
@@ -313,7 +341,11 @@ export function libraryScreen(navigate: Navigate): Screen {
     }
     const banner = reviewBanner(books, cards, reviews, reviewSettings.newPerDay);
     if (banner) body.append(banner);
-    const doubles = duplicatesBanner(books, cards);
+    const doubles = duplicatesBanner(books, (b) => ({
+      cards: cards.filter((c) => c.bookId === b.id).length,
+      notes: hasNotes(b.id),
+      read: percentRead(b, progress.get(b.id), focusOf(b)),
+    }));
     if (doubles) body.append(doubles);
     // Accès direct aux fiches, sans ouvrir de livre.
     const known = new Set(books.map((b) => b.id));

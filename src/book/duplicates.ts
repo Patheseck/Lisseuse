@@ -94,3 +94,38 @@ export function looksLikeBook(fileName: string, books: (BookLike & { fileName: s
   if (!vague(stem) && books.some((b) => published(b.format) && fileStemKey(b.fileName) === stem)) return true;
   return !!findSameBook({ title: fileName.replace(/\.[^.]+$/, ''), author: null, format: ext }, books);
 }
+
+/** Ce que l'utilisateur a mis dans un exemplaire : fiches, notes (signets, objectif, bilan…), lecture. */
+export interface CopyData {
+  cards: number;
+  notes: boolean;
+  /** Pourcentage lu. */
+  read: number;
+}
+
+export interface DuplicatePlan<T> {
+  /** L'exemplaire gardé. */
+  keep: T;
+  /** Les exemplaires sans fiches ni notes : retirés sans rien perdre. */
+  remove: T[];
+  /** Les autres exemplaires qui ont aussi des fiches ou des notes : à l'utilisateur de choisir. */
+  conflicts: T[];
+}
+
+/**
+ * Pour chaque groupe de doublons : on garde l'exemplaire qui a le plus de fiches, puis des notes,
+ * puis la lecture la plus avancée, puis le plus récemment ouvert ; les autres partent s'ils n'ont
+ * ni fiche ni note (leur seule perte : une position de lecture moins avancée).
+ */
+export function planDuplicates<T extends { lastOpenedAt: number }>(groups: T[][], data: (book: T) => CopyData): DuplicatePlan<T>[] {
+  return groups.map((group) => {
+    const ranked = [...group].sort((a, b) => {
+      const da = data(a);
+      const db = data(b);
+      return db.cards - da.cards || Number(db.notes) - Number(da.notes) || db.read - da.read || b.lastOpenedAt - a.lastOpenedAt;
+    });
+    const [keep, ...others] = ranked as [T, ...T[]];
+    const personal = (b: T) => data(b).cards > 0 || data(b).notes;
+    return { keep, remove: others.filter((b) => !personal(b)), conflicts: others.filter(personal) };
+  });
+}

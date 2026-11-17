@@ -172,17 +172,42 @@ test.describe('pas de doublon', () => {
     expect(errors).toEqual([]);
   });
 
-  test('doublons déjà présents (restaurés) : signalés dans la bibliothèque, avec le nombre de fiches de chacun', async ({ page }) => {
-    const entry = (id: string, bytes: Buffer) => ({ schemaVersion: 1, id, title: 'Le Livre de Test', author: 'Ada Lovelace', format: 'pdf', fileName: `${id}.pdf`, chapterCount: 0, chapterLabels: [], addedAt: 1, lastOpenedAt: 1, layout: 1, pageCount: 1, file: { type: 'application/pdf', data: bytes.toString('base64') } });
-    const backup = { app: 'liseuse', format: 6, exportedAt: new Date().toISOString(), includesBooks: true, books: [entry('copie-a', pdf('Première.')), entry('copie-b', pdf('Seconde.'))], cards: [], reviews: [], progress: [], settings: [] };
-    await page.goto('/');
-    await expect(page.getByTestId('duplicates-banner')).toHaveCount(0);
+  const entry = (id: string, bytes: Buffer, title = 'Le Livre de Test', lastOpenedAt = 1) => ({ schemaVersion: 1, id, title, author: 'Ada Lovelace', format: 'pdf', fileName: `${id}.pdf`, chapterCount: 0, chapterLabels: [], addedAt: 1, lastOpenedAt, layout: 1, pageCount: 1, file: { type: 'application/pdf', data: bytes.toString('base64') } });
+  const card = (id: string, bookId: string) => ({ schemaVersion: 1, id, bookId, chapter: 0, anchor: { start: 0, end: 8, quote: 'Première', prefix: '', suffix: '' }, createdAt: 1, updatedAt: 1, kind: 'qa', question: 'Quelle édition ?', answer: 'La première.', steps: [], srs: null });
+  const restore = async (page: import('@playwright/test').Page, backup: object) => {
     await page.getByTestId('open-data').click();
     await page.getByTestId('restore-input').setInputFiles({ name: 'sauvegarde.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(backup)) });
     await page.getByTestId('info-ok').click();
+  };
+  const backupOf = (books: object[], cards: object[]) => ({ app: 'liseuse', format: 6, exportedAt: new Date().toISOString(), includesBooks: true, books, cards, reviews: [], progress: [], settings: [] });
+
+  test('doublons déjà présents (restaurés) : retirés d’un geste, l’exemplaire aux fiches est gardé', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.getByTestId('duplicates-banner')).toHaveCount(0);
+    await restore(page, backupOf(
+      [entry('avec-fiche', pdf('Première.'), 'Le Livre de Test', 1), entry('copie-1', pdf('Seconde.'), 'LE LIVRE DE TEST (French Edition)', 9), entry('copie-2', pdf('Troisième.'), 'Le livre de test', 5)],
+      [card('f1', 'avec-fiche')],
+    ));
+    await expect(page.getByTestId('book-item')).toHaveCount(3);
     const banner = page.getByTestId('duplicates-banner');
-    await expect(banner).toContainText('Un livre en double : garde l’exemplaire où sont tes fiches et supprime l’autre avec la corbeille de sa couverture.');
-    await expect(banner.getByRole('listitem')).toHaveText(['« Le Livre de Test » : PDF (0 fiche), PDF (0 fiche)']);
+    await expect(banner).toContainText('Un livre en double : retire les exemplaires en trop d’un geste');
+    await banner.getByTestId('remove-duplicates').click();
+    const dialog = page.getByRole('dialog').filter({ hasText: 'Retirer les doublons' });
+    await expect(dialog).toContainText('Ces 2 exemplaires en double, sans fiche ni note, vont être retirés');
+    await dialog.getByRole('button', { name: 'Retirer' }).click();
+    await expect(page.getByTestId('toast').filter({ hasText: '2 doublons retirés.' })).toBeVisible();
+    await expect(page.getByTestId('book-item')).toHaveCount(1);
+    await expect(page.getByTestId('duplicates-banner')).toHaveCount(0);
+    // La fiche est toujours là, sur l'exemplaire gardé.
+    await expect(page.getByTestId('cards-entry')).toContainText('1 fiche');
+  });
+
+  test('doublons où chaque exemplaire a des fiches : rien n’est retiré, le bandeau explique', async ({ page }) => {
+    await page.goto('/');
+    await restore(page, backupOf([entry('a', pdf('Première.')), entry('b', pdf('Seconde.'))], [card('f1', 'a'), card('f2', 'a'), card('f3', 'b')]));
+    const banner = page.getByTestId('duplicates-banner');
+    await expect(banner.getByRole('listitem')).toHaveText(['« Le Livre de Test » : chaque exemplaire a des fiches ou des notes (PDF : 2 fiches, PDF : 1 fiche). Supprime celui que tu n’utilises plus avec la corbeille de sa couverture : ses fiches partent avec lui.']);
+    await expect(banner.getByTestId('remove-duplicates')).toHaveCount(0);
   });
 });
 

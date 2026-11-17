@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { duplicateGroups, fileStemKey, findSameBook, looksLikeBook, titleKey } from '../../src/book/duplicates';
+import { duplicateGroups, fileStemKey, findSameBook, looksLikeBook, planDuplicates, titleKey, type CopyData } from '../../src/book/duplicates';
 import { importBook } from '../../src/book/service';
 import { newCard, putCard } from '../../src/storage/cards';
 import { closeDb, DB_NAME } from '../../src/storage/db';
@@ -48,6 +48,36 @@ describe('reconnaître le même livre dans un autre fichier', () => {
     expect(looksLikeBook('L_Alchimiste - Paulo Coelho.epub', library)).toBe(true);
     expect(looksLikeBook('Le Prophète.epub', library)).toBe(false);
     expect(looksLikeBook('Père riche père pauvre.md', library)).toBe(false);
+  });
+});
+
+describe('retirer les doublons déjà présents', () => {
+  const copy = (id: string, lastOpenedAt: number) => ({ id, lastOpenedAt });
+  it('garde l’exemplaire aux fiches, puis aux notes, puis le plus lu, puis le plus récent ; retire seulement ceux sans fiche ni note', () => {
+    const data: Record<string, CopyData> = {
+      epub: { cards: 3, notes: false, read: 10 },
+      pdf: { cards: 0, notes: false, read: 90 },
+      copie: { cards: 0, notes: false, read: 0 },
+    };
+    const [plan] = planDuplicates([[copy('pdf', 3), copy('copie', 9), copy('epub', 1)]], (b) => data[b.id]!);
+    expect(plan!.keep.id).toBe('epub');
+    expect(plan!.remove.map((b) => b.id).sort()).toEqual(['copie', 'pdf']);
+    expect(plan!.conflicts).toEqual([]);
+  });
+
+  it('sans fiches : notes, puis lecture, puis dernier ouvert', () => {
+    const plan = (data: Record<string, CopyData>, a = 1, b = 2) => planDuplicates([[copy('a', a), copy('b', b)]], (x) => data[x.id]!)[0]!;
+    expect(plan({ a: { cards: 0, notes: true, read: 0 }, b: { cards: 0, notes: false, read: 80 } }).keep.id).toBe('a');
+    expect(plan({ a: { cards: 0, notes: false, read: 40 }, b: { cards: 0, notes: false, read: 5 } }).keep.id).toBe('a');
+    expect(plan({ a: { cards: 0, notes: false, read: 0 }, b: { cards: 0, notes: false, read: 0 } }).keep.id).toBe('b');
+  });
+
+  it('plusieurs exemplaires avec des fiches : aucun n’est retiré, l’utilisateur choisit', () => {
+    const data: Record<string, CopyData> = { a: { cards: 5, notes: false, read: 0 }, b: { cards: 2, notes: false, read: 0 } };
+    const [plan] = planDuplicates([[copy('a', 1), copy('b', 2)]], (x) => data[x.id]!);
+    expect(plan!.keep.id).toBe('a');
+    expect(plan!.remove).toEqual([]);
+    expect(plan!.conflicts.map((b) => b.id)).toEqual(['b']);
   });
 });
 
