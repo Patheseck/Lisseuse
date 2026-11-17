@@ -133,6 +133,19 @@
 .data-section { display: grid; gap: 0.6rem; padding-top: 0.9rem; border-top: 1px solid var(--border); }
 .data-section h3 { margin: 0; font-size: 0.95rem; }
 .data-section summary { cursor: pointer; min-height: 32px; color: var(--muted); }
+/* « Importer » (Android) : recherche dans le téléphone, fichiers trouvés. */
+.scan-buttons { display: grid; gap: 0.5rem; }
+.scan-results { display: grid; gap: 0.6rem; }
+.scan-results:empty { display: none; }
+.scan-permission { display: grid; gap: 0.5rem; padding: 0.8rem; border: 1px solid var(--border); border-radius: var(--radius); }
+.scan-permission p { margin: 0; }
+.scan-list { display: grid; gap: 0.15rem; max-height: 55vh; overflow-y: auto; }
+.scan-item { padding: 0.35rem 0; border-bottom: 1px solid var(--border); }
+.scan-name { overflow-wrap: anywhere; }
+.scan-known { opacity: 0.6; }
+.scan-choice { display: grid; gap: 0.15rem; width: 100%; padding: 0.7rem 0.8rem; text-align: left; font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); cursor: pointer; }
+.scan-choice small { color: var(--muted); }
+.scan-actions { position: sticky; bottom: 0; padding-top: 0.4rem; background: var(--panel); }
 /* Table de rappel : numéro et image, en colonnes. */
 .recall-grid { list-style: none; margin: 0.5rem 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr)); gap: 0.2rem 0.8rem; font-size: 0.9rem; }
 .recall-grid b { display: inline-block; min-width: 2.2rem; color: var(--muted); font-weight: 600; font-variant-numeric: tabular-nums; }

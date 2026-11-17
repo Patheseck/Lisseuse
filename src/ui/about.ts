@@ -15,6 +15,7 @@ export const PRIVACY_POINTS = [
   'Un PDF est affiché (et converti en texte si tu le demandes) sur l’appareil ; le mot de passe d’un PDF protégé n’est jamais enregistré.',
   'Les sauvegardes sont des fichiers que tu exportes toi-même, où tu le décides ; tu peux les chiffrer avec un mot de passe.',
   'Si tu actives la sauvegarde automatique, Liseuse tient à jour un seul fichier, à l’emplacement que tu as choisi (Google Drive par exemple) : c’est l’app Google Drive du téléphone qui l’envoie en ligne. Liseuse ne voit rien d’autre de ton Drive, et le mot de passe de chiffrement éventuel reste sur l’appareil.',
+  'Si tu l’autorises (« Accès à tous les fichiers », facultatif), « Rechercher dans le téléphone » liste tes livres et ta table de rappel : Liseuse ne lit que les noms des fichiers et n’ouvre que ceux que tu importes.',
   'Le rappel quotidien est une notification programmée sur l’appareil, sans serveur.',
   'Le journal d’erreurs reste sur l’appareil et n’est envoyé à personne.',
   'Les morceaux de musique que tu ajoutes aux ambiances restent sur l’appareil. Les liens vers Spotify, YouTube Music ou Deezer ouvrent ces applis, qui ont leurs propres règles de confidentialité.',

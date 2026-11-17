@@ -80,6 +80,7 @@ Pour ouvrir le projet dans Android Studio : `npm run android:sync` puis `npx cap
 
 | Fonction | Fonctionnement |
 |---|---|
+| Importer | « + Importer » : « Rechercher dans le téléphone » liste les EPUB, PDF, Markdown et texte de toute la mémoire et de la carte SD (autorisation « Accès à tous les fichiers », facultative, demandée à ce moment-là), les plus récents d'abord, les livres déjà importés signalés, à importer en une fois ; ou « Choisir un fichier » (sélecteur d'Android, Google Drive compris : ☰ › Drive, loupe 🔍). Même panneau pour la table de rappel (« Mes données »), qui cherche les exports Memoria, SECK 5D et tables JSON. Voir « Note technique : recherche dans le téléphone » |
 | Ouvrir un livre depuis un gestionnaire de fichiers | « Ouvrir avec → Liseuse » importe le livre et l'ouvre (EPUB, PDF, Markdown, texte, y compris les fichiers reçus sans type précis ; un livre protégé par DRM ou un PDF scanné est refusé avec une explication) |
 | Livres PDF | lus en pages originales (visionneuse de pdf.js, sur le téléphone, sans Internet) : zoom à deux doigts, page par page ou défilement, touches de volume ; en option, « texte adapté » (le PDF converti en livre) ; un PDF protégé par mot de passe le demande à chaque ouverture, sans le garder. Demande une WebView Android de version 119 au moins (celle d'Android 7 à jour) ; voir « Note technique : PDF » |
 | Sauvegarde automatique sur Google Drive | « Mes données » : un fichier choisi une fois dans le sélecteur d'Android (☰ → Drive → dossier → Enregistrer), réécrit en quittant l'app si quelque chose a changé (au plus toutes les 2 min) : fiches, révisions, progression, notes, réglages et liste des livres, sans les fichiers des livres ; chiffrement en option ; « Restaurer une sauvegarde de Google Drive » sur un nouveau téléphone, qui peut ensuite continuer dans le même fichier. Voir « Note technique : sauvegarde Google Drive » |
@@ -113,6 +114,28 @@ Pour ouvrir le projet dans Android Studio : `npm run android:sync` puis `npx cap
   ni accélération graphique), gardé pour les PDF suivants jusqu'à la prochaine version. L'incident,
   une page non dessinée ou un dessin bloqué, est noté au journal d'erreurs (« Mes données ») avec la
   version de la WebView, pour le diagnostic.
+
+## Note technique : recherche dans le téléphone
+
+- `android/app/src/main/java/…/StorageScanPlugin.java` parcourt la mémoire interne et les cartes SD
+  sur un fil d'exécution à part : fichiers dont l'extension est demandée (et le nom correspond à un
+  motif pour la table de rappel), sans `Android/data`, `Android/obb` (inaccessibles) ni dossiers
+  cachés ; 12 niveaux, 1 000 fichiers et 30 s au plus. `Android/media` est parcouru : WhatsApp y
+  range les documents reçus. Seuls nom, taille, date et dossier remontent à l'app ; un fichier choisi
+  est lu par le serveur local de l'app (`fetch` d'une adresse `_capacitor_file_`), sans base64.
+- Autorisation : Android 11 et plus, « Accès à tous les fichiers » (`MANAGE_EXTERNAL_STORAGE`, page
+  des réglages d'Android ouverte par l'app) ; Android 7 à 10, lecture du stockage
+  (`READ_EXTERNAL_STORAGE`, avec `requestLegacyExternalStorage` pour Android 10). Le choix de dossiers
+  par le sélecteur (`ACTION_OPEN_DOCUMENT_TREE`) ne convient pas : Android 11 interdit d'y choisir la
+  racine de la mémoire et le dossier `Download`, où arrivent la plupart des livres.
+- Google Drive ne se parcourt pas : son fournisseur de documents ne donne accès qu'aux fichiers
+  choisis un par un (pas de choix de dossier). Le parcourir demanderait l'API Google Drive, donc un
+  compte Google relié et la permission Internet : contraire au fonctionnement hors ligne de l'app.
+  Le sélecteur d'Android reste le chemin vers Drive (☰ › Drive ; sa loupe y cherche par nom).
+- Google Play : `MANAGE_EXTERNAL_STORAGE` doit être déclarée dans la Play Console (usage :
+  gestion de documents, recherche de fichiers sur l'appareil). Si elle était refusée, il suffit de
+  retirer la permission du manifeste : « Rechercher dans le téléphone » dira que l'autorisation
+  n'est pas accordée, et « Choisir un fichier » reste disponible.
 
 ## Note technique : sauvegarde Google Drive
 

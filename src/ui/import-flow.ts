@@ -47,3 +47,40 @@ export async function importAndOpen(file: File, navigate: Navigate): Promise<voi
     toast(`Import impossible : ${errorMessage(err)}`, 'error', 6000);
   }
 }
+
+/** Bilan d'un import de plusieurs livres. */
+export interface ImportOutcome {
+  added: string[];
+  existing: string[];
+  failed: string[];
+}
+
+function failureReason(err: unknown): string {
+  if (err instanceof DrmError) return 'livre protégé (DRM)';
+  if (err instanceof ScannedPdfError) return 'PDF sans texte (pages en images)';
+  if (err instanceof ImportCancelled) return 'import annulé';
+  return errorMessage(err);
+}
+
+/**
+ * Importe plusieurs livres l'un après l'autre (trouvés dans le téléphone), sans les ouvrir :
+ * un livre qui échoue n'arrête pas les suivants.
+ */
+export async function importBooks(items: { name: string; read: () => Promise<File> }[]): Promise<ImportOutcome> {
+  const outcome: ImportOutcome = { added: [], existing: [], failed: [] };
+  await withBusy('Import des livres…', async (update) => {
+    for (const [i, item] of items.entries()) {
+      const label = `${i + 1} sur ${items.length} : ${item.name}`;
+      update(i / items.length, label);
+      try {
+        const file = await item.read();
+        const { book, existed } = await importBook(file, pdfOptions((p, message) => update((i + p) / items.length, message ? `${i + 1} sur ${items.length} · ${message}` : label)));
+        (existed ? outcome.existing : outcome.added).push(book.title);
+      } catch (err) {
+        if (!(err instanceof ImportCancelled)) logError('import', err);
+        outcome.failed.push(`${item.name} : ${failureReason(err)}`);
+      }
+    }
+  });
+  return outcome;
+}

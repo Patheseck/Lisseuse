@@ -14,6 +14,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(ReaderNativePlugin.class);
         registerPlugin(BackupFilePlugin.class);
+        registerPlugin(StorageScanPlugin.class);
         super.onCreate(savedInstanceState);
     }
 

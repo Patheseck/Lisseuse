@@ -1,4 +1,6 @@
-import { importAndOpen } from './import-flow';
+import { importAndOpen, importBooks } from './import-flow';
+import { readFoundFile, scanSupported, type FoundFile } from '../native/storage-scan';
+import { BOOK_EXTENSIONS, fileKey, openScanSheet } from './scan-sheet';
 import { errorMessage, logError } from '../core/errors';
 import { planSession } from '../core/session';
 import { isReviewable, listAllCards, listReviews, type CardRecord } from '../storage/cards';
@@ -11,7 +13,7 @@ import { formatDue } from './review';
 import { dataSheet } from './data-sheet';
 import type { Sheet } from './sheet';
 import { clear, h } from './dom';
-import { confirmDialog, toast } from './feedback';
+import { confirmDialog, infoDialog, toast, withBusy } from './feedback';
 import type { Navigate, Screen } from './screen';
 
 const ACCEPT = '.epub,.pdf,.md,.markdown,.txt,application/epub+zip,application/pdf,text/markdown,text/plain';
@@ -35,7 +37,7 @@ export function libraryScreen(navigate: Navigate): Screen {
     { className: 'screen library' },
     h('header', { className: 'topbar' },
       h('h1', { className: 'topbar-title' }, 'Bibliothèque'),
-      h('button', { type: 'button', className: 'btn btn-primary', onclick: () => fileInput.click() }, '+ Importer'),
+      h('button', { type: 'button', className: 'btn btn-primary', 'data-testid': 'open-import', onclick: () => void openImport() }, '+ Importer'),
       h('button', { type: 'button', className: 'icon-btn', 'aria-label': 'Mes fiches', 'data-testid': 'open-cards', onclick: () => navigate({ name: 'cards' }) }, icon('card')),
       h('button', { type: 'button', className: 'icon-btn', 'aria-label': 'Ma mémoire : tableau de bord', 'data-testid': 'open-stats', onclick: () => navigate({ name: 'stats' }) }, icon('chart')),
       h('button', { type: 'button', className: 'icon-btn', 'aria-label': 'Mes données et à propos : sauvegarde, restauration, version', 'data-testid': 'open-data', onclick: () => openData() }, icon('more')),
@@ -46,6 +48,60 @@ export function libraryScreen(navigate: Navigate): Screen {
 
   async function handleFile(file: File | undefined): Promise<void> {
     if (file) await importAndOpen(file, navigate);
+  }
+
+  /**
+   * « + Importer » : dans l'app Android, rechercher les livres du téléphone ou choisir un fichier
+   * (Google Drive compris) ; dans un navigateur, le sélecteur de fichiers directement.
+   */
+  async function openImport(): Promise<void> {
+    if (!scanSupported()) {
+      fileInput.click();
+      return;
+    }
+    const books = await listBooks().catch(() => []);
+    openScanSheet({
+      title: 'Importer des livres',
+      testId: 'import-sheet',
+      what: 'tes livres (EPUB, PDF, Markdown, texte)',
+      noun: 'livre',
+      extensions: BOOK_EXTENSIONS,
+      multiple: true,
+      known: new Set(books.map((b) => fileKey(b.fileName, b.file.size))),
+      onPick: () => fileInput.click(),
+      onImport: importFound,
+    }).open();
+  }
+
+  /** Livres trouvés dans le téléphone : un seul s'ouvre comme d'habitude ; plusieurs, un bilan. */
+  async function importFound(found: FoundFile[]): Promise<void> {
+    if (found.length === 1) {
+      let file: File;
+      try {
+        file = await withBusy('Lecture du fichier…', () => readFoundFile(found[0]!));
+      } catch (err) {
+        logError('import', err);
+        toast(`Import impossible : ${errorMessage(err)}`, 'error', 6000);
+        return;
+      }
+      await importAndOpen(file, navigate);
+      return;
+    }
+    const outcome = await importBooks(found.map((f) => ({ name: f.name, read: () => readFoundFile(f) })));
+    await render();
+    const added = outcome.added.length;
+    if (!outcome.failed.length && !outcome.existing.length) {
+      toast(`${added} livre${added > 1 ? 's' : ''} ajouté${added > 1 ? 's' : ''} à ta bibliothèque.`);
+      return;
+    }
+    const list = (items: string[]) => h('ul', {}, ...items.map((t) => h('li', {}, t)));
+    await infoDialog('Import terminé', [
+      `${added} livre${added > 1 ? 's' : ''} ajouté${added > 1 ? 's' : ''}.`,
+      outcome.existing.length ? 'Déjà dans ta bibliothèque :' : null,
+      outcome.existing.length ? list(outcome.existing) : null,
+      outcome.failed.length ? 'Pas importés :' : null,
+      outcome.failed.length ? list(outcome.failed) : null,
+    ]);
   }
   fileInput.addEventListener('change', () => {
     void handleFile(fileInput.files?.[0]);

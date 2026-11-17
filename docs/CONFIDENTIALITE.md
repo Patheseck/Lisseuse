@@ -1,6 +1,6 @@
 # Politique de confidentialité de Liseuse
 
-*Dernière mise à jour : 10 novembre 2026*
+*Dernière mise à jour : 17 novembre 2026*
 
 Liseuse est une application de lecture et d'apprentissage qui fonctionne **entièrement hors ligne**.
 Cette page décrit, simplement et complètement, ce que l'application fait de tes données : rien ne
@@ -68,10 +68,11 @@ Liseuse ne leur transmet rien d'autre que les mots de la recherche (par exemple 
 | Notifications | Le rappel quotidien de révision, si tu l'actives (notification locale, programmée sur l'appareil). |
 | Démarrage de l'appareil, réveil | Reprogrammer ce rappel après un redémarrage du téléphone. |
 | Vibreur | Une légère vibration au changement de chapitre. |
+| Accès à tous les fichiers (facultatif) | « Rechercher dans le téléphone » (bouton « Importer ») : lister les livres (EPUB, PDF, Markdown, texte) et la table de rappel présents dans la mémoire du téléphone et la carte SD. Demandée seulement quand tu touches ce bouton ; Liseuse ne lit que les noms, tailles et dates des fichiers, et n'ouvre que ceux que tu importes. Tu peux la retirer à tout moment dans les réglages d'Android. |
 
 Liseuse n'accède ni à tes contacts, ni à ta position, ni à ton appareil photo, ni à ton micro.
-Les fichiers ne sont lus que lorsque tu les choisis toi-même (importation, « Ouvrir avec »,
-fichier de sauvegarde).
+Le contenu d'un fichier n'est lu que lorsque tu le choisis toi-même (importation, recherche dans
+le téléphone, « Ouvrir avec », fichier de sauvegarde).
 
 ## Enfants
 

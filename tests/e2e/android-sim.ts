@@ -1,8 +1,9 @@
 import type { Page } from '@playwright/test';
 
 // L'app Android est simulée dans le navigateur : pont de Capacitor (window.androidBridge et
-// window.Capacitor, comme les injecte la WebView), modules natifs, et un Google Drive en mémoire
-// à la place du sélecteur de documents d'Android (BackupFilePlugin.java). Le reste est le vrai code.
+// window.Capacitor, comme les injecte la WebView), modules natifs, un Google Drive en mémoire à la
+// place du sélecteur de documents d'Android (BackupFilePlugin.java) et des fichiers « dans le
+// téléphone » pour la recherche (StorageScanPlugin.java). Le reste est le vrai code.
 
 export const DRIVE = 'com.google.android.apps.docs.storage';
 
@@ -14,7 +15,16 @@ export interface FakeAndroid {
   /** Fichiers existants touchés dans le sélecteur d'enregistrement (« Remplacer ? » → oui), au lieu d'en créer un. */
   overwrites: string[];
   calls: string[];
+  /** Mémoire du téléphone : autorisation « Accès à tous les fichiers », et fichiers (chemin → contenu). */
+  storage: { granted: boolean; grantOnRequest: boolean; files: Map<string, { content: string; modified: number }> };
   fire(plugin: string, event: string, data: unknown): void;
+}
+
+/** Fichier posé dans la mémoire du téléphone simulé. */
+export interface PhoneFile {
+  path: string;
+  content: string;
+  modified?: number;
 }
 
 declare global {
@@ -24,8 +34,8 @@ declare global {
 }
 
 /** Simule l'app Android dans la page (à appeler avant page.goto). */
-export async function simulateAndroid(page: Page, drive: Record<string, string> = {}, picks: string[] = [], overwrites: string[] = []): Promise<void> {
-  await page.addInitScript(({ drive, picks, overwrites, DRIVE }) => {
+export async function simulateAndroid(page: Page, drive: Record<string, string> = {}, picks: string[] = [], overwrites: string[] = [], phone: { files?: PhoneFile[]; grantOnRequest?: boolean } = {}): Promise<void> {
+  await page.addInitScript(({ drive, picks, overwrites, phoneFiles, grantOnRequest, DRIVE }) => {
     const methods: Record<string, string[]> = {
       App: ['addListener', 'removeListener', 'removeAllListeners', 'getLaunchUrl', 'minimizeApp', 'getInfo', 'getState', 'exitApp'],
       SystemBars: ['setStyle', 'show', 'hide', 'setAnimation'],
@@ -33,6 +43,7 @@ export async function simulateAndroid(page: Page, drive: Record<string, string> 
       LocalNotifications: ['schedule', 'cancel', 'checkPermissions', 'requestPermissions', 'getPending', 'createChannel', 'addListener', 'removeListener'],
       Filesystem: ['writeFile', 'readFile', 'deleteFile', 'stat', 'getUri', 'mkdir'],
       BackupFile: ['create', 'open', 'info', 'write', 'release'],
+      StorageScan: ['status', 'request', 'scan'],
       Haptics: ['impact', 'vibrate'],
       Share: ['share', 'canShare'],
       Clipboard: ['write', 'read'],
@@ -79,6 +90,27 @@ export async function simulateAndroid(page: Page, drive: Record<string, string> 
         return { ...info(uri!), written: new TextEncoder().encode(text).length };
       },
       'BackupFile.release': ({ uri }) => granted.delete(uri!) && {},
+      'StorageScan.status': () => ({ granted: android.storage.granted }),
+      'StorageScan.request': () => {
+        if (android.storage.grantOnRequest) android.storage.granted = true;
+        return { granted: android.storage.granted };
+      },
+      'StorageScan.scan': (o) => {
+        if (!android.storage.granted) throw fail('Liseuse n’a pas l’autorisation de parcourir les fichiers du téléphone.', 'DENIED');
+        const { extensions, namePattern } = o as unknown as { extensions: string[]; namePattern?: string };
+        const pattern = namePattern ? new RegExp(namePattern, 'i') : null;
+        const found = [...android.storage.files].filter(([path]) => {
+          const name = path.split('/').pop()!;
+          return extensions.includes(name.split('.').pop()!.toLowerCase()) && (!pattern || pattern.test(name));
+        });
+        return {
+          truncated: false,
+          files: found.map(([path, f]) => {
+            const parts = path.replace('/storage/emulated/0/', '').split('/');
+            return { path, name: parts.pop(), size: new TextEncoder().encode(f.content).length, modified: f.modified, folder: parts.join('/'), volume: 'interne' };
+          }),
+        };
+      },
     };
     const android: FakeAndroid = {
       files,
@@ -86,6 +118,7 @@ export async function simulateAndroid(page: Page, drive: Record<string, string> 
       picks,
       overwrites,
       calls: [],
+      storage: { granted: false, grantOnRequest, files: new Map(phoneFiles.map((f) => [f.path, { content: f.content, modified: f.modified ?? Date.parse('2026-11-01T10:00:00Z') }])) },
       fire: (plugin, event, data) => (listeners.get(`${plugin}.${event}`) ?? []).forEach((cb) => cb(data)),
     };
     window.__android = android;
@@ -100,13 +133,18 @@ export async function simulateAndroid(page: Page, drive: Record<string, string> 
         android.calls.push(`${plugin}.${method}`);
         return handlers[`${plugin}.${method}`]?.(options) ?? {};
       },
-      // Comme dans la WebView : les adresses content:// sont servies par l'app elle-même.
-      convertFileSrc: (path: string) => (path.startsWith('content://') ? `${location.origin}/_capacitor_content_/${path.slice('content://'.length)}` : path),
+      // Comme dans la WebView : les adresses content:// et file:// sont servies par l'app elle-même.
+      convertFileSrc: (path: string) => (path.startsWith('content://') ? `${location.origin}/_capacitor_content_/${path.slice('content://'.length)}` : path.startsWith('file://') ? `${location.origin}/_capacitor_file_${path.slice('file://'.length)}` : path),
     };
-  }, { drive, picks, overwrites, DRIVE });
+  }, { drive, picks, overwrites, phoneFiles: phone.files ?? [], grantOnRequest: phone.grantOnRequest ?? true, DRIVE });
   await page.route('**/_capacitor_content_/**', async (route) => {
     const uri = `content://${new URL(route.request().url()).pathname.replace('/_capacitor_content_/', '')}`;
     const text = await page.evaluate((u) => (window.__android.granted.has(u) ? window.__android.files.get(u) ?? null : null), uri);
+    await (text === null ? route.fulfill({ status: 404 }) : route.fulfill({ status: 200, contentType: 'application/octet-stream', body: text }));
+  });
+  await page.route('**/_capacitor_file_/**', async (route) => {
+    const path = decodeURIComponent(new URL(route.request().url()).pathname.replace('/_capacitor_file_', ''));
+    const text = await page.evaluate((p) => (window.__android.storage.granted ? window.__android.storage.files.get(p)?.content ?? null : null), path);
     await (text === null ? route.fulfill({ status: 404 }) : route.fulfill({ status: 200, contentType: 'application/octet-stream', body: text }));
   });
 }

@@ -1,6 +1,7 @@
 import { errorMessage, logError, readErrors } from '../core/errors';
 import { saveFile } from '../native/files';
 import { backupFileSupported } from '../native/backup-file';
+import { readFoundFile, scanSupported } from '../native/storage-scan';
 import { exportBackup, readBackup, restoreBackup } from '../storage/backup';
 import { loadMojorTable, saveMojorTable } from '../storage/settings';
 import { importRecallTable, tableCoverage } from '../core/mnemonic';
@@ -10,6 +11,7 @@ import { infoDialog, passwordDialog, toast, withBusy } from './feedback';
 import { createSheet, type Sheet } from './sheet';
 import { aboutSheet } from './about';
 import { autoBackupSection, type RestoredBackup } from './auto-backup-section';
+import { openScanSheet, TABLE_NAME_PATTERN } from './scan-sheet';
 
 /** Affiche le bilan d'une migration ou d'une restauration. */
 export function showImportReport(title: string, intro: string, r: ImportReport): Promise<void> {
@@ -91,10 +93,8 @@ export function dataSheet(onRestored: () => void): Sheet {
       h('ol', { className: 'recall-grid' }, ...[...t].filter(([, e]) => e.word).sort(([a], [b]) => a - b).map(([n, e]) => h('li', {}, h('b', {}, String(n)), ` ${e.word}`))),
     );
   }).catch((err: unknown) => logError('table de rappel', err));
-  mojorInput.addEventListener('change', async () => {
-    const file = mojorInput.files?.[0];
-    mojorInput.value = '';
-    if (!file) return;
+  /** Remplace la table par celle d'un fichier (export Memoria, sauvegarde SECK 5D, JSON). */
+  async function importTable(file: File): Promise<void> {
     try {
       const { table, from } = importRecallTable(JSON.parse(await file.text()));
       const { count, max } = tableCoverage(table);
@@ -106,7 +106,38 @@ export function dataSheet(onRestored: () => void): Sheet {
       logError('table de rappel', err);
       toast(`Table de rappel illisible : ${errorMessage(err)}`, 'error');
     }
+  }
+  mojorInput.addEventListener('change', () => {
+    const file = mojorInput.files?.[0];
+    mojorInput.value = '';
+    if (file) void importTable(file);
   });
+  /** Dans l'app Android : rechercher le fichier de la table dans le téléphone, ou le choisir (Google Drive compris). */
+  function openTableImport(): void {
+    if (!scanSupported()) {
+      mojorInput.click();
+      return;
+    }
+    openScanSheet({
+      title: 'Importer ma table de rappel',
+      testId: 'table-import-sheet',
+      what: 'ta table (export de Memoria, sauvegarde de SECK 5D ou fichier JSON)',
+      noun: 'fichier',
+      extensions: ['json'],
+      namePattern: TABLE_NAME_PATTERN,
+      multiple: false,
+      onPick: () => mojorInput.click(),
+      onImport: async ([found]) => {
+        if (!found) return;
+        try {
+          await importTable(await readFoundFile(found));
+        } catch (err) {
+          logError('table de rappel', err);
+          toast(`Fichier illisible : ${errorMessage(err)}`, 'error');
+        }
+      },
+    }).open();
+  }
   void refreshMojor();
 
   const errors = readErrors();
@@ -139,7 +170,7 @@ export function dataSheet(onRestored: () => void): Sheet {
       h('h3', {}, 'Table de rappel (système majeur)'),
       mojorStatus,
       mojorList,
-      h('button', { type: 'button', className: 'btn', 'data-testid': 'import-mojor', onclick: () => mojorInput.click() }, 'Importer ma table (Memoria, SECK 5D ou JSON)'),
+      h('button', { type: 'button', className: 'btn', 'data-testid': 'import-mojor', onclick: () => openTableImport() }, 'Importer ma table (Memoria, SECK 5D ou JSON)'),
       mojorInput,
     ),
     h('details', { className: 'data-section' },
