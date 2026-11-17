@@ -9,7 +9,8 @@ body {
   -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
 }
-#app { height: 100%; }
+/* L'écran qui entre en glissant (0,24 s) ne doit pas rendre la page défilable en largeur. */
+#app { height: 100%; overflow-x: clip; }
 /* Écran de lecture choisi après lecture du livre (PDF en pages ou texte) : il remplit l'écran. */
 .screen-host { height: 100%; }
 
@@ -17,6 +18,9 @@ body {
   height: 100dvh;
   display: grid;
   grid-template-rows: auto 1fr auto;
+  /* Une seule colonne, de la largeur de l'écran : un contenu trop large (barre du haut, mot sans
+     espace) ne doit jamais élargir la page (sur un téléphone de 360 px, elle débordait). */
+  grid-template-columns: minmax(0, 1fr);
 }
 .scroll { overflow-y: auto; overscroll-behavior: contain; min-height: 0; }
 
@@ -39,6 +43,7 @@ body {
   border-top: 1px solid var(--border);
 }
 .bottombar[hidden] { display: none; }
+.topbar .btn { flex: 0 0 auto; white-space: nowrap; }
 .topbar-title {
   flex: 1;
   min-width: 0;

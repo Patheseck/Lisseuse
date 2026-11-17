@@ -93,6 +93,37 @@ test.describe('importer depuis la mémoire du téléphone (app Android simulée)
   });
 });
 
+test('liste longue sur un téléphone de 360 px : chaque nom a sa place, rien ne déborde', async ({ page }) => {
+  // Bug corrigé : la liste, limitée en hauteur, écrasait chaque ligne à 44 px et les noms se chevauchaient ;
+  // et la barre du haut élargissait la page au-delà de l'écran.
+  await page.setViewportSize({ width: 360, height: 740 });
+  const longName = (i: number) => `Cheikh_Anta_Diop_Nations_negres_et_culture_tome_${i}_De_l_antiquite_negre_egyptienne.pdf`;
+  await simulateAndroid(page, {}, [], [], {
+    files: Array.from({ length: 40 }, (_, i) => ({ path: `/storage/emulated/0/Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Documents/Dossier_sans_espaces_tres_long_${i}/${longName(i)}`, content: 'x'.repeat(2000 + i), modified: day(1) - i * 1000 })),
+  });
+  await page.goto('/');
+  await importFile(page, 'cours.md', 'text/markdown', Buffer.from(COURS));
+  await page.getByTestId('back').click();
+  await page.getByTestId('open-import').click();
+  await page.getByTestId('scan-phone').click();
+  await page.getByTestId('scan-allow').click();
+  await expect(page.getByTestId('scan-item')).toHaveCount(40);
+  const problems = await page.getByTestId('scan-item').evaluateAll((items) => {
+    const out: string[] = [];
+    items.forEach((item, i) => {
+      const box = item.getBoundingClientRect();
+      const text = item.querySelector('small')!.getBoundingClientRect();
+      if (text.bottom > box.bottom + 1) out.push(`ligne ${i} : texte qui dépasse de ${Math.round(text.bottom - box.bottom)} px`);
+      const next = items[i + 1]?.getBoundingClientRect();
+      if (next && next.top < box.bottom - 1) out.push(`lignes ${i} et ${i + 1} superposées`);
+    });
+    return out;
+  });
+  expect(problems).toEqual([]);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(360);
+  await expect(page.getByTestId('scan-item').first()).toContainText('WhatsApp › Documents › Dossier_sans_espaces_tres_long_0');
+});
+
 test('dans un navigateur, « + Importer » ouvre directement le sélecteur de fichiers', async ({ page }) => {
   await page.goto('/');
   const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.getByTestId('open-import').click()]);

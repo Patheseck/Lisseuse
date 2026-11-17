@@ -139,13 +139,16 @@
 .scan-results:empty { display: none; }
 .scan-permission { display: grid; gap: 0.5rem; padding: 0.8rem; border: 1px solid var(--border); border-radius: var(--radius); }
 .scan-permission p { margin: 0; }
-.scan-list { display: grid; gap: 0.15rem; max-height: 55vh; overflow-y: auto; }
+/* Lignes à la hauteur de leur contenu : une grille limitée en hauteur les écrasait à 44 px (min-height
+   des cases), et les noms longs se chevauchaient. La liste défile avec le panneau. */
+.scan-list { display: grid; gap: 0.15rem; grid-auto-rows: max-content; }
 .scan-item { padding: 0.35rem 0; border-bottom: 1px solid var(--border); }
-.scan-name { overflow-wrap: anywhere; }
+.scan-name, .scan-item small, .scan-choice small { overflow-wrap: anywhere; }
 .scan-known { opacity: 0.6; }
 .scan-choice { display: grid; gap: 0.15rem; width: 100%; padding: 0.7rem 0.8rem; text-align: left; font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); cursor: pointer; }
 .scan-choice small { color: var(--muted); }
-.scan-actions { position: sticky; bottom: 0; padding-top: 0.4rem; background: var(--panel); }
+/* Collée au bas du panneau, marge comprise : aucune ligne de la liste ne passe dessous. */
+.scan-actions { position: sticky; bottom: -1rem; padding: 0.5rem 0 1rem; background: var(--panel); box-shadow: 0 -1px 0 var(--border); }
 /* Table de rappel : numéro et image, en colonnes. */
 .recall-grid { list-style: none; margin: 0.5rem 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr)); gap: 0.2rem 0.8rem; font-size: 0.9rem; }
 .recall-grid b { display: inline-block; min-width: 2.2rem; color: var(--muted); font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -155,12 +158,12 @@
 .check input { width: 20px; height: 20px; margin-top: 2px; accent-color: var(--accent); flex: 0 0 auto; }
 .check span { display: grid; gap: 0.1rem; }
 .check small { color: var(--muted); }
-.error-log { margin: 0; padding-left: 1.2rem; font-size: 0.78rem; color: var(--muted); display: grid; gap: 0.3rem; max-height: 14rem; overflow-y: auto; }
+.error-log { margin: 0; padding-left: 1.2rem; font-size: 0.78rem; color: var(--muted); display: grid; gap: 0.3rem; grid-auto-rows: max-content; max-height: 14rem; overflow-y: auto; }
 
 /* Panneau « Aa » */
 .settings-group { margin: 1.1rem 0 0.4rem; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; }
 .settings-group:first-child { margin-top: 0.2rem; }
-.segmented.swatches { display: grid; grid-template-columns: repeat(3, 1fr); border: 0; gap: 0.45rem; overflow: visible; }
+.segmented.swatches { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border: 0; gap: 0.45rem; overflow: visible; }
 .segmented.swatches label { min-height: 48px; border-radius: 10px; border: 1px solid var(--border) !important; font-size: 0.8rem; font-weight: 500; }
 .segmented.swatches label + input + label, .segmented.swatches input + label:not(:first-of-type) { border-left: 1px solid var(--border); }
 .segmented.swatches input:checked + label { outline: 3px solid var(--accent); outline-offset: 1px; font-weight: 600; background-blend-mode: normal; }
@@ -228,5 +231,5 @@
 .goal-kinds { display: grid; gap: 0.3rem; }
 .goal-kinds input:checked + .ambiance-option { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--panel)); box-shadow: inset 3px 0 0 var(--accent); }
 .goal-kinds input:focus-visible + .ambiance-option { outline: 2px solid var(--accent); outline-offset: 2px; }
-.goal-chapter-list { display: grid; gap: 0.1rem; max-height: 40dvh; overflow-y: auto; }
+.goal-chapter-list { display: grid; gap: 0.1rem; grid-auto-rows: max-content; max-height: 40dvh; overflow-y: auto; }
 .goal-chapter-list .goal-sub { padding-left: 1.4rem; }

@@ -121,6 +121,14 @@
 .continue-chapter { font-size: 0.82rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .continue .btn { margin-top: auto; align-self: flex-start; display: inline-flex; align-items: center; gap: 0.35rem; }
 
+/* Écran étroit (360 px et moins, ou grande taille d'affichage) : le titre « Bibliothèque », redit
+   par « Mes livres » juste en dessous, laisse la place aux boutons ; il reste lu par les
+   lecteurs d'écran. */
+@media (max-width: 380px) {
+  .library .topbar-title { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .library .topbar .btn-primary { margin-inline-end: auto; }
+}
+
 /* Barre de l'étagère : tri et vue */
 .shelf-bar { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.4rem; }
 .shelf-title { flex: 1; margin: 0; font-family: var(--font-read); font-size: 1.15rem; font-weight: 600; }

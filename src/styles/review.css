@@ -23,7 +23,7 @@
 .hint-label { color: var(--muted); font-size: 0.82rem; }
 .review-question { margin: 0; font-family: var(--font-read); font-weight: 600; font-size: 1.3rem; line-height: 1.35; }
 .review-ask { margin: 0.3rem 0 0; }
-.confidence { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; }
+.confidence { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.5rem; }
 .confidence .btn { padding-inline: 0.4rem; }
 .review-block { display: grid; gap: 0.3rem; padding: 0.8rem 0.9rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel); }
 .review-block-answer { border-color: var(--accent); }
@@ -31,7 +31,7 @@
 .review-answer { margin: 0; font-family: var(--font-read); font-size: 1.05rem; white-space: pre-wrap; }
 ol.review-answer { padding-left: 1.3rem; white-space: normal; }
 .review-passage summary { cursor: pointer; color: var(--muted); font-size: 0.85rem; min-height: 32px; }
-.grades { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.45rem; }
+.grades { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.45rem; }
 .grade { display: grid; gap: 0.1rem; padding: 0.5rem 0.2rem; text-align: center; }
 .grade-label { font-weight: 500; font-size: 0.9rem; }
 .grade-interval { font-size: 0.72rem; color: var(--muted); }
@@ -87,7 +87,7 @@ ol.review-answer { padding-left: 1.3rem; white-space: normal; }
 .mnemonic { border: 1px solid var(--border); border-radius: var(--radius); padding: 0.6rem 0.8rem; }
 .mnemonic > summary, .mn-more > summary { cursor: pointer; min-height: 32px; font-weight: 500; }
 .mnemonic[open] { display: grid; gap: 0.6rem; }
-.mn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem 0.6rem; }
+.mn-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.5rem 0.6rem; }
 .mn-more > summary { font-weight: 400; color: var(--muted); font-size: 0.85rem; }
 .learning-coach { padding: 0.6rem 0.75rem; border-radius: var(--radius); background: var(--bg); font-size: 0.85rem; }
 .coach { margin: 0.3rem 0 0; padding-left: 1.1rem; display: grid; gap: 0.2rem; }
